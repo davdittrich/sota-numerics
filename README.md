@@ -22,27 +22,52 @@ the exemption line `N/A — no mechanism choice` as the whole section body.
 
 ### Why a gate, not just guidance
 
-Comparing at least two named alternatives before committing to a mechanism is not a style
-preference — it counters four documented failure modes in individual technical
-decision-making:
+This gate exists because of how coding agents fail, not how humans do. The plans it checks
+are usually written by an LLM, and an LLM's failure mode when picking a mechanism is
+architecturally different from a person's.
 
-- **Anchoring** (Tversky & Kahneman, 1974): the first solution considered becomes the
-  reference point against which everything else gets judged, suppressing search for better
-  ones even when they exist.
-- **Satisficing under time pressure** (Simon, 1956, bounded rationality): engineers on a
-  deadline default to the first option that clears a minimum bar rather than the best
-  available one. Requiring a written comparison forces at least one optimizing pass.
-- **Confirmation bias**, mitigated by the "consider-the-opposite" technique (Lord, Lepper &
-  Preston, 1984), which found that deliberately arguing an alternative position measurably
-  reduces overconfidence in the first one.
-- **Rework cost asymmetry** (Boehm's cost-of-change curve, and later empirical replications):
-  a design-time mechanism error caught before code is an order of magnitude cheaper to fix
-  than the same error caught after implementation.
+Autoregressive decoding commits early. Once a model has written "I'll use X," every later
+token conditions on that choice — there's no backtracking without an explicit scaffold
+forcing it to generate and weigh other candidates first. This isn't a hypothesis: on
+SWE-bench Verified, Meta's CWM went from 58.4% resolved picking the majority answer across
+sampled patches to 65.8% resolved by generating multiple candidates and selecting the best
+one with test-based verification — same model, same problems, the only difference is whether
+it compared options before committing.¹ The wider pass@k literature for coding agents shows
+the same shape: more candidates, compared rather than accepted on the first try, solve more
+problems.²
 
-A written, two-alternative-minimum comparison is a cheap, mechanically checkable forcing
-function against all four — advisory text alone is easy to skip under the exact pressure
-(a deadline, a familiar tool) that makes these biases strongest, which is why this half of
-the capability is a blocking gate rather than another advisory fragment.
+Coding agents also inherit sycophancy from RLHF training — a documented tendency to run with
+whatever framing the prompt already contains instead of pushing back on it.³ In an agentic
+pipeline, that compounds: a planner that locks onto the first mechanism it considered hands
+that choice downstream as settled fact, and nothing later in the chain re-opens it.⁴ A model
+asked to judge or pick between options on its own is also measurably swayed by which one it
+sees first — position bias in LLM-as-judge setups is well replicated.⁵ Naming and comparing
+alternatives up front is a direct counter to both: it forces the search that autoregressive
+generation skips by default, and it puts competing options in front of the model instead of
+one option it's already inclined to defend.
+
+None of this means more candidates always win. Sampling more solutions without comparing them
+well can hurt: one ICLR 2024 study found that adding self-repair attempts on top of extra
+initial samples dropped the pass rate below the plain sampling baseline — quantity without a
+real comparison step made results worse, not better.⁶ That's the actual argument for a gate
+over a suggestion: the failure mode isn't "the agent didn't generate enough options," it's
+"the agent generated one option and moved on." A structural check that a plan names ≥2 real
+alternatives and states why one won closes exactly that gap, without pretending more sampling
+is free.
+
+One piece of the older framing still holds regardless of who's doing the planning: Boehm's
+cost-of-change curve. A wrong mechanism caught at plan time is far cheaper to fix than the
+same mistake found after the code ships — that's a property of the software delivery
+process, not of the reasoner making the choice.
+
+---
+
+¹ CWM: An Open-Weights LLM for Research on Code Generation with World Models (Meta, 2025) — https://arxiv.org/pdf/2510.02387
+² e.g. DARS: Dynamic Action Re-Sampling to Enhance Coding Agent Performance (2025) — https://arxiv.org/pdf/2503.14269
+³ Sharma et al., Towards Understanding Sycophancy in Language Models (2023) — https://arxiv.org/abs/2310.13548
+⁴ The Landscape of Agentic Reinforcement Learning for LLMs: A Survey (2025) — https://arxiv.org/pdf/2509.02547
+⁵ Wang et al., Large Language Models are not Fair Evaluators (2023) — https://arxiv.org/abs/2305.17926
+⁶ Is Self-Repair a Silver Bullet for Code Generation? (ICLR 2024) — https://proceedings.iclr.cc/paper_files/paper/2024/file/9ddc141bdbf9d1db510cefff56c586ad-Paper-Conference.pdf
 
 ## Requirements
 
