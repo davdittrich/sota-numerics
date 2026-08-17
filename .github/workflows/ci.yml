@@ -10,6 +10,36 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: install gsd-tools test stub
+        # A real GSD user always has gsd-tools resolvable (it's what writes
+        # .planning/config.json in the first place); a bare CI runner does
+        # not. This stub implements just enough of `gsd-tools config-get` to
+        # let the smoke test exercise real config-driven behavior instead of
+        # only the no-gsd-tools fallback path. Runtime hooks are untouched.
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/gsd-tools" <<'STUB'
+          #!/usr/bin/env bash
+          set -eu
+          [ "${1:-}" = "config-get" ] || { echo "gsd-tools stub: unsupported command '${1:-}'" >&2; exit 1; }
+          KEY="$2"; shift 2
+          DEFAULT=""
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --default) DEFAULT="$2"; shift 2 ;;
+              *) shift ;;
+            esac
+          done
+          FILE=".planning/config.json"
+          [ -f "$FILE" ] || { printf '%s' "$DEFAULT"; exit 0; }
+          VAL=$(jq -r --arg k "$KEY" --arg d "$DEFAULT" \
+            'getpath($k | split(".")) as $v | if $v == null then $d else ($v|tostring) end' \
+            "$FILE" 2>/dev/null) || VAL="$DEFAULT"
+          printf '%s' "$VAL"
+          STUB
+          chmod +x "$RUNNER_TEMP/bin/gsd-tools"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: session-start smoke test
         run: bash tests/test-session-start.sh
 
