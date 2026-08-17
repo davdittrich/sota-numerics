@@ -1,0 +1,30 @@
+---
+phase: 99-fixture-phase
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+files_modified:
+  - fixture.py
+autonomous: true
+requirements: []
+user_setup: []
+---
+
+<objective>
+Fixture plan: compliant Alternatives Considered section (2 cited, dated
+alternatives, plus a Decided by: line).
+</objective>
+
+## Alternatives Considered
+
+- **NumPy `numpy.linalg.solve`**: mature, BLAS/LAPACK-backed dense linear
+  solver. `https://numpy.org/doc/stable/reference/generated/numpy.linalg.solve.html`
+  (2024).
+- **SciPy `scipy.linalg.lu_solve`**: exposes the LU factorization directly,
+  useful when the same factorization is reused across multiple right-hand
+  sides. `https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.lu_solve.html`
+  (2023).
+
+Decided by: performance — `numpy.linalg.solve` avoids a manual factorization
+step for the single-solve case this plan needs.

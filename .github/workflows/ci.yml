@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: session-start smoke test
+        run: bash tests/test-session-start.sh
+
+      - name: alternatives-checker unit test
+        run: python3 -m unittest tests/test_check_alternatives.py

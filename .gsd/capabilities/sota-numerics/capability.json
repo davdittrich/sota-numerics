@@ -1,0 +1,91 @@
+{
+  "id": "sota-numerics",
+  "role": "feature",
+  "version": "0.1.0",
+  "title": "SOTA/efficiency/numerical-stability steering",
+  "description": "Advisory SOTA-research/numerical-stability steering fragments across gsd's plan/execute/verify/ship lifecycle, plus a blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase.",
+  "tier": "full",
+  "requires": [],
+  "engines": {
+    "gsd": ">=1.10.0"
+  },
+  "runtimeCompat": {
+    "supported": [
+      "*"
+    ],
+    "unsupported": []
+  },
+  "skills": [],
+  "agents": [],
+  "hooks": [],
+  "config": {
+    "sota-numerics.enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Master toggle for both the advisory steering fragments and the blocking plan:post Alternatives Considered gate (D-10, D-11) — the only config key this capability declares."
+    }
+  },
+  "steps": [],
+  "contributions": [
+    {
+      "point": "plan:pre",
+      "into": "planner",
+      "produces": [],
+      "consumes": [],
+      "fragment": {
+        "path": "fragments/planner-sota.md"
+      },
+      "when": "sota-numerics.enabled",
+      "onError": "skip"
+    },
+    {
+      "point": "execute:wave:pre",
+      "into": "executor",
+      "produces": [],
+      "consumes": [],
+      "fragment": {
+        "path": "fragments/executor-numerics.md"
+      },
+      "when": "sota-numerics.enabled",
+      "onError": "skip"
+    },
+    {
+      "point": "execute:wave:post",
+      "into": "verifier",
+      "produces": [],
+      "consumes": [],
+      "fragment": {
+        "path": "fragments/verifier-precision.md"
+      },
+      "when": "sota-numerics.enabled",
+      "onError": "skip"
+    },
+    {
+      "point": "ship:pre",
+      "into": "orchestrator",
+      "produces": [],
+      "consumes": [],
+      "fragment": {
+        "path": "fragments/ship-precision-advisory.md"
+      },
+      "when": "sota-numerics.enabled",
+      "onError": "skip"
+    }
+  ],
+  "gates": [
+    {
+      "point": "plan:post",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "SOTA_SCRIPT=\"$(git rev-parse --show-toplevel)/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py\"; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at $SOTA_SCRIPT -- run 'gsd capability install sota-numerics' (or reopen the session to let the SessionStart auto-install run)\" >&2; exit 1; }; python3 \"$SOTA_SCRIPT\" \"${PHASE_DIR}\"",
+          "timeout": 30
+        }
+      },
+      "when": "sota-numerics.enabled",
+      "blocking": true,
+      "onError": "halt",
+      "description": "onError is deliberately \"halt\", diverging from every other gate in this repo (beads' two ship:pre gates both use \"skip\"): this governs only the check COMMAND itself failing to run (missing python3, crash, timeout) — the block decision is derived separately, from the exit code, by gsd-core's generic command-exit-zero evaluator. A blocking gate that silently skips on its own command failure would defeat its purpose (CONTEXT.md Established Patterns). Do not \"fix\" this back to \"skip\"."
+    }
+  ]
+}

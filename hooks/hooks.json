@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "gsd-planner",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\" planner" }
+        ]
+      },
+      {
+        "matcher": "gsd-executor",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\" executor" }
+        ]
+      },
+      {
+        "matcher": "gsd-verifier",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\" verifier" }
+        ]
+      }
+    ]
+  }
+}
