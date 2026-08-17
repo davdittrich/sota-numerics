@@ -20,6 +20,30 @@ each carrying a URL or backticked doc-ref citation with a year inside the recenc
 ranked criterion that decided the pick. A plan making no real mechanism choice may instead write
 the exemption line `N/A — no mechanism choice` as the whole section body.
 
+### Why a gate, not just guidance
+
+Comparing at least two named alternatives before committing to a mechanism is not a style
+preference — it counters four documented failure modes in individual technical
+decision-making:
+
+- **Anchoring** (Tversky & Kahneman, 1974): the first solution considered becomes the
+  reference point against which everything else gets judged, suppressing search for better
+  ones even when they exist.
+- **Satisficing under time pressure** (Simon, 1956, bounded rationality): engineers on a
+  deadline default to the first option that clears a minimum bar rather than the best
+  available one. Requiring a written comparison forces at least one optimizing pass.
+- **Confirmation bias**, mitigated by the "consider-the-opposite" technique (Lord, Lepper &
+  Preston, 1984), which found that deliberately arguing an alternative position measurably
+  reduces overconfidence in the first one.
+- **Rework cost asymmetry** (Boehm's cost-of-change curve, and later empirical replications):
+  a design-time mechanism error caught before code is an order of magnitude cheaper to fix
+  than the same error caught after implementation.
+
+A written, two-alternative-minimum comparison is a cheap, mechanically checkable forcing
+function against all four — advisory text alone is easy to skip under the exact pressure
+(a deadline, a familiar tool) that makes these biases strongest, which is why this half of
+the capability is a blocking gate rather than another advisory fragment.
+
 ## Requirements
 
 - Bash (POSIX shell)
