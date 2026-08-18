@@ -74,7 +74,9 @@ process, not of the reasoner making the choice.
 - Bash (POSIX shell)
 - Python 3 (standard library only)
 - git — the `plan:post` gate resolves its own script path via `git rev-parse --show-toplevel` in
-  the consuming project
+  the consuming project when installed at project scope, falling back to `${GSD_HOME:-$HOME}` for
+  the common case of a global-scope install (this is what the `SessionStart` auto-install hook
+  always produces)
 - gsd-core >= 1.10.0
 
 ## Install
