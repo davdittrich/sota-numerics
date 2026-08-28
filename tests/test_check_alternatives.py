@@ -7,6 +7,7 @@ place a subprocess is legitimate: the test harness, not the validator itself
 (check-alternatives.py performs no child-process invocations of its own).
 """
 import datetime
+import os
 import shutil
 import subprocess
 import sys
@@ -21,29 +22,24 @@ SCRIPT = (
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 TODAY_YEAR = datetime.date.today().year
+PLAN_TMPDIR = Path("/home/dd/projects/gsd-beads/.scratch/issue-1-plan")
 
 
-def _project_root():
-    """Same `.planning/`-ancestor walk the script itself does -- most test
-    cases need their scratch dir nested under this root so the script's own
-    project-root resolution succeeds (only TestPathSafety deliberately wants
-    a dir with no `.planning/` ancestor)."""
-    current = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (current / ".planning").is_dir():
-            return current
-        current = current.parent
-    raise RuntimeError("could not locate project root from test file")
+def setUpModule():
+    configured = Path(os.environ["TMPDIR"]).resolve()
+    if configured != PLAN_TMPDIR or not configured.is_dir():
+        raise RuntimeError(f"TMPDIR must be the prepared plan scratchpad: {PLAN_TMPDIR}")
+    if any(configured.iterdir()):
+        raise RuntimeError(f"TMPDIR must start empty: {PLAN_TMPDIR}")
 
 
-PROJECT_ROOT = _project_root()
+def tearDownModule():
+    if any(PLAN_TMPDIR.iterdir()):
+        raise RuntimeError(f"TMPDIR must finish empty: {PLAN_TMPDIR}")
 
 
 def scratch_dir():
-    """A TemporaryDirectory nested under PROJECT_ROOT (sibling of
-    .planning/, never inside it) so check-alternatives.py's own
-    find_project_root() succeeds against it."""
-    return tempfile.TemporaryDirectory(dir=PROJECT_ROOT)
+    return tempfile.TemporaryDirectory(dir=PLAN_TMPDIR)
 
 
 def run_check(phase_dir):
@@ -52,6 +48,7 @@ def run_check(phase_dir):
         capture_output=True,
         text=True,
         timeout=15,
+        env={**os.environ, "TMPDIR": str(PLAN_TMPDIR)},
     )
 
 
@@ -79,6 +76,42 @@ COMPLIANT_ENTRY_TEMPLATE = """## Alternatives Considered
 Decided by: performance — first-choice avoids a manual factorization step.
 """
 
+SHAPE_ENTRIES = (
+    (
+        "Stable QR",
+        "Householder reflections avoid normal-equation amplification.",
+        "`https://numpy.org/doc/stable/reference/generated/numpy.linalg.qr.html`",
+        TODAY_YEAR,
+    ),
+    (
+        "Pivoted LU",
+        "Partial pivoting is a fast dense-system baseline.",
+        "`https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.lu_factor.html`",
+        TODAY_YEAR - 1,
+    ),
+)
+SHAPE_DECISION = "Decided by: performance — QR is the stable first choice."
+
+
+def bullet_plan(heading="## Alternatives Considered", entries=SHAPE_ENTRIES):
+    body = "\n".join(
+        f"- **{name}**: {prose} {citation} ({year})."
+        for name, prose, citation, year in entries
+    )
+    return f"{heading}\n\n{body}\n\n{SHAPE_DECISION}\n", entries
+
+
+def table_plan(heading="## Alternatives Considered", entries=SHAPE_ENTRIES):
+    rows = "\n".join(
+        f"| {rank} | **{name}**: {prose} | {citation} ({year}). |"
+        for rank, (name, prose, citation, year) in enumerate(entries, 1)
+    )
+    return (
+        f"{heading}\n\n| Rank | Mechanism | Evidence |\n"
+        f"|---:|---|---|\n{rows}\n\n{SHAPE_DECISION}\n",
+        entries,
+    )
+
 
 class TestSectionPresence(unittest.TestCase):
     """D-01/D-02: the section heading itself."""
@@ -89,6 +122,80 @@ class TestSectionPresence(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1)
         self.assertIn("Alternatives Considered", result.stderr)
+
+    def test_suffixed_heading_accepts_identical_bullet_body(self):
+        exact, exact_entries = bullet_plan()
+        suffixed, suffixed_entries = bullet_plan("## Alternatives Considered (REQ-10)")
+        self.assertEqual(exact.split("\n\n", 1)[1], suffixed.split("\n\n", 1)[1])
+        self.assertEqual(exact_entries, suffixed_entries)
+        with scratch_dir() as tmp:
+            write_plan(tmp, suffixed)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_concatenated_heading_remains_missing(self):
+        text, _ = bullet_plan("## Alternatives ConsideredFoo")
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+
+class TestSupportedEntryShapes(unittest.TestCase):
+    def test_table_accepts_same_semantics_as_bullets(self):
+        bullets, bullet_entries = bullet_plan()
+        table, table_entries = table_plan()
+        self.assertEqual(bullet_entries, table_entries)
+        self.assertEqual(SHAPE_DECISION, SHAPE_DECISION)
+        with scratch_dir() as tmp:
+            write_plan(tmp, bullets)
+            bullet_result = run_check(tmp)
+            write_plan(tmp, table)
+            table_result = run_check(tmp)
+        self.assertEqual(bullet_result.returncode, 0)
+        self.assertEqual(table_result.returncode, 0)
+
+    def test_table_evidence_is_scoped_to_its_row(self):
+        deficient = ("Uncited option", "Its proof is deliberately elsewhere.", "", "")
+        text, _ = table_plan(entries=(deficient, SHAPE_ENTRIES[1]))
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Uncited option'", result.stderr)
+        self.assertIn("missing URL or doc-ref citation", result.stderr)
+        self.assertIn("no citation date", result.stderr)
+
+    def test_present_section_without_supported_entries_has_distinct_message(self):
+        text = f"## Alternatives Considered\n\nplain text only\n\n{SHAPE_DECISION}\n"
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("section found but no alternatives parsed", result.stderr)
+        self.assertIn("bullets", result.stderr)
+        self.assertIn("table", result.stderr)
+
+    def test_one_table_row_excludes_bold_header_and_separator(self):
+        only_entry = SHAPE_ENTRIES[:1]
+        text, _ = table_plan(entries=only_entry)
+        text = text.replace(
+            "| Rank | Mechanism | Evidence |",
+            f"| Rank | **Not an alternative** | `{TODAY_YEAR}` |",
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+    def test_bullet_control_remains_accepted(self):
+        text, _ = bullet_plan()
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
 
 
 class TestCitationAndDate(unittest.TestCase):
@@ -199,11 +306,10 @@ class TestEmptyDirectory(unittest.TestCase):
 
 class TestPathSafety(unittest.TestCase):
     def test_phase_dir_outside_project_root_exits_2(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            # A bare mkdtemp() result is not nested under this project's own
-            # .planning/ ancestor -- find_project_root must fail to resolve
-            # one walking up from here, exit 2 rather than globbing it.
-            result = run_check(tmp)
+        with scratch_dir() as tmp:
+            # The temporary allocation remains inside the approved root; its
+            # ancestor outside the project has no `.planning/` marker.
+            result = run_check(Path(tmp).parents[3])
         self.assertEqual(result.returncode, 2)
 
     def test_nonexistent_dir_exits_2(self):
@@ -259,7 +365,7 @@ class TestRemediationOutput(unittest.TestCase):
     """REVIEWS findings 1/3: the --force remediation line."""
 
     def test_remediation_names_phase_number_from_basename(self):
-        tmp = tempfile.mkdtemp(prefix="07-", dir=PROJECT_ROOT)
+        tmp = tempfile.mkdtemp(prefix="07-", dir=PLAN_TMPDIR)
         try:
             write_plan(tmp, fixture_text("plan-missing-section.md"))
             result = run_check(tmp)
@@ -270,7 +376,7 @@ class TestRemediationOutput(unittest.TestCase):
         self.assertIn("/gsd-plan-phase 07 --force", result.stderr)
 
     def test_remediation_falls_back_to_placeholder_with_no_leading_number(self):
-        tmp = tempfile.mkdtemp(prefix="nodigits-", dir=PROJECT_ROOT)
+        tmp = tempfile.mkdtemp(prefix="nodigits-", dir=PLAN_TMPDIR)
         try:
             write_plan(tmp, fixture_text("plan-missing-section.md"))
             result = run_check(tmp)
