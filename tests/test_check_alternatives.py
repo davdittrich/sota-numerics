@@ -28,9 +28,11 @@ PLAN_TMPDIR = None
 def setUpModule():
     global PLAN_TMPDIR
     PLAN_TMPDIR = Path(tempfile.mkdtemp(prefix="sota-numerics-tests-"))
+    (PLAN_TMPDIR / ".planning").mkdir()
 
 
 def tearDownModule():
+    (PLAN_TMPDIR / ".planning").rmdir()
     if any(PLAN_TMPDIR.iterdir()):
         raise RuntimeError(f"TMPDIR must finish empty: {PLAN_TMPDIR}")
     PLAN_TMPDIR.rmdir()
@@ -282,7 +284,9 @@ class TestMultiPlanCoverage(unittest.TestCase):
     the first readdir match."""
 
     def test_multiplan_dir_exits_1_even_though_first_plan_compliant(self):
-        result = run_check(FIXTURES_DIR / "multiplan")
+        with scratch_dir() as tmp:
+            shutil.copytree(FIXTURES_DIR / "multiplan", tmp, dirs_exist_ok=True)
+            result = run_check(tmp)
         self.assertEqual(result.returncode, 1)
         self.assertIn("11-02-PLAN.md", result.stderr)
         self.assertNotIn("11-01-PLAN.md", result.stderr)
@@ -290,7 +294,9 @@ class TestMultiPlanCoverage(unittest.TestCase):
 
 class TestDottedFilenames(unittest.TestCase):
     def test_dotted_phase_segment_matched(self):
-        result = run_check(FIXTURES_DIR / "dotted")
+        with scratch_dir() as tmp:
+            shutil.copytree(FIXTURES_DIR / "dotted", tmp, dirs_exist_ok=True)
+            result = run_check(tmp)
         self.assertEqual(result.returncode, 0)
 
 
