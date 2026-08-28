@@ -22,20 +22,18 @@ SCRIPT = (
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 TODAY_YEAR = datetime.date.today().year
-PLAN_TMPDIR = Path("/home/dd/projects/gsd-beads/.scratch/issue-1-plan")
+PLAN_TMPDIR = None
 
 
 def setUpModule():
-    configured = Path(os.environ["TMPDIR"]).resolve()
-    if configured != PLAN_TMPDIR or not configured.is_dir():
-        raise RuntimeError(f"TMPDIR must be the prepared plan scratchpad: {PLAN_TMPDIR}")
-    if any(configured.iterdir()):
-        raise RuntimeError(f"TMPDIR must start empty: {PLAN_TMPDIR}")
+    global PLAN_TMPDIR
+    PLAN_TMPDIR = Path(tempfile.mkdtemp(prefix="sota-numerics-tests-"))
 
 
 def tearDownModule():
     if any(PLAN_TMPDIR.iterdir()):
         raise RuntimeError(f"TMPDIR must finish empty: {PLAN_TMPDIR}")
+    PLAN_TMPDIR.rmdir()
 
 
 def scratch_dir():
@@ -147,7 +145,6 @@ class TestSupportedEntryShapes(unittest.TestCase):
         bullets, bullet_entries = bullet_plan()
         table, table_entries = table_plan()
         self.assertEqual(bullet_entries, table_entries)
-        self.assertEqual(SHAPE_DECISION, SHAPE_DECISION)
         with scratch_dir() as tmp:
             write_plan(tmp, bullets)
             bullet_result = run_check(tmp)
@@ -306,10 +303,7 @@ class TestEmptyDirectory(unittest.TestCase):
 
 class TestPathSafety(unittest.TestCase):
     def test_phase_dir_outside_project_root_exits_2(self):
-        with scratch_dir() as tmp:
-            # The temporary allocation remains inside the approved root; its
-            # ancestor outside the project has no `.planning/` marker.
-            result = run_check(Path(tmp).parents[3])
+        result = run_check(Path(SCRIPT.anchor))
         self.assertEqual(result.returncode, 2)
 
     def test_nonexistent_dir_exits_2(self):
