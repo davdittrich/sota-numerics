@@ -137,13 +137,22 @@ def split_entries(body):
         return bullet_entries
 
     entries = []
-    for m in TABLE_ROW_RE.finditer(body):
-        next_line_start = m.end() + 1
-        next_line_end = body.find("\n", next_line_start)
-        next_line = body[next_line_start:next_line_end if next_line_end >= 0 else len(body)]
-        if TABLE_SEPARATOR_RE.fullmatch(next_line):
+    lines = body.splitlines()
+    for i, line in enumerate(lines):
+        framed = line.strip().startswith("|") and line.strip().endswith("|")
+        if not framed or not TABLE_SEPARATOR_RE.fullmatch(line):
             continue
-        entries.append((m.group(1).strip(), m.group(0)))
+        if i == 0:
+            continue
+        header = lines[i - 1].strip()
+        if not (header.startswith("|") and header.endswith("|")):
+            continue
+        for row in lines[i + 1:]:
+            if not (row.strip().startswith("|") and row.strip().endswith("|")):
+                break
+            m = TABLE_ROW_RE.fullmatch(row)
+            if m:
+                entries.append((m.group(1).strip(), row))
     return entries or bullet_entries
 
 

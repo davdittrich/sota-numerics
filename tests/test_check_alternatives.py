@@ -189,6 +189,18 @@ class TestSupportedEntryShapes(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
 
+    def test_pipe_rows_without_separator_are_not_a_markdown_table(self):
+        rows = "\n".join(
+            f"| **{name}**: {prose} {citation} ({year}). |"
+            for name, prose, citation, year in SHAPE_ENTRIES
+        )
+        text = f"## Alternatives Considered\n\n{rows}\n\n{SHAPE_DECISION}\n"
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("section found but no alternatives parsed", result.stderr)
+
     def test_bullet_control_remains_accepted(self):
         text, _ = bullet_plan()
         with scratch_dir() as tmp:
