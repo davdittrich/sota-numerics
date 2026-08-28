@@ -14,11 +14,16 @@ steering fragments at four gsd lifecycle points — the planner at `plan:pre`, t
 The second half is not advisory, and is not buried here: a **blocking `plan:post` gate** runs
 the bundled Alternatives-Considered checker over every `*-PLAN.md` file directly inside a phase
 directory and fails the plan step when a plan is non-compliant. A compliant plan needs a
-`## Alternatives Considered` heading, at least two bold-named alternatives (`- **Name**: ...`)
-each carrying a URL or backticked doc-ref citation with a year inside the recency window, and a
+`## Alternatives Considered` heading (a suffix such as `(REQ-10)` is accepted, but a concatenated
+heading name is not), at least two bold-named alternatives rendered as either `- **Name**: ...`
+bullets or Markdown table rows. Each entry's own bullet or table row must carry a URL or backticked
+doc-ref citation with a year inside the recency window, and a
 `Decided by:` line naming one of performance, simplicity, LOC, ecosystem, or maintenance as the
 ranked criterion that decided the pick. A plan making no real mechanism choice may instead write
-the exemption line `N/A — no mechanism choice` as the whole section body.
+the exemption line `N/A — no mechanism choice` as the whole section body. A present section with
+no recognized bullet or table-row entries reports `section found but no alternatives parsed`; one
+recognized entry retains the `fewer than 2 named alternatives (found 1)` diagnostic. This is the
+complete supported entry grammar, not general Markdown parsing.
 
 ### Why a gate, not just guidance
 

@@ -1,7 +1,7 @@
 {
   "id": "sota-numerics",
   "role": "feature",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "title": "SOTA/efficiency/numerical-stability steering",
   "description": "Advisory SOTA-research/numerical-stability steering fragments across gsd's plan/execute/verify/ship lifecycle, plus a blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase.",
   "tier": "full",

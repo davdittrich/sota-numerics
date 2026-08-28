@@ -38,10 +38,18 @@ PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 
 # Anchored, bounded, no nested quantifiers (ReDoS mitigation, RESEARCH
 # Security Domain) -- every regex below follows this discipline.
-SECTION_HEADING_RE = re.compile(r"^##[ \t]+Alternatives Considered[ \t]*$", re.IGNORECASE | re.MULTILINE)
+SECTION_HEADING_RE = re.compile(
+    r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
+)
 NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
 BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
+TABLE_ROW_RE = re.compile(
+    r"^[ \t]*\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
+)
+TABLE_SEPARATOR_RE = re.compile(
+    r"[ \t]*\|?[ \t]*:?-{3,}:?(?:[ \t]*\|[ \t]*:?-{3,}:?)*[ \t]*\|?[ \t]*"
+)
 URL_RE = re.compile(r"https?://[^\s)>\]]{1,300}")
 DOC_REF_RE = re.compile(r"`[^`\n]{1,300}`")
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -119,14 +127,24 @@ def is_exempt(body):
 
 
 def split_entries(body):
-    """One entry-text string per `- **name**` / `* **name**` bullet, each
-    running from its bullet to the start of the next (or EOF)."""
+    """One entry-text string per supported bullet or bold-name table row."""
     matches = list(BULLET_RE.finditer(body))
+    bullet_entries = [
+        (m.group(1).strip(), body[m.start():matches[i + 1].start() if i + 1 < len(matches) else len(body)])
+        for i, m in enumerate(matches)
+    ]
+    if len(matches) >= MIN_ALTERNATIVES:
+        return bullet_entries
+
     entries = []
-    for i, m in enumerate(matches):
-        entry_end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
-        entries.append((m.group(1).strip(), body[m.start():entry_end]))
-    return entries
+    for m in TABLE_ROW_RE.finditer(body):
+        next_line_start = m.end() + 1
+        next_line_end = body.find("\n", next_line_start)
+        next_line = body[next_line_start:next_line_end if next_line_end >= 0 else len(body)]
+        if TABLE_SEPARATOR_RE.fullmatch(next_line):
+            continue
+        entries.append((m.group(1).strip(), m.group(0)))
+    return entries or bullet_entries
 
 
 def entry_has_citation(entry_text):
@@ -186,6 +204,8 @@ def validate_plan(path):
     if is_exempt(body):
         return None
     entries = split_entries(body)
+    if not entries:
+        return "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows"
     if len(entries) < MIN_ALTERNATIVES:
         return f"fewer than 2 named alternatives (found {len(entries)})"
     today_year = datetime.date.today().year
