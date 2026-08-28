@@ -189,17 +189,31 @@ codex plugin remove sota-numerics@gsd-beads
 
 ## Why block the plan
 
-Coding agents commit to early choices. Once a plan says “use X,” later steps tend to defend X instead of reopening the decision. Requiring two named options and a decision criterion forces the comparison to happen while changing course is still cheap.
+This gate exists because of how coding agents fail, not how humans do. The plans it checks are usually written by an LLM, and an LLM's failure mode when picking a mechanism is architecturally different from a person's.
 
-More candidates alone do not fix the problem. The useful step is comparing them against the job. Meta's CWM results moved from 58.4% resolved with majority selection to 65.8% with test-based candidate selection. Work on sycophancy and position bias points to the same practical rule: put competing choices in front of the planner before one becomes inherited fact.
+Autoregressive decoding commits early. Once a model has written “I'll use X,” every later token conditions on that choice. There is no backtracking without an explicit scaffold that forces it to generate and weigh other candidates first. On SWE-bench Verified, Meta's CWM resolved 58.4 percent of tasks by taking the majority answer across sampled patches and 65.8 percent by selecting among candidates with generated tests: same model, same problems, different selection method (FAIR CodeGen team et al. 2025). DARS likewise improves coding-agent performance by branching from earlier states, generating alternatives, and selecting among them instead of accepting a single trajectory (Aggarwal et al. 2025).
 
-References:
+Coding agents also exhibit sycophancy, a documented tendency to follow the prompt's framing instead of pushing back on it; human-feedback training may help produce that behavior (Sharma et al. 2023). Agentic systems turn model outputs into later inputs, so a planner's early choice can become downstream context; this is an inference from the multi-step architecture surveyed by Zhang et al. (2025), not a result established by that survey. A model asked to judge or pick between options can also be swayed by which one it sees first, as Wang et al. (2023) demonstrate in LLM evaluation. Naming and comparing alternatives up front counters both risks. It forces the search that autoregressive generation skips by default and puts competing options in front of the model before it starts defending one.
 
-1. [CWM: An Open-Weights LLM for Research on Code Generation with World Models](https://arxiv.org/pdf/2510.02387) (Meta, 2025)
-2. [The DARS paper](https://arxiv.org/pdf/2503.14269) (2025)
-3. [Towards Understanding Sycophancy in Language Models](https://arxiv.org/abs/2310.13548) (2023)
-4. [Large Language Models are not Fair Evaluators](https://arxiv.org/abs/2305.17926) (2023)
-5. [Is Self-Repair a Silver Bullet for Code Generation?](https://proceedings.iclr.cc/paper_files/paper/2024/file/9ddc141bdbf9d1db510cefff56c586ad-Paper-Conference.pdf) (ICLR 2024)
+More candidates do not always win. Sampling solutions without comparing them well can hurt. In one ICLR 2024 study, drawing two initial programs and ten repair candidates for each produced a pass rate below plain sampling at the same budget; diverse initial samples worked better than spending the budget on repeated repair (Olausson et al. 2024). That is the argument for a gate instead of a suggestion. The failure mode is not “the agent did not generate enough options.” It is “the agent generated one option and moved on.” A structural check that a plan names at least two real alternatives and states why one won closes that gap without pretending more sampling is free.
+
+One piece of the older framing holds regardless of who does the planning: Boehm's cost-of-change curve. A wrong mechanism caught at plan time is far cheaper to fix than the same mistake found after the code ships. That is a property of software delivery, not of the reasoner making the choice (Boehm 1981).
+
+### References
+
+Aggarwal, Vaibhav, Ojasv Kamal, Abhinav Japesh, Zhijing Jin, and Bernhard Schölkopf. 2025. “DARS: Dynamic Action Re-Sampling to Enhance Coding Agent Performance by Adaptive Tree Traversal.” arXiv preprint arXiv:2503.14269. https://arxiv.org/abs/2503.14269.
+
+Boehm, Barry W. 1981. *Software Engineering Economics*. Prentice-Hall.
+
+FAIR CodeGen team, Jade Copet, Quentin Carbonneaux, et al. 2025. “CWM: An Open-Weights LLM for Research on Code Generation with World Models.” arXiv preprint arXiv:2510.02387. https://arxiv.org/abs/2510.02387.
+
+Olausson, Theo X., Jeevana Priya Inala, Chenglong Wang, Jianfeng Gao, and Armando Solar-Lezama. 2024. “Is Self-Repair a Silver Bullet for Code Generation?” In *The Twelfth International Conference on Learning Representations*. https://proceedings.iclr.cc/paper_files/paper/2024/hash/9ddc141bdbf9d1db510cefff56c586ad-Abstract-Conference.html.
+
+Sharma, Mrinank, Meg Tong, Tomasz Korbak, et al. 2023. “Towards Understanding Sycophancy in Language Models.” arXiv preprint arXiv:2310.13548. https://arxiv.org/abs/2310.13548.
+
+Wang, Peiyi, Lei Li, Liang Chen, et al. 2023. “Large Language Models Are Not Fair Evaluators.” arXiv preprint arXiv:2305.17926. https://arxiv.org/abs/2305.17926.
+
+Zhang, Guibin, Hejia Geng, Xiaohang Yu, et al. 2025. “The Landscape of Agentic Reinforcement Learning for LLMs: A Survey.” arXiv preprint arXiv:2509.02547. https://arxiv.org/abs/2509.02547.
 
 ## License
 
