@@ -265,6 +265,8 @@ class TestMixedCompatibility(unittest.TestCase):
         variants = (
             "Inline prose mentions `### Internal design alternatives`.",
             "### internal design alternatives",
+            "###  Internal design alternatives",
+            "###\tInternal design alternatives",
             "#### Internal design alternatives",
             "### Internal design alternatives (local)",
         )
@@ -286,6 +288,16 @@ class TestMixedCompatibility(unittest.TestCase):
                     result = run_check(tmp)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("alternative 'Local choice'", result.stderr)
+
+    def test_exact_marker_allows_trailing_horizontal_whitespace(self):
+        text = DOCUMENTED_MIXED_BODY.replace(
+            "### Internal design alternatives",
+            "### Internal design alternatives \t",
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
 
     def test_marker_bearing_exemption_exits_0(self):
         text = """## Alternatives Considered

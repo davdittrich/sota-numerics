@@ -91,7 +91,7 @@ Use at least two bold-named bullets:
 Decided by: performance — QR is the stable first choice.
 ```
 
-`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence runs until the next recognized bullet or the end of the section.
+`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognized bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
 
 A framed Markdown table also works when it has a header, a separator row, and bold-named body rows:
 
@@ -107,6 +107,26 @@ Decided by: performance — QR is the stable first choice.
 ```
 
 Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognized bullets take precedence; otherwise the checker tries the table and does not combine the two forms to reach the minimum.
+
+### Internal design alternatives
+
+Project-local design reasoning may follow the exact third-level heading `### Internal design alternatives` while mechanism alternatives remain in the surrounding level-two section. The spelling is case-sensitive and requires exactly one ordinary space after `###`; trailing spaces or tabs are allowed.
+
+```markdown
+## Alternatives Considered
+
+- **Householder QR**: avoids normal-equation amplification. `NumPy QR docs` (2026).
+- **Pivoted LU**: fast dense-system baseline. https://docs.scipy.org/ (2025).
+
+### Internal design alternatives
+
+- **Flat helper layout**: keeps the existing parser cohesive.
+- **Separate helper module**: isolates local structure at the cost of another file.
+
+Decided by: performance — QR is the stable first choice.
+```
+
+Internal entries need no external citation or date, do not count toward the two mechanism alternatives, and cannot lend evidence to a mechanism entry. They may use the same bold-named bullet or framed-table shapes. A peer level-three heading ends internal scope. Mechanism entries outside the exact subsection retain every citation, date, count, and `Decided by:` requirement above.
 
 Each parsed entry must contain:
 

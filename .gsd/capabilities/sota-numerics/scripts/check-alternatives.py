@@ -42,6 +42,10 @@ SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
+H3_HEADING_RE = re.compile(r"^###[ \t]+[^\n]{1,200}$", re.MULTILINE)
+INTERNAL_HEADING_RE = re.compile(
+    r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
+)
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
 BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
@@ -127,17 +131,44 @@ def is_exempt(body):
 
 
 def split_entries(body):
-    """One entry-text string per supported bullet or bold-name table row."""
+    """Supported entries annotated with exact-H3 internal scope."""
+    transitions = []
+    internal = False
+    for heading in H3_HEADING_RE.finditer(body):
+        if INTERNAL_HEADING_RE.fullmatch(heading.group(0)):
+            internal = True
+            transitions.append((heading.start(), internal))
+        elif internal:
+            internal = False
+            transitions.append((heading.start(), internal))
+
     matches = list(BULLET_RE.finditer(body))
-    bullet_entries = [
-        (m.group(1).strip(), body[m.start():matches[i + 1].start() if i + 1 < len(matches) else len(body)])
-        for i, m in enumerate(matches)
-    ]
+    bullet_entries = []
+    transition_i = 0
+    internal = False
+    for i, match in enumerate(matches):
+        while transition_i < len(transitions) and transitions[transition_i][0] < match.start():
+            internal = transitions[transition_i][1]
+            transition_i += 1
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        if transition_i < len(transitions):
+            end = min(end, transitions[transition_i][0])
+        bullet_entries.append(
+            (match.group(1).strip(), body[match.start():end], internal)
+        )
     if len(matches) >= MIN_ALTERNATIVES:
         return bullet_entries
 
     entries = []
-    lines = body.splitlines()
+    raw_lines = body.splitlines(keepends=True)
+    lines = [line.rstrip("\r\n") for line in raw_lines]
+    line_starts = []
+    offset = 0
+    for raw_line in raw_lines:
+        line_starts.append(offset)
+        offset += len(raw_line)
+    transition_i = 0
+    internal = False
     for i, line in enumerate(lines):
         framed = line.strip().startswith("|") and line.strip().endswith("|")
         if not framed or not TABLE_SEPARATOR_RE.fullmatch(line):
@@ -147,12 +178,18 @@ def split_entries(body):
         header = lines[i - 1].strip()
         if not (header.startswith("|") and header.endswith("|")):
             continue
-        for row in lines[i + 1:]:
+        for row_i, row in enumerate(lines[i + 1:], i + 1):
             if not (row.strip().startswith("|") and row.strip().endswith("|")):
                 break
             m = TABLE_ROW_RE.fullmatch(row)
             if m:
-                entries.append((m.group(1).strip(), row))
+                while (
+                    transition_i < len(transitions)
+                    and transitions[transition_i][0] < line_starts[row_i]
+                ):
+                    internal = transitions[transition_i][1]
+                    transition_i += 1
+                entries.append((m.group(1).strip(), row, internal))
     return entries or bullet_entries
 
 
@@ -215,10 +252,15 @@ def validate_plan(path):
     entries = split_entries(body)
     if not entries:
         return "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows"
-    if len(entries) < MIN_ALTERNATIVES:
-        return f"fewer than 2 named alternatives (found {len(entries)})"
+    mechanism_entries = [
+        (name, entry_text)
+        for name, entry_text, internal in entries
+        if not internal
+    ]
+    if len(mechanism_entries) < MIN_ALTERNATIVES:
+        return f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
     today_year = datetime.date.today().year
-    for name, entry_text in entries:
+    for name, entry_text in mechanism_entries:
         issues = validate_entry(name, entry_text, today_year)
         if issues:
             return issues[0]
