@@ -156,6 +156,46 @@ class TestMixedAlternatives(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0)
 
+    def test_internal_bullets_do_not_suppress_mechanism_table(self):
+        text = f"""## Alternatives Considered
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Mechanism A** | `authoritative-doc-A` ({TODAY_YEAR}) |
+| 2 | **Mechanism B** | `authoritative-doc-B` ({TODAY_YEAR}) |
+
+### Internal design alternatives
+
+- **Local layout A**: project-local reasoning.
+- **Local layout B**: project-local reasoning.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_internal_bullets_do_not_increase_table_mechanism_count(self):
+        text = f"""## Alternatives Considered
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Only mechanism** | `authoritative-doc` ({TODAY_YEAR}) |
+
+### Internal design alternatives
+
+- **Local layout A**: project-local reasoning.
+- **Local layout B**: project-local reasoning.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
     def test_internal_entries_do_not_count(self):
         text = f"""## Alternatives Considered
 
@@ -261,6 +301,56 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
 | 1 | **Local layout** | project-local reasoning |
 
 {peer_heading}
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 3 | **Resumed mechanism** | its evidence is deliberately absent |
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+
+    def test_bare_peer_h3_resumes_mechanism_bullet_scope(self):
+        text = f"""## Alternatives Considered
+
+- **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
+
+### Internal design alternatives
+
+- **Local layout**: project-local reasoning.
+
+###
+
+- **Resumed mechanism**: its evidence is deliberately absent.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+
+    def test_bare_peer_h3_resumes_mechanism_table_scope(self):
+        text = f"""## Alternatives Considered
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Mechanism A** | `authoritative-doc-A` ({TODAY_YEAR}) |
+| 2 | **Mechanism B** | `authoritative-doc-B` ({TODAY_YEAR}) |
+
+### Internal design alternatives
+
+| Rank | Design | Rationale |
+| ---: | --- | --- |
+| 1 | **Local layout** | project-local reasoning |
+
+###
 
 | Rank | Mechanism | Evidence |
 | ---: | --- | --- |

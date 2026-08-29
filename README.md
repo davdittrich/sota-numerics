@@ -106,7 +106,7 @@ A framed Markdown table also works when it has a header, a separator row, and bo
 Decided by: performance — QR is the stable first choice.
 ```
 
-Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognized bullets take precedence; otherwise the checker tries the table and does not combine the two forms to reach the minimum.
+Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognized mechanism bullets take precedence; internal bullets do not affect this choice. Otherwise the checker tries the table and does not combine the two forms to reach the minimum.
 
 ### Internal design alternatives
 
@@ -126,7 +126,7 @@ Project-local design reasoning may follow the exact third-level heading `### Int
 Decided by: performance — QR is the stable first choice.
 ```
 
-Internal entries need no external citation or date, do not count toward the two mechanism alternatives, and cannot lend evidence to a mechanism entry. They may use the same bold-named bullet or framed-table shapes. A peer level-three heading ends internal scope. Mechanism entries outside the exact subsection retain every citation, date, count, and `Decided by:` requirement above.
+Internal entries need no external citation or date, do not count toward the two mechanism alternatives, and cannot lend evidence to a mechanism entry. They may use the same bold-named bullet or framed-table shapes. A peer level-three heading, including a bare `###`, ends internal scope. Mechanism entries outside the exact subsection retain every citation, date, count, and `Decided by:` requirement above.
 
 Each parsed mechanism entry must contain:
 

@@ -43,7 +43,7 @@ SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
-H3_HEADING_RE = re.compile(r"^###[ \t]+[^\n]+$", re.MULTILINE)
+H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
@@ -157,7 +157,8 @@ def split_entries(body):
         bullet_entries.append(
             (match.group(1).strip(), body[match.start():end], internal)
         )
-    if len(matches) >= MIN_ALTERNATIVES:
+    mechanism_bullets = [entry for entry in bullet_entries if not entry[2]]
+    if len(mechanism_bullets) >= MIN_ALTERNATIVES:
         return bullet_entries
 
     entries = []
