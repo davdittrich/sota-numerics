@@ -113,6 +113,290 @@ def table_plan(heading="## Alternatives Considered", entries=SHAPE_ENTRIES):
     )
 
 
+DOCUMENTED_MIXED_BODY = f"""## Alternatives Considered
+
+- **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
+
+### Internal design alternatives
+
+- **Local layout A**: project-local reasoning; no external citation required.
+- **Local layout B**: project-local reasoning; no external citation required.
+
+{SHAPE_DECISION}
+"""
+
+
+class TestMixedAlternatives(unittest.TestCase):
+    def test_mixed_bullets_exits_0(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, DOCUMENTED_MIXED_BODY)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_mixed_table_exits_0(self):
+        text = f"""## Alternatives Considered
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Mechanism A** | `authoritative-doc-A` ({TODAY_YEAR}) |
+| 2 | **Mechanism B** | `authoritative-doc-B` ({TODAY_YEAR}) |
+
+### Internal design alternatives
+
+| Rank | Design | Rationale |
+| ---: | --- | --- |
+| 1 | **Local layout A** | project-local reasoning |
+| 2 | **Local layout B** | project-local reasoning |
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_internal_entries_do_not_count(self):
+        text = f"""## Alternatives Considered
+
+- **Only mechanism**: cited mechanism evidence. `authoritative-doc` ({TODAY_YEAR}).
+
+### Internal design alternatives
+
+- **Local layout A**: project-local reasoning.
+- **Local layout B**: project-local reasoning.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+    def test_exact_marker_bounds_preceding_mechanism_evidence(self):
+        text = f"""## Alternatives Considered
+
+- **Deficient mechanism**: its evidence is deliberately absent.
+
+### Internal design alternatives
+
+Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
+- **Local layout**: project-local reasoning.
+
+### Continued mechanism alternatives
+
+- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Deficient mechanism'", result.stderr)
+        self.assertIn("missing URL or doc-ref citation", result.stderr)
+        self.assertIn("no citation date", result.stderr)
+
+    def test_peer_h3_after_exact_marker_resumes_mechanism_scope(self):
+        text = f"""## Alternatives Considered
+
+- **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
+
+### Internal design alternatives
+
+- **Local layout**: project-local reasoning.
+
+### Continued mechanism alternatives
+
+- **Resumed mechanism**: its evidence is deliberately absent.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+        self.assertIn("missing URL or doc-ref citation", result.stderr)
+        self.assertIn("no citation date", result.stderr)
+
+    def test_mixed_section_missing_decided_by_fails(self):
+        text = DOCUMENTED_MIXED_BODY.replace(f"\n{SHAPE_DECISION}\n", "\n")
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no 'Decided by:' line naming a ranked criterion", result.stderr)
+
+
+class TestMixedCompatibility(unittest.TestCase):
+    def test_no_marker_bullets_and_table_exit_0(self):
+        for text, _ in (bullet_plan(), table_plan()):
+            with self.subTest(shape=text.splitlines()[2][:1]):
+                with scratch_dir() as tmp:
+                    write_plan(tmp, text)
+                    result = run_check(tmp)
+                self.assertEqual(result.returncode, 0)
+
+    def test_uncited_mechanism_still_fails(self):
+        text = f"""## Alternatives Considered
+
+- **Mechanism A**: cited. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited. `authoritative-doc-B` ({TODAY_YEAR}).
+- **Uncited mechanism**: its evidence is deliberately absent.
+
+### Internal design alternatives
+
+- **Local layout**: project-local reasoning.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Uncited mechanism'", result.stderr)
+        self.assertIn("missing URL or doc-ref citation", result.stderr)
+        self.assertIn("no citation date", result.stderr)
+
+    def test_marker_variants_remain_mechanism_scope(self):
+        variants = (
+            "Inline prose mentions `### Internal design alternatives`.",
+            "### internal design alternatives",
+            "#### Internal design alternatives",
+            "### Internal design alternatives (local)",
+        )
+        for marker in variants:
+            with self.subTest(marker=marker):
+                text = f"""## Alternatives Considered
+
+- **Mechanism A**: cited. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited. `authoritative-doc-B` ({TODAY_YEAR}).
+
+{marker}
+
+- **Local choice**: its evidence is deliberately absent.
+
+{SHAPE_DECISION}
+"""
+                with scratch_dir() as tmp:
+                    write_plan(tmp, text)
+                    result = run_check(tmp)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("alternative 'Local choice'", result.stderr)
+
+    def test_marker_bearing_exemption_exits_0(self):
+        text = """## Alternatives Considered
+
+N/A — no mechanism choice
+
+### Internal design alternatives
+
+- **Local layout**: project-local reasoning.
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_two_bullets_override_valid_table(self):
+        bullets, _ = bullet_plan()
+        text = bullets.replace(
+            f"\n{SHAPE_DECISION}\n",
+            f"""\n
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Uncited table row** | project-local text |
+
+{SHAPE_DECISION}
+""",
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_one_bullet_selects_valid_table(self):
+        table, _ = table_plan()
+        text = table.replace(
+            "## Alternatives Considered\n\n",
+            "## Alternatives Considered\n\n- **Ignored bullet**: no evidence.\n\n",
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+    def test_bullet_and_table_do_not_combine(self):
+        text = f"""## Alternatives Considered
+
+- **Bullet mechanism**: cited. `authoritative-doc-A` ({TODAY_YEAR}).
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Table mechanism** | `authoritative-doc-B` ({TODAY_YEAR}) |
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+    def test_unrelated_h3_without_marker_preserves_evidence_span(self):
+        text = f"""## Alternatives Considered
+
+- **Mechanism A**: evidence continues below.
+
+### Other notes
+
+Continuation with `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited. `authoritative-doc-B` ({TODAY_YEAR}).
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+
+class TestDocumentedSyntax(unittest.TestCase):
+    def test_readme_and_planner_name_exact_mixed_contract(self):
+        control, _ = bullet_plan()
+        with scratch_dir() as tmp:
+            write_plan(tmp, control)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+        root = Path(__file__).resolve().parent.parent
+        marker = "### Internal design alternatives"
+        contract = (
+            "Internal entries need no external citation or date, do not count toward "
+            "the two mechanism alternatives, and cannot lend evidence to a mechanism entry."
+        )
+        paths = (
+            root / "README.md",
+            root / ".gsd/capabilities/sota-numerics/fragments/planner-sota.md",
+        )
+        missing = [
+            str(path)
+            for path in paths
+            if marker not in path.read_text(encoding="utf-8")
+            or contract not in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(missing, [])
+
+    def test_documented_mixed_body_exits_0(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, DOCUMENTED_MIXED_BODY)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0)
+
+
 class TestSectionPresence(unittest.TestCase):
     """D-01/D-02: the section heading itself."""
 
