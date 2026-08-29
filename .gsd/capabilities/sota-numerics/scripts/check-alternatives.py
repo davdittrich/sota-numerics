@@ -3,10 +3,11 @@
 D-02, D-06, D-07, D-09; RESEARCH.md Pattern 1/3, REVIEWS findings 1-3).
 
 Validates that every `*-PLAN.md` file directly inside a phase directory
-carries a compliant "## Alternatives Considered" section: >=2 named
-alternatives, each cited with a URL or doc-ref and a date within the last
-6 years, plus a `Decided by:` line naming a ranked criterion -- or the D-03
-exemption text.
+carries a compliant "## Alternatives Considered" section: at least two named
+mechanism alternatives, each cited with a URL or doc-ref and a date within the
+last 6 years, plus a `Decided by:` line naming a ranked criterion -- or the
+D-03 exemption text. Internal entries are excluded from the count and evidence
+validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
@@ -36,12 +37,16 @@ MIN_ALTERNATIVES = 2
 # `10.1-02-PLAN.md` match.
 PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 
-# Anchored, bounded, no nested quantifiers (ReDoS mitigation, RESEARCH
-# Security Domain) -- every regex below follows this discipline.
+# Anchored single-line scans with no nested quantifiers (ReDoS mitigation,
+# RESEARCH Security Domain). Peer H3 content is intentionally uncapped but linear.
 SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
+H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
+INTERNAL_HEADING_RE = re.compile(
+    r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
+)
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
 BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
@@ -127,17 +132,45 @@ def is_exempt(body):
 
 
 def split_entries(body):
-    """One entry-text string per supported bullet or bold-name table row."""
+    """Supported entries annotated with exact-H3 internal scope."""
+    transitions = []
+    internal = False
+    for heading in H3_HEADING_RE.finditer(body):
+        if INTERNAL_HEADING_RE.fullmatch(heading.group(0)):
+            internal = True
+            transitions.append((heading.start(), internal))
+        elif internal:
+            internal = False
+            transitions.append((heading.start(), internal))
+
     matches = list(BULLET_RE.finditer(body))
-    bullet_entries = [
-        (m.group(1).strip(), body[m.start():matches[i + 1].start() if i + 1 < len(matches) else len(body)])
-        for i, m in enumerate(matches)
-    ]
-    if len(matches) >= MIN_ALTERNATIVES:
+    bullet_entries = []
+    transition_i = 0
+    internal = False
+    for i, match in enumerate(matches):
+        while transition_i < len(transitions) and transitions[transition_i][0] < match.start():
+            internal = transitions[transition_i][1]
+            transition_i += 1
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        if transition_i < len(transitions):
+            end = min(end, transitions[transition_i][0])
+        bullet_entries.append(
+            (match.group(1).strip(), body[match.start():end], internal)
+        )
+    mechanism_bullets = [entry for entry in bullet_entries if not entry[2]]
+    if len(mechanism_bullets) >= MIN_ALTERNATIVES:
         return bullet_entries
 
     entries = []
-    lines = body.splitlines()
+    raw_lines = body.splitlines(keepends=True)
+    lines = [line.rstrip("\r\n") for line in raw_lines]
+    line_starts = []
+    offset = 0
+    for raw_line in raw_lines:
+        line_starts.append(offset)
+        offset += len(raw_line)
+    transition_i = 0
+    internal = False
     for i, line in enumerate(lines):
         framed = line.strip().startswith("|") and line.strip().endswith("|")
         if not framed or not TABLE_SEPARATOR_RE.fullmatch(line):
@@ -147,12 +180,18 @@ def split_entries(body):
         header = lines[i - 1].strip()
         if not (header.startswith("|") and header.endswith("|")):
             continue
-        for row in lines[i + 1:]:
+        for row_i, row in enumerate(lines[i + 1:], i + 1):
             if not (row.strip().startswith("|") and row.strip().endswith("|")):
                 break
             m = TABLE_ROW_RE.fullmatch(row)
             if m:
-                entries.append((m.group(1).strip(), row))
+                while (
+                    transition_i < len(transitions)
+                    and transitions[transition_i][0] < line_starts[row_i]
+                ):
+                    internal = transitions[transition_i][1]
+                    transition_i += 1
+                entries.append((m.group(1).strip(), row, internal))
     return entries or bullet_entries
 
 
@@ -215,10 +254,15 @@ def validate_plan(path):
     entries = split_entries(body)
     if not entries:
         return "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows"
-    if len(entries) < MIN_ALTERNATIVES:
-        return f"fewer than 2 named alternatives (found {len(entries)})"
+    mechanism_entries = [
+        (name, entry_text)
+        for name, entry_text, internal in entries
+        if not internal
+    ]
+    if len(mechanism_entries) < MIN_ALTERNATIVES:
+        return f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
     today_year = datetime.date.today().year
-    for name, entry_text in entries:
+    for name, entry_text in mechanism_entries:
         issues = validate_entry(name, entry_text, today_year)
         if issues:
             return issues[0]
