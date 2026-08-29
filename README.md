@@ -128,7 +128,7 @@ Decided by: performance — QR is the stable first choice.
 
 Internal entries need no external citation or date, do not count toward the two mechanism alternatives, and cannot lend evidence to a mechanism entry. They may use the same bold-named bullet or framed-table shapes. A peer level-three heading ends internal scope. Mechanism entries outside the exact subsection retain every citation, date, count, and `Decided by:` requirement above.
 
-Each parsed entry must contain:
+Each parsed mechanism entry must contain:
 
 - an `http://` or `https://` URL, or a single-line backticked reference; the parser accepts 1–300 characters after the URL scheme or inside the backticks;
 - at least one four-digit year from the current year through six years earlier, counting both endpoints.

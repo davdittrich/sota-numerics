@@ -222,6 +222,58 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
         self.assertIn("missing URL or doc-ref citation", result.stderr)
         self.assertIn("no citation date", result.stderr)
 
+    def test_long_peer_h3_resumes_mechanism_bullet_scope(self):
+        peer_heading = "### " + ("X" * 201)
+        text = f"""## Alternatives Considered
+
+- **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
+- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
+
+### Internal design alternatives
+
+- **Local layout**: project-local reasoning.
+
+{peer_heading}
+
+- **Resumed mechanism**: its evidence is deliberately absent.
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+
+    def test_long_peer_h3_resumes_mechanism_table_scope(self):
+        peer_heading = "### " + ("X" * 201)
+        text = f"""## Alternatives Considered
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 1 | **Mechanism A** | `authoritative-doc-A` ({TODAY_YEAR}) |
+| 2 | **Mechanism B** | `authoritative-doc-B` ({TODAY_YEAR}) |
+
+### Internal design alternatives
+
+| Rank | Design | Rationale |
+| ---: | --- | --- |
+| 1 | **Local layout** | project-local reasoning |
+
+{peer_heading}
+
+| Rank | Mechanism | Evidence |
+| ---: | --- | --- |
+| 3 | **Resumed mechanism** | its evidence is deliberately absent |
+
+{SHAPE_DECISION}
+"""
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+
     def test_mixed_section_missing_decided_by_fails(self):
         text = DOCUMENTED_MIXED_BODY.replace(f"\n{SHAPE_DECISION}\n", "\n")
         with scratch_dir() as tmp:
@@ -401,6 +453,21 @@ class TestDocumentedSyntax(unittest.TestCase):
             or contract not in path.read_text(encoding="utf-8")
         ]
         self.assertEqual(missing, [])
+
+        readme_text = (root / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("Each parsed entry must contain:", readme_text)
+
+        checker_text = (
+            root / ".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+        ).read_text(encoding="utf-8")
+        normalized_checker_text = " ".join(checker_text.split())
+        self.assertIn(
+            "at least two named mechanism alternatives", normalized_checker_text
+        )
+        self.assertIn(
+            "Internal entries are excluded from the count and evidence validation.",
+            normalized_checker_text,
+        )
 
     def test_documented_mixed_body_exits_0(self):
         with scratch_dir() as tmp:

@@ -3,10 +3,11 @@
 D-02, D-06, D-07, D-09; RESEARCH.md Pattern 1/3, REVIEWS findings 1-3).
 
 Validates that every `*-PLAN.md` file directly inside a phase directory
-carries a compliant "## Alternatives Considered" section: >=2 named
-alternatives, each cited with a URL or doc-ref and a date within the last
-6 years, plus a `Decided by:` line naming a ranked criterion -- or the D-03
-exemption text.
+carries a compliant "## Alternatives Considered" section: at least two named
+mechanism alternatives, each cited with a URL or doc-ref and a date within the
+last 6 years, plus a `Decided by:` line naming a ranked criterion -- or the
+D-03 exemption text. Internal entries are excluded from the count and evidence
+validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
@@ -42,7 +43,7 @@ SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
-H3_HEADING_RE = re.compile(r"^###[ \t]+[^\n]{1,200}$", re.MULTILINE)
+H3_HEADING_RE = re.compile(r"^###[ \t]+[^\n]+$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
