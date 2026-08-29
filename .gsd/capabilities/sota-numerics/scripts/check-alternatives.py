@@ -37,8 +37,8 @@ MIN_ALTERNATIVES = 2
 # `10.1-02-PLAN.md` match.
 PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 
-# Anchored, bounded, no nested quantifiers (ReDoS mitigation, RESEARCH
-# Security Domain) -- every regex below follows this discipline.
+# Anchored single-line scans with no nested quantifiers (ReDoS mitigation,
+# RESEARCH Security Domain). Peer H3 content is intentionally uncapped but linear.
 SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
