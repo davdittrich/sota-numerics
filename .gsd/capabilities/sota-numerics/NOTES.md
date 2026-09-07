@@ -105,3 +105,22 @@ Until that lands, single quotes are the better of the two available failures.
 
 Do not "simplify" these back to double quotes to make an apostrophe work. That re-opens
 command substitution, which is the worse failure of the two.
+
+The one manifest-side alternative that looks like it escapes the dilemma does not. A
+quoted-delimiter heredoc — `PHASE_DIR_ARG="$(cat <<'SOTA_NUMERICS_PHASE_DIR'` / `${PHASE_DIR}`
+/ delimiter / `)"` — performs no expansion of any kind, so it accepts the apostrophe *and*
+keeps command substitution closed. Measured against the same nine name shapes, it passes all
+nine where single quotes fail on `11-o'brien`. It was still rejected, because its terminator
+is a *line*, not a character:
+
+| phase directory name | `'${PHASE_DIR}'` | quoted heredoc |
+| --- | --- | --- |
+| `11-o'brien` | `sh: unexpected EOF`, exit 2 | exit 0 |
+| `11-x` NL `SOTA_NUMERICS_PHASE_DIR` NL `touch PWNED` NL `#` | exit 2, no file created | exit 2, **`touch` ran** |
+
+A name carrying a newline plus a line equal to the delimiter closes the heredoc early and the
+rest of the name is parsed as commands. Single quotes have no such escape: only `'` ends them,
+and it ends them into a syntax error rather than into code. So the heredoc trades a
+fail-closed availability bug for a live execution hole, which is the wrong direction for this
+release. An apostrophe in a phase directory name therefore still blocks the gate, and the fix
+is still upstream — tracked as `gsd-beads-g72`.
