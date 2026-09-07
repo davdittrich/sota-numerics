@@ -93,20 +93,52 @@ git_init() {
 }
 
 # publish <dir> -- give <dir> an origin whose main holds its current HEAD
+# symbolic-ref because init.defaultBranch is the developer's, not ours: a bare
+# origin whose HEAD names a branch nobody pushed cannot be cloned (case A2).
 publish() {
   git init -q --bare "$SB/origin"
+  git -C "$SB/origin" symbolic-ref HEAD refs/heads/main
   git -C "$1" remote add origin "$SB/origin"
   git -C "$1" push -q origin HEAD:refs/heads/main
   git -C "$1" fetch -q origin
 }
 
-# --- A: bundle inside no git repository (the real plugin-cache shape) ---
+# --- A: bundle with no repository anywhere above it ---
+# Not the marketplace shape -- that is a git clone, see A2. This is the
+# unpacked-tarball case: nothing on disk has anything to say about these bytes.
 new_sandbox a
 run_hook
-[ "$(installs)" = 1 ] || fail "A: plugin-cache bundle did not install (err: $(cat "$SB/err"))"
+[ "$(installs)" = 1 ] || fail "A: bundle under no repository did not install (err: $(cat "$SB/err"))"
 grep -q -- "--scope global" "$SB/installs" || fail "A: install was not at global scope"
 [ -f "$(sidecar)" ] || fail "A: successful install did not write the hash sidecar"
 pass "A: bundle outside any git repo installs"
+
+# --- A2: the real marketplace shape -- a depth-1 clone of the plugin repo ---
+# `source: url` in a marketplace entry installs by cloning, so the plugin cache
+# IS a repository and it DOES track the bundle. The guard therefore runs on
+# every consumer machine, not only in development. Pin that it passes there.
+# This is also the only case where origin/HEAD resolves, so it is what keeps the
+# first arm of the hook's `origin/HEAD || origin/main` from being dead in test.
+new_sandbox a2
+git_init "$ROOT"
+publish "$ROOT"
+printf 'print("gate v2")\n' > "$BUNDLE/scripts/check.py"   # history above the tip
+git -C "$ROOT" add -A
+git "${GIT_ID[@]}" -C "$ROOT" commit -qm "release"
+git -C "$ROOT" push -q origin HEAD:refs/heads/main
+git clone -q --depth 1 "file://$SB/origin" "$SB/cache"
+CACHE_BUNDLE="$SB/cache/.gsd/capabilities/$CAP_ID"
+[ -f "$SB/cache/.git/shallow" ] &&
+  [ "$(git -C "$SB/cache" rev-list --count HEAD)" = 1 ] ||
+  fail "A2: precondition -- clone should be shallow with a single commit"
+git -C "$CACHE_BUNDLE" ls-files --error-unmatch . >/dev/null 2>&1 ||
+  fail "A2: precondition -- the cached bundle should be tracked by the clone"
+git -C "$CACHE_BUNDLE" rev-parse --verify --quiet origin/HEAD >/dev/null ||
+  fail "A2: precondition -- a clone should resolve origin/HEAD"
+run_hook "$SB/cache"
+[ "$(installs)" = 1 ] || fail "A2: marketplace clone did not install (err: $(cat "$SB/err"))"
+[ -f "$(sidecar)" ] || fail "A2: successful install did not write the hash sidecar"
+pass "A2: marketplace depth-1 clone is guarded and passes the guard"
 
 # --- B: tracked bundle with uncommitted changes ---
 new_sandbox b

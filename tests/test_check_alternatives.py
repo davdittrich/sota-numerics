@@ -805,6 +805,33 @@ class TestEmptyPhaseDir(unittest.TestCase):
         self.assertNotIn("PLAN.md", result.stderr)
 
 
+class TestUnreadablePlanFiles(unittest.TestCase):
+    """Pins the exit codes README's "Failures and recovery" list claims.
+
+    Both paths reach main() from validate_plan()'s path.read_text(): a decode
+    failure is a UnicodeDecodeError, which subclasses ValueError and so is
+    caught and mapped to 2, while every other OSError escapes uncaught and
+    Python exits 1. The two look alike in the source and behave differently.
+    """
+
+    def test_non_utf8_plan_exits_2(self):
+        with scratch_dir() as tmp:
+            (Path(tmp) / "01-01-PLAN.md").write_bytes(b"\xff\xfe# plan\n")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("codec can't decode", result.stderr)
+
+    def test_directory_named_like_a_plan_exits_1(self):
+        # Discovery matches on the name, so a directory named NN-NN-PLAN.md is
+        # opened as a file: IsADirectoryError escapes and the gate blocks
+        # without a remediation line.
+        with scratch_dir() as tmp:
+            (Path(tmp) / "01-01-PLAN.md").mkdir()
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("remediation:", result.stderr)
+
+
 class TestPathSafety(unittest.TestCase):
     def test_dir_with_no_planning_ancestor_exits_2(self):
         # Named for what it actually exercises. It never tested containment:

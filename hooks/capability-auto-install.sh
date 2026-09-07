@@ -83,11 +83,15 @@ fi
 # in progress machine-wide. No refusal writes
 # STATE_FILE, so a later session retries once the bundle is published.
 #
-# Ownership, not enclosure: only a repository that *tracks* the
-# bundle says anything about these bytes. A plugin cache belongs to no
-# repository, and a consumer who versions ~/.claude does not track the bundle
-# either, so both skip the guard; a monorepo vendoring the plugin does track it
-# and stays guarded, the direction an unverifiable case must err in.
+# Ownership, not enclosure: only a repository that *tracks* the bundle says
+# anything about these bytes. A marketplace `source: url` entry installs by
+# cloning, so the plugin cache is a repository and it does track the bundle:
+# this guard runs on every consumer machine, not only in development, and
+# passes there because a fresh clone is clean and its HEAD is the published
+# tip. It refuses only on a checkout somebody has edited. A consumer who
+# versions ~/.claude encloses the bundle without tracking it, so the guard does
+# not apply to that repository's state; a monorepo vendoring the plugin does
+# track it and stays guarded, the direction an unverifiable case must err in.
 if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
