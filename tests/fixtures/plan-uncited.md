@@ -13,7 +13,7 @@ user_setup: []
 
 <objective>
 Fixture plan: 2 bolded alternatives, neither carrying a URL/doc-ref citation
-nor a date (D-06/D-07 violation).
+nor a date (violates the citation and recency requirements).
 </objective>
 
 ## Alternatives Considered

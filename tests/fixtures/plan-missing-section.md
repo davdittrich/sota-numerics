@@ -13,7 +13,7 @@ user_setup: []
 
 <objective>
 Fixture plan: no "## Alternatives Considered" heading anywhere in the body
-(D-01/D-02 violation).
+(violates the section requirement).
 </objective>
 
 ## Tasks
