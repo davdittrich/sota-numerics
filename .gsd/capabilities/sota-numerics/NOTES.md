@@ -9,10 +9,8 @@ Every other gate, step, and contribution in this repo's `beads` and `ponytail` c
 uses `onError: "skip"`. `onError` governs the check COMMAND itself failing to run (missing
 python3, a crash, a timeout) — it is a separate field from the block decision, which
 gsd-core's generic `command-exit-zero` evaluator derives purely from the check command's
-exit code. A blocking gate (`blocking: true`) that silently skips when its own checker
-cannot run defeats the reason it exists: an unenforceable environment (broken interpreter,
-missing script) would otherwise look identical to a passing plan. See CONTEXT.md's
-Established Patterns section for the same rule stated at the requirements level.
+exit code. See CONTEXT.md's Established Patterns section for the same rule stated at the
+requirements level.
 
 `contributions[].onError` on this capability's four advisory fragments correctly stays
 `"skip"` — those are non-blocking steering text, and a rendering failure there should never
@@ -23,32 +21,9 @@ the contributions.
 
 ## 2. The `plan:post` gate fires late — after the plan is already committed
 
-**Re-verified against the installed `~/.claude/gsd-core/workflows/plan-phase.md` during this
-plan (Task 3), not restated from RESEARCH.md's Pitfall 1 from memory** — the cross-AI review
-(11-REVIEWS.md finding 1) asked specifically whether the documented ordering was still
-accurate after the replan. It is: the live step order is unchanged —
-§13a Decision Coverage Gate, §13b STATE.md marked "Ready to execute", §13c ROADMAP
-annotation, §13d plans committed to git (`commit_docs`), then §13e the `plan:post`
-capability gate dispatch that evaluates this capability's `check-alternatives.py`. A block at
-§13e therefore halts with the non-compliant `PLAN.md` already committed and `STATE.md`
-already claiming the phase is ready to execute. This is expected under the current gsd-core,
-not a bug in this capability.
-
-Consequence: the `gsd-plan-checker` revision loop (steps 10-12, which run *before* §13a-13e)
-is the PRIMARY enforcement point — a plan with a missing or malformed Alternatives Considered
-section should already draw a checker BLOCKER, forcing a revision before anything commits.
-The `plan:post` `command-exit-zero` gate documented here is a structural backstop, not the
-first line of defense. `plan-phase.md`'s own §13e code comment notes the branch was written
-for `gap-analysis`, which "is always `blocking: false`" — this capability is the first to
-actually exercise the `blocking: true` branch of that loop.
-
-Remediation after a §13e block is `/gsd-plan-phase <N> --force` (the closed-phase guard at
-§1.5 permits re-planning a non-`Complete` phase). This is no longer documentation-only: per
-REVIEWS finding 1's overlap with finding 3, `check-alternatives.py` itself prints
-`remediation: fix the plans above, then re-run /gsd-plan-phase <phase> --force` to stderr on
-every exit-1 run, so an operator hitting the gate sees the recovery command at the moment of
-failure without opening this file. This section explains WHY that line exists; the script is
-what makes it discoverable.
+`plan-phase.md`'s own §13e code comment notes the branch was written for `gap-analysis`,
+which "is always `blocking: false`" — this capability is the first to actually exercise the
+`blocking: true` branch.
 
 ## 3. Script path resolution and the missing-script guard
 
@@ -59,11 +34,9 @@ Question 1). Consequence: the gate only works where the bundle is installed at t
 root under `.gsd/capabilities/sota-numerics/`, which is exactly what `gsd capability
 install sota-numerics` produces (D-04's dogfood copy is this repo's own such install).
 
-The gate command carries a `test -f` guard (REVIEWS finding 3): when the plugin exists only
-in the global cache and no local install has run, the gate exits 1 with a message naming the
-missing path and the `capability install` remediation, rather than a bare `python3`
-file-not-found error. This fails closed deliberately — removing the guard, or softening it to
-exit 0, would let an uninstalled capability silently stop gating every plan in every phase.
+The gate command carries a `test -f` guard (REVIEWS finding 3). This fails closed
+deliberately — removing the guard, or softening it to exit 0, would let an uninstalled
+capability silently stop gating every plan in every phase.
 
 ## 4. D-08's route: mechanical heuristics only, LLM layer deferred
 
