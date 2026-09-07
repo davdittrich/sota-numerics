@@ -48,8 +48,11 @@ uncommitted-or-ignored test.
 
 A refusal reaches you in two situations: an environment fault, or running this
 plugin from a git checkout that tracks the bundle — a development clone or
-worktree. There are eight, on stderr once a
-session. Committing and pushing clears these three:
+worktree. There are eight, on stderr once per hook run — and the hook runs on
+session start and again on each `gsd-planner`, `gsd-executor` and
+`gsd-verifier` subagent spawn. No refusal records the bundle hash, so a refusal
+repeats on every one of those until you clear it. Committing and pushing clears
+these three:
 
 ```text
 capability-auto-install: sota-numerics bundle has uncommitted or ignored files; refusing to install it at global scope

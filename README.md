@@ -43,7 +43,7 @@ The project copy wins when both exist.
 
 ### What the Claude hooks do
 
-At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+At startup, resume, clear, or compaction — and again on every `gsd-planner`, `gsd-executor` and `gsd-verifier` subagent spawn — the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed, so a global install can fire mid-session, not only at session start. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
 A global install publishes those bytes to every project on the machine, so the hook installs only bytes the bundle's own repository records as published. It reads that from the local `origin/HEAD` or `origin/main` ref; it does not contact the remote, so a session start never waits on the network and never fails offline. Anyone who can write that ref can therefore satisfy the check — the guard is aimed at running a plugin out of a development worktree by accident, not at an adversary with write access to your own repository. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. There are eight. The first two apply to every install: the bundle walk and `git` itself are both checked before anything asks whether a repository tracks the bundle, so a plugin unpacked into a plain directory can hit either. The third fires only when git did not answer that question — a repository it will not open, or one whose index it cannot read. The last five are the publication check and need a repository that tracks the bundle.
 
@@ -62,7 +62,7 @@ The check consults only a repository that *tracks* the bundle; one that merely e
 
 Planner, executor, and verifier subagents receive role-specific banners. A normal session start uses the generic SOTA/numerics banner; calling the script directly with an unknown role falls back to that same text. Other subagent roles do not trigger this plugin's `SubagentStart` hook.
 
-Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the startup install check.
+Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the install check on any of those triggers.
 
 The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks the current repository's `gsd-core/bin/gsd-tools.cjs`, a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
 
