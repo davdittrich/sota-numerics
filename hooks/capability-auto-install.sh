@@ -52,17 +52,34 @@ NEW_HASH="$(bundle_hash)"
 # D-02 fast path: unchanged bundle exits silently, never spawns node.
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
-# Refuse a dirty bundle. Installing at global scope publishes to every project
-# on the machine, so the bytes must already be committed somewhere. When this
-# plugin is developed in a git worktree that sits inside another project, the
-# host loads that worktree as a plugin and this hook would otherwise install
-# each uncommitted edit machine-wide (gsd-beads-d2b). A bundle outside any git
-# work tree -- the normal plugin-cache install -- is unaffected. Deliberately
-# does NOT write STATE_FILE, so a later session retries once the tree is clean.
-if git -C "$BUNDLE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
-   [ -n "$(git -C "$BUNDLE_DIR" status --porcelain -- . 2>/dev/null)" ]; then
-  echo "capability-auto-install: $CAP_ID bundle has uncommitted changes; refusing to install it at global scope" >&2
-  exit 0
+# Installing at global scope publishes to every project on the machine, so only
+# already-published bytes may be installed. When this plugin is developed in a
+# git worktree that sits inside another project, the host loads that worktree as
+# a plugin and this hook would otherwise install work in progress machine-wide
+# (gsd-beads-d2b, gsd-beads-28g). Two refusals express that one invariant: the
+# tree must be clean, and HEAD must already be reachable from the published
+# upstream. A bundle outside any git work tree -- the normal plugin-cache
+# install -- skips both. Neither refusal writes STATE_FILE, so a later session
+# retries once the bundle is published.
+if git -C "$BUNDLE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain -- . 2>/dev/null)" ]; then
+    echo "capability-auto-install: $CAP_ID bundle has uncommitted changes; refusing to install it at global scope" >&2
+    exit 0
+  fi
+  PUBLISHED_REF=""
+  for _ref in origin/HEAD origin/main; do
+    if git -C "$BUNDLE_DIR" rev-parse --verify --quiet "$_ref" >/dev/null 2>&1; then
+      PUBLISHED_REF="$_ref"
+      break
+    fi
+  done
+  # Fail closed: an unresolvable upstream means we cannot prove the bytes are
+  # published, and a guard that cannot verify must not answer "safe".
+  if [ -z "$PUBLISHED_REF" ] ||
+     ! git -C "$BUNDLE_DIR" merge-base --is-ancestor HEAD "$PUBLISHED_REF" 2>/dev/null; then
+    echo "capability-auto-install: $CAP_ID bundle HEAD is not published (${PUBLISHED_REF:-no upstream ref found}); refusing to install it at global scope" >&2
+    exit 0
+  fi
 fi
 
 # gsd_tools() resolver, inlined verbatim from
