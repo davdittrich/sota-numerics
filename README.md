@@ -6,7 +6,7 @@ Make GSD compare mechanisms before execution, then keep numerical precision and 
 
 ## What it changes
 
-| GSD point | Target | Behavior |
+| GSD point | Target | Behaviour |
 | --- | --- | --- |
 | `plan:pre` | planner | Research current mechanisms, compare real alternatives, cite them, rank the decision by performance, simplicity/LOC, ecosystem support, then maintenance cost, write code that goes with the grain of the project's existing conventions, and give every task a bound the executor can check. |
 | `plan:post` | gate | Block when an eligible plan lacks the required `Alternatives Considered` structure. |
@@ -107,7 +107,7 @@ Use at least two bold-named bullets:
 Decided by: performance — QR is the stable first choice.
 ```
 
-`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognized bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
+`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognised bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
 
 A framed Markdown table also works when it has a header, a separator row, and bold-named body rows:
 
@@ -122,7 +122,7 @@ A framed Markdown table also works when it has a header, a separator row, and bo
 Decided by: performance — QR is the stable first choice.
 ```
 
-Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognized mechanism bullets take precedence; internal bullets do not affect this choice. Otherwise the checker tries the table and does not combine the two forms to reach the minimum.
+Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognised mechanism bullets take precedence; internal bullets do not affect this choice. Otherwise the checker tries the table and does not combine the two forms to reach the minimum.
 
 ### Internal design alternatives
 
@@ -239,7 +239,7 @@ This gate exists because of how coding agents fail, not how humans do. The plans
 
 Autoregressive decoding commits early. Once a model has written “I'll use X,” every later token conditions on that choice. There is no backtracking without an explicit scaffold that forces it to generate and weigh other candidates first. On SWE-bench Verified, Meta's CWM resolved 58.4 percent of tasks by taking the majority answer across sampled patches and 65.8 percent by selecting among candidates with generated tests: same model, same problems, different selection method (FAIR CodeGen team et al. 2025). DARS likewise improves coding-agent performance by branching from earlier states, generating alternatives, and selecting among them instead of accepting a single trajectory (Aggarwal et al. 2025).
 
-Coding agents also exhibit sycophancy, a documented tendency to follow the prompt's framing instead of pushing back on it; human-feedback training may help produce that behavior (Sharma et al. 2023). Agentic systems turn model outputs into later inputs, so a planner's early choice can become downstream context; this is an inference from the multi-step architecture surveyed by Zhang et al. (2025), not a result established by that survey. A model asked to judge or pick between options can also be swayed by which one it sees first, as Wang et al. (2023) demonstrate in LLM evaluation. Naming and comparing alternatives up front counters both risks. It forces the search that autoregressive generation skips by default and puts competing options in front of the model before it starts defending one.
+Coding agents also exhibit sycophancy, a documented tendency to follow the prompt's framing instead of pushing back on it; human-feedback training may help produce that behaviour (Sharma et al. 2023). Agentic systems turn model outputs into later inputs, so a planner's early choice can become downstream context; this is an inference from the multi-step architecture surveyed by Zhang et al. (2025), not a result established by that survey. A model asked to judge or pick between options can also be swayed by which one it sees first, as Wang et al. (2023) demonstrate in LLM evaluation. Naming and comparing alternatives up front counters both risks. It forces the search that autoregressive generation skips by default and puts competing options in front of the model before it starts defending one.
 
 More candidates do not always win. Sampling solutions without comparing them well can hurt. In one ICLR 2024 study, drawing two initial programs and ten repair candidates for each produced a pass rate below plain sampling at the same budget; diverse initial samples worked better than spending the budget on repeated repair (Olausson et al. 2024). That is the argument for a gate instead of a suggestion. The failure mode is not “the agent did not generate enough options.” It is “the agent generated one option and moved on.” A structural check that a plan names at least two real alternatives and states why one won closes that gap without pretending more sampling is free.
 

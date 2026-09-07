@@ -1,10 +1,10 @@
 Numerical-stability and efficiency discipline for execution is advisory only — this capability's single gate already fired at plan:post, not here.
 Derive numeric parameters (tolerances, iteration counts, thresholds, learning rates) from first principles or the problem's actual scale, not by tuning a value until a test happens to pass.
 Prefer numerically stable formulations over merely convenient ones — reformulate to avoid catastrophic cancellation (subtracting nearly-equal large quantities) and avoid letting rounding error propagate silently through a chain of operations.
-Where efficiency and simplicity conflict, favor efficiency and speed, per this project's own priority order.
+Where efficiency and simplicity conflict, favour efficiency and speed, per this project's own priority order.
 Treat the emitted code as complete and unambiguous at the point of use: write every branch the caller can reach, give every argument the code accepts a defined meaning, and name a value the caller must supply rather than defaulting it silently.
 If a simplification trades away precision, name its ceiling — the condition under which it breaks — wherever the simplification is described: in a `# ponytail:`-style comment when it lives in code, and in the prose itself when it lives in prose.
 Code an agent runs directly by hand is **quiet**: on success it prints a compact machine-readable result or nothing at all; on failure it prints one line per problem and exactly one line naming the fix, except for an input it cannot resolve at all, which gets one diagnostic and no fix line because there is nothing to fix; it signals through its exit code with no progress chatter; and when a result would flood the context window it writes the result to a file and prints that file's path.
 This rule governs scripts, CLIs, test harnesses, and hooks an agent invokes; library internals an agent never runs by hand are outside it.
-Agent-facing prose is **legible** when it is unambiguous and complete: keep each meaning in exactly one place so a comment states why and the code states what, and delete any line the reader would already honor by default.
-Phrase every instruction as the target behavior, give every completion criterion a bound the reader can check, and keep a definition next to the caveats that qualify it.
+Agent-facing prose is **legible** when it is unambiguous and complete: keep each meaning in exactly one place so a comment states why and the code states what, and delete any line the reader would already honour by default.
+Phrase every instruction as the target behaviour, give every completion criterion a bound the reader can check, and keep a definition next to the caveats that qualify it.
