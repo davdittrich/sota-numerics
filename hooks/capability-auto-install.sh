@@ -42,12 +42,11 @@ bundle_hash() {
 # mirror that id owns: the file records which bytes that mirror currently holds.
 # Two plugin roots exporting the same id do share this file, and that is
 # correct, not a race -- they share the mirror it describes. NEW_HASH covers the
-# bundle's absolute paths as well as its contents (bundle_hash below), so a
+# bundle's absolute paths as well as its contents (bundle_hash above), so a
 # switch between roots is a hash mismatch and reinstalls, rather than a fast
-# path that would leave the mirror holding the other root's bytes
-# path. Never gsd-core's own .gsd-capabilities.json /
-# ~/.gsd/consent.json -- those are gsd-core-owned schemas this script must not
-# write into.
+# path that would leave the mirror holding the other root's bytes. The sidecar
+# is never gsd-core's own .gsd-capabilities.json or ~/.gsd/consent.json --
+# those are gsd-core-owned schemas this script must not write into.
 STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
 
 OLD_HASH=""
