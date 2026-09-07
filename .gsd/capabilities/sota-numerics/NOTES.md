@@ -96,9 +96,12 @@ is fail-closed rather than a bypass, but it is a regression against 0.1.3 for th
 shape, and it is the reason this section exists.
 
 No quoting this manifest can write removes the remaining hole, because the splice is
-textual. The fix belongs upstream in gsd-core: pass the phase directory as an argv element,
-or shell-escape it at interpolation time. Until that lands, single quotes are the better of
-the two available failures.
+textual. The splice site is gsd-core's `gate-predicate-evaluator.cjs`: `INTERPOLATION_RE`
+matches the three `${PHASE_*}` names and a plain string `replace` substitutes them, after
+which the command goes to `sh -c`. So the phase directory reaches a shell as text, and no
+capability manifest can undo that from its side. The fix belongs upstream, and is one of:
+pass the phase directory as an argv element, or shell-escape it at interpolation time.
+Until that lands, single quotes are the better of the two available failures.
 
 Do not "simplify" these back to double quotes to make an apostrophe work. That re-opens
 command substitution, which is the worse failure of the two.
