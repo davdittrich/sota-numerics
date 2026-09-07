@@ -45,12 +45,14 @@ The project copy wins when both exist.
 
 At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
-A global install publishes those bytes to every project on the machine, so the hook installs only bytes it can show are already published. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. There are five:
+A global install publishes those bytes to every project on the machine, so the hook installs only bytes it can show are already published. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. There are seven:
 
 | It refuses when | stderr says | What clears it |
 | --- | --- | --- |
 | No working `git` is on `PATH`. | `git is unusable, so sota-numerics bundle provenance cannot be verified` | Install `git`. |
 | Git finds the repository holding the bundle and declines to open it — a root- or service-installed plugin, a shared checkout, a container UID remap. | `git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified` | Add a `safe.directory` entry for the checkout, or re-install the plugin as the user that runs the session. |
+| `git status` itself fails, so nothing can be said about the worktree bytes. A repository missing the object behind `HEAD`'s tree does this: `status` exits non-zero having printed nothing, while `ls-files` and `merge-base` still answer from the index and the commit objects. | `git could not report the state of the sota-numerics bundle, so its contents cannot be verified` | Repair the repository — `git fsck`, or re-clone it. |
+| The index is marked `assume-unchanged` or `skip-worktree` for bundle entries, so git will not report edits to them. | `the index marks sota-numerics bundle entries assume-unchanged or skip-worktree, so git will not report edits to them` | Clear the bit: `git update-index --no-assume-unchanged <paths>`, or `--no-skip-worktree`. |
 | The bundle holds uncommitted or gitignored files. | `sota-numerics bundle has uncommitted or ignored files` | Commit them. Running the test suite trips this: it leaves `__pycache__/` inside the bundle, which `git status` calls clean but a directory copy would still publish. Delete it. |
 | Neither `origin/HEAD` nor `origin/main` exists to prove publication. | `sota-numerics bundle has no origin/HEAD or origin/main to prove it is published` | Add the remote and fetch it. |
 | The bundle's `HEAD` is not an ancestor of that ref. | `sota-numerics bundle HEAD is not published (not an ancestor of <ref>)` | Push. |

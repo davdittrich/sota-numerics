@@ -47,24 +47,35 @@ plugin root, three directories above the bundle, outside the scope of the
 uncommitted-or-ignored test.
 
 A refusal reaches you when you run this plugin from a git checkout that tracks
-the bundle — a development clone or worktree. There are five, on stderr once a
-session. Committing and pushing clears the first three; the last two are
-environment faults and do not clear that way:
+the bundle — a development clone or worktree. There are seven, on stderr once a
+session. Committing and pushing clears these three:
 
 ```text
 capability-auto-install: sota-numerics bundle has uncommitted or ignored files; refusing to install it at global scope
 capability-auto-install: sota-numerics bundle has no origin/HEAD or origin/main to prove it is published; refusing to install it at global scope
 capability-auto-install: sota-numerics bundle HEAD is not published (not an ancestor of <ref>); refusing to install it at global scope
-capability-auto-install: git is unusable, so sota-numerics bundle provenance cannot be verified; refusing to install it at global scope
-capability-auto-install: git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified; refusing to install it at global scope
 ```
 
-The fourth means no working `git` on `PATH`; install one. The fifth means git
+The other four are faults in the environment or the index, and committing does
+nothing for any of them:
+
+```text
+capability-auto-install: git is unusable, so sota-numerics bundle provenance cannot be verified; refusing to install it at global scope
+capability-auto-install: git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified; refusing to install it at global scope
+capability-auto-install: git could not report the state of the sota-numerics bundle, so its contents cannot be verified; refusing to install it at global scope
+capability-auto-install: the index marks sota-numerics bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope
+```
+
+The first means no working `git` on `PATH`; install one. The second means git
 found a repository and declined to open it — most often a root- or
 service-installed plugin, a shared checkout, or a container UID remap, where git
 rejects the checkout for dubious ownership. Add a `safe.directory` entry for it,
-or re-install the plugin as the user that runs the session. No amount of
-committing helps.
+or re-install the plugin as the user that runs the session. The third means
+`git status` failed outright, so the worktree bytes are unknown; repair the
+repository with `git fsck` or re-clone it. The fourth means the index was told
+to stop watching bundle files — `git update-index --no-assume-unchanged` (or
+`--no-skip-worktree`) on the flagged paths clears it. README's "What the Claude
+hooks do" tabulates all seven with their remedies.
 
 The hook then installs nothing and records nothing, so the next session retries.
 The ignored-files case catches contributors by surprise: running the test suite
