@@ -29,9 +29,9 @@ from pathlib import Path
 RECENCY_WINDOW_YEARS = 6
 MIN_ALTERNATIVES = 2
 
-# Phase segment widened to `\d+(?:\.\d+)?` because beads' own
-# `^(\d{2}-\d{2})-PLAN\.md$` pattern is too narrow to match a sub-numbered
-# phase directory -- both `11-01-PLAN.md` and `10.1-02-PLAN.md` must match.
+# Phase segment is `\d+(?:\.\d+)?` rather than a fixed `\d{2}`, so a
+# sub-numbered phase directory matches: both `11-01-PLAN.md` and
+# `10.1-02-PLAN.md` are plan files.
 PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 
 # Anchored single-line scans with no nested quantifiers, so no crafted

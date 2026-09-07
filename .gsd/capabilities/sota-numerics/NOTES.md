@@ -5,8 +5,7 @@ This capability ships with a few choices that look wrong at a glance and will at
 
 ## 1. `gates[0].onError` is `"halt"`, deliberately
 
-Every other gate, step, and contribution in this repo's `beads` and `ponytail` capabilities
-uses `onError: "skip"`. `onError` routes a *thrown* evaluator error, and gsd-core's predicate
+`onError` routes a *thrown* evaluator error, and gsd-core's predicate
 evaluator throws on exactly two things: a malformed predicate declaration and an unknown
 `predicate.kind`. Every runtime outcome of the check command itself is mapped to a block
 verdict instead — a missing `python3` (exit 127), a crash (exit 1) and the 30s timeout all
