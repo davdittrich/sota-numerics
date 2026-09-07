@@ -64,5 +64,43 @@ rm -rf "$EMPTY_HOME"
 echo "$ERR" | grep -q "gate script not found at project or global scope" || fail "case2: missing message text"
 pass "case2: script missing at both scopes exits 1 with clear message"
 
+# --- Case 3: a hostile phase directory name reaches the checker as data ---
+# gsd-core substitutes ${PHASE_DIR} textually and hands the result to `sh -c`
+# (gate-predicate-evaluator.cjs:41-53, check-command-router.cjs:985-987), so the
+# quoting in capability.json is the only thing between a directory name and the
+# shell. There is no argv or env channel to use instead.
+#
+# Every shape below must leave PWNED uncreated. The apostrophe case additionally
+# pins a KNOWN LIMITATION rather than a desired behaviour: a single quote in the
+# name terminates the literal, `sh` fails to parse the command before any of it
+# runs, and the blocking gate rejects an otherwise valid phase with exit 2. That
+# is a fail-CLOSED availability bug. It is recorded because the alternatives are
+# worse -- double quotes restore command substitution, and a quoted-delimiter
+# heredoc is terminated by a newline in the name, which executes. The real fix is
+# upstream: pass the phase directory as an argv element, or escape it at the
+# interpolation site.
+for spec in 'plain:11-plain' \
+            'cmdsub:11-$(touch PWNED)-x' \
+            'backtick:11-`touch PWNED`-x' \
+            'semicolon:11-semi;touch PWNED' \
+            'dquote:11-quote"x' \
+            'apostrophe:11-o'"'"'brien'; do
+  label="${spec%%:*}"; name="${spec#*:}"
+  H="$(mktemp -d)"; mkdir -p "$H/.planning" "$H/$name" 2>/dev/null || { rm -rf "$H"; continue; }
+  printf '## Alternatives Considered\n\n- A vs B. Decided by: speed.\n\nSeen 2024.\n' \
+    > "$H/$name/01-01-PLAN.md"
+  ( cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$(gate_cmd_for "$H/$name")" ) >/dev/null 2>&1
+  rc=$?
+  if [ -e "$H/PWNED" ] || [ -e "$H/$name/PWNED" ]; then
+    rm -rf "$H"; fail "case3/$label: the phase directory name was executed as shell source"
+  fi
+  if [ "$label" = apostrophe ] && [ "$rc" -ne 2 ]; then
+    rm -rf "$H"
+    fail "case3/apostrophe: expected the documented exit 2; got $rc -- if upstream now escapes the splice, delete this arm and the NOTES.md section 6 entry"
+  fi
+  rm -rf "$H"
+done
+pass "case3: hostile phase directory names reach the checker as data, not shell source"
+
 echo "ALL PASS"
 exit 0
