@@ -46,8 +46,9 @@ from. The host's own `.in_use/` and `.orphaned_at` bookkeeping sits at the
 plugin root, three directories above the bundle, outside the scope of the
 uncommitted-or-ignored test.
 
-A refusal reaches you when you run this plugin from a git checkout that tracks
-the bundle — a development clone or worktree. There are eight, on stderr once a
+A refusal reaches you in two situations: an environment fault, or running this
+plugin from a git checkout that tracks the bundle — a development clone or
+worktree. There are eight, on stderr once a
 session. Committing and pushing clears these three:
 
 ```text
@@ -78,7 +79,10 @@ session. `could not report the state` means `git status` failed outright, so the
 worktree bytes are unknown; repair the repository with `git fsck` or re-clone
 it. `the index marks` means the index was told to stop watching bundle files;
 `git update-index --no-assume-unchanged` (or `--no-skip-worktree`) on the
-flagged paths clears it. README's "What the Claude hooks do" tabulates all eight
+flagged paths clears it. Of the eight, only `could not be read in full`,
+`git is unusable` and `cannot read the repository` can reach an install no
+repository tracks; the other five are decided inside a tracked bundle.
+README's "What the Claude hooks do" tabulates all eight
 with their remedies.
 
 The hook then installs nothing and records nothing, so the next session retries.
