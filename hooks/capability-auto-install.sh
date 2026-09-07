@@ -45,7 +45,7 @@ bundle_hash() {
 # bundle's absolute paths as well as its contents (bundle_hash below), so a
 # switch between roots is a hash mismatch and reinstalls, rather than a fast
 # path that would leave the mirror holding the other root's bytes
-# (gsd-beads-9ap). Never gsd-core's own .gsd-capabilities.json /
+# path. Never gsd-core's own .gsd-capabilities.json /
 # ~/.gsd/consent.json -- those are gsd-core-owned schemas this script must not
 # write into.
 STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
@@ -58,7 +58,7 @@ NEW_HASH="$(bundle_hash)"
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
 # Fail closed: every question below is asked through git, and a git that cannot
-# answer is not an answer of "safe" (gsd-beads-iy2). `command -v` alone misses a
+# answer is not an answer of "safe". `command -v` alone misses a
 # git that is on PATH but exits non-zero, which reads as "not a repo".
 if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
   echo "capability-auto-install: git is unusable, so $CAP_ID bundle provenance cannot be verified; refusing to install it at global scope" >&2
@@ -68,10 +68,10 @@ fi
 # Installing at global scope publishes to every project on the machine, so only
 # already-published bytes may be installed: this plugin is developed in a git
 # worktree the host loads as a plugin, and the hook would otherwise mirror work
-# in progress machine-wide (gsd-beads-d2b, gsd-beads-28g). No refusal writes
+# in progress machine-wide. No refusal writes
 # STATE_FILE, so a later session retries once the bundle is published.
 #
-# Ownership, not enclosure (gsd-beads-70t): only a repository that *tracks* the
+# Ownership, not enclosure: only a repository that *tracks* the
 # bundle says anything about these bytes. A plugin cache belongs to no
 # repository, and a consumer who versions ~/.claude does not track the bundle
 # either, so both skip the guard; a monorepo vendoring the plugin does track it
@@ -80,7 +80,7 @@ if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
   # machine-wide, and plain `status --porcelain` reports it as clean
-  # (gsd-beads-ju2 -- running the test suite leaves __pycache__/ in the bundle).
+  # (running the test suite leaves __pycache__/ inside the bundle).
   if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain --ignored -- . 2>/dev/null)" ]; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
