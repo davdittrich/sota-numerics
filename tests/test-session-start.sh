@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Stdlib-only smoke test (N5): no framework, no fixtures dir. Every config case
-# runs against a scratch project dir under mktemp -d -- this repo's own
-# project config is never written to (ponytail-everywhere precedent, review
-# finding 2).
+# runs against a scratch project dir under mktemp -d, with HOME and GSD_HOME
+# redirected into it -- neither this repo's project config nor the developer's
+# real ~/.gsd is written to (ponytail-everywhere precedent, review finding 2).
+#
+# The HOME redirect is load-bearing, not hygiene: session-start.sh:6 invokes
+# capability-auto-install.sh, which on a clean published checkout writes the
+# real ${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics mirror and its hash
+# sidecar. Running this suite must never perform a real global install
+# (gsd-beads-fma).
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,16 +18,58 @@ PLUGIN_DIR="$REPO_ROOT"
 fail() { echo "FAIL: $1"; exit 1; }
 pass() { echo "PASS: $1"; }
 
-trap '[ -n "${SCRATCH:-}" ] && rm -rf "$SCRATCH" 2>/dev/null' EXIT
+# Snapshot the real global GSD state before any redirect, so the last assertion
+# can prove the suite did not touch it.
+REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
+real_gsd_state() {
+  ls -d "$REAL_GSD/capabilities/sota-numerics" \
+        "$REAL_GSD/capability-auto-install-sota-numerics.hash" 2>&1
+}
+REAL_GSD_BEFORE="$(real_gsd_state)"
+REAL_HOME="$HOME"
+
+trap 'HOME="$REAL_HOME"; rm -rf "${SCRATCH:-}" "${STUB_DIR:-}" 2>/dev/null' EXIT
+
+# session-start.sh reads config through gsd_tools, and hooks/gsd-tools.sh's last
+# resolution rung is ${CLAUDE_CONFIG_DIR:-$HOME/.claude} -- which the HOME
+# redirect above correctly hides, so without a stub every config case would
+# silently fall back to the no-gsd-tools default. Ship the stub here rather than
+# in ci.yml so a laptop and a runner exercise the same path. Rung 2
+# (`command -v gsd-tools`) picks it up regardless of HOME.
+STUB_DIR="$(mktemp -d)"
+cat > "$STUB_DIR/gsd-tools" <<'STUB'
+#!/usr/bin/env bash
+set -u
+[ "${1:-}" = "config-get" ] || { echo "gsd-tools stub: unsupported command '${1:-}'" >&2; exit 1; }
+KEY="$2"; DEFAULT=""; shift 2
+while [ $# -gt 0 ]; do case "$1" in --default) DEFAULT="${2:-}"; shift 2 ;; *) shift ;; esac; done
+python3 - "$KEY" "$DEFAULT" <<'PY'
+import json, sys
+key, value = sys.argv[1], sys.argv[2]
+try:
+    with open(".planning/config.json") as fh:
+        node = json.load(fh)
+    for part in key.split("."):
+        node = node[part]
+    value = str(node).lower() if isinstance(node, bool) else str(node)
+except Exception:
+    pass
+sys.stdout.write(value)
+PY
+STUB
+chmod +x "$STUB_DIR/gsd-tools"
+PATH="$STUB_DIR:$PATH"
 
 # mk_scratch <config-json-body-or-empty>
-# Creates a scratch project dir and cds into it. Sets SCRATCH. Passing an
-# empty string skips writing config.json entirely (case 1: no config present).
+# Creates a scratch project dir and cds into it. Sets SCRATCH and points HOME
+# and GSD_HOME at a home inside it. Passing an empty string skips writing
+# config.json entirely (case 1: no config present).
 mk_scratch() {
   SCRATCH="$(mktemp -d)"
   local _pdir=".planning"
   local _cfg="config.json"
-  mkdir -p "$SCRATCH/$_pdir"
+  mkdir -p "$SCRATCH/$_pdir" "$SCRATCH/home"
+  export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home"
   if [ -n "$1" ]; then
     printf '%s\n' "$1" > "$SCRATCH/$_pdir/$_cfg"
   fi
@@ -30,6 +78,8 @@ mk_scratch() {
 
 run_and_cleanup() {
   rm -rf "$SCRATCH" 2>/dev/null
+  export HOME="$REAL_HOME"
+  unset GSD_HOME
   cd "$REPO_ROOT" || { echo "FAIL: cd back to repo root failed"; exit 1; }
 }
 
@@ -88,6 +138,11 @@ run_and_cleanup
 echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "case4: injection payload did not fall back to generic framing"
 [ ! -e /tmp/sota-numerics-pwned ] || fail "case4: injection payload created /tmp/sota-numerics-pwned"
 pass "case4: role-argument injection guarded"
+
+# --- Case 5: the suite itself performed no real global install (gsd-beads-fma) ---
+[ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
+  fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
+pass "case5: real GSD_HOME untouched by the suite"
 
 echo "ALL PASS"
 exit 0
