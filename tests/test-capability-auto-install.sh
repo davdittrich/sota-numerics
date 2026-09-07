@@ -44,6 +44,10 @@
 # `rev-parse --git-dir` sees it, while in row 10 discovery itself fails and only
 # the filesystem can answer.
 #
+# The partition is reached at all only if the bundle can be read: the walk that
+# produces the hash runs first, and a walk that could not finish describes no
+# bundle (case J5).
+#
 # Plus properties that cut across the partition: a refusal must never write the
 # hash sidecar (so a later session retries), and the sidecar must never serve a
 # fast path over a mirror that no longer matches the bundle -- whether another
@@ -443,6 +447,28 @@ run_hook
 [ "$(installs)" = 0 ] || fail "J4: an untracked file hidden by status config was installed"
 err_has "uncommitted or ignored" || fail "J4: wrong refusal (err: $(cat "$SB/err"))"
 pass "J4: status configured to hide untracked bytes does not hide them from the guard"
+
+# --- J5: part of the bundle cannot be read at all ---
+# Nothing above can see this: an unreadable directory holds no tracked entry, so
+# `ls-files` has nothing to say about it, and `status` -- even with
+# --untracked-files=all -- exits 0 and prints nothing about a directory it could
+# not open. Only `find` knows, by failing. Unread bytes are not published bytes,
+# and the hash computed from the truncated listing would have been written to
+# the sidecar as if it described the whole bundle.
+new_sandbox j5
+mkdir -p "$BUNDLE/private"
+printf 'UNPUBLISHED\n' > "$BUNDLE/private/secret"
+chmod 000 "$BUNDLE/private"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)" ] ||
+  fail "J5: precondition -- git should have nothing to say about this bundle"
+run_hook
+chmod 755 "$BUNDLE/private"
+[ "$(installs)" = 0 ] || fail "J5: a bundle that could not be read in full was installed"
+err_has "could not be read in full" || fail "J5: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J5: refusal wrote a sidecar holding a truncated bundle's hash"
+grep -q "Permission denied" "$SB/err" &&
+  fail "J5: find's own error reached the user's stderr instead of a refusal"
+pass "J5: a bundle that cannot be read in full refuses"
 
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1

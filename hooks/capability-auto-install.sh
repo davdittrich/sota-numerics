@@ -45,12 +45,21 @@ fi
 # ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"} produce the
 # same path list and the same byte stream. `-exec sh -c` rather than GNU
 # `find -printf`, which BSD find does not have.
+# A partial walk is not a hash of this bundle: an unreadable subdirectory makes
+# find exit non-zero after listing everything it could reach, and the digest of
+# that truncated listing would go into the sidecar as if it described the whole
+# directory -- while nothing else can see the gap, since git has no entry for
+# bytes it never tracked. So the status is read and the walk is not piped
+# straight into sort, which would discard it. Its stderr is redirected for the
+# same reason it is checked: `find: ...: Permission denied` on a user's terminal
+# at SessionStart is this hook failing to say what it means.
 bundle_hash() {
-  find "$BUNDLE_DIR" \
+  local _list
+  _list="$(find "$BUNDLE_DIR" \
        -type l -exec sh -c 'for p in "$@"; do printf "%s -> %s\n" "$p" "$(readlink "$p")"; done' _ {} + \
     -o -type f -exec "${HASH_CMD[@]}" {} + \
-    -o -print |
-    LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
+    -o -print 2>/dev/null)" || return 1
+  printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
 # One sidecar file per capability id, matching the single global
@@ -66,7 +75,10 @@ STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
 
 OLD_HASH=""
 [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
-NEW_HASH="$(bundle_hash)"
+if ! NEW_HASH="$(bundle_hash)"; then
+  echo "capability-auto-install: the $CAP_ID bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope" >&2
+  exit 0
+fi
 
 # Fast path: an unchanged bundle exits silently and never spawns node, which
 # is what keeps this affordable on every SessionStart.
