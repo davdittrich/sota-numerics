@@ -85,7 +85,7 @@
       "when": "sota-numerics.enabled",
       "blocking": true,
       "onError": "halt",
-      "description": "onError is deliberately \"halt\", diverging from every other gate in this repo (beads' two ship:pre gates both use \"skip\"): this governs only the check COMMAND itself failing to run (missing python3, crash, timeout) — the block decision comes separately, from the exit code, via gsd-core's generic command-exit-zero evaluator. A blocking gate that silently skips on its own command failure defeats its purpose. Do not \"fix\" this back to \"skip\"."
+      "description": "onError is deliberately \"halt\", diverging from every other gate in this repo (beads' two ship:pre gates both use \"skip\"): it routes a malformed predicate declaration or an unknown predicate kind — the only outcomes gsd-core's predicate evaluator throws on. Every runtime outcome of the check command itself is mapped to a block verdict instead: a missing python3 exits 127, a crash exits 1, and the 30s timeout all produce block, and only exit 0 does not. A blocking gate that silently skips when its own manifest is malformed defeats its purpose. Do not \"fix\" this back to \"skip\"."
     }
   ]
 }
