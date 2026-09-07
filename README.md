@@ -167,7 +167,7 @@ Handled outcomes use these exit codes:
 
 - `0`: all matching plans pass, or no matching plans exist;
 - `1`: one or more plans violate the gate;
-- `2`: the phase path is missing, is not a directory, has no `.planning` ancestor within ten levels, or resolves outside that project root.
+- `2`: the phase path is not an existing directory, or has no `.planning` ancestor within ten levels.
 
 Unexpected filesystem errors are not converted to `2`; they escape as Python errors and the blocking gate halts. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name can take this path.
 
