@@ -34,7 +34,7 @@ codex plugin add sota-numerics@gsd-beads
 
 The marketplace remains in `davdittrich/gsd-beads`; its entry points to this repository.
 
-The GSD capability itself declares support for every GSD runtime. Automatic startup installation and role banners come from Claude's `SessionStart` and `SubagentStart` hooks, so other hosts must not assume those hooks ran. On any host, the gate can use a capability bundle at either of these locations:
+The GSD capability itself declares support for every GSD runtime. Automatic startup installation and role banners come from Claude's `SessionStart` and `SubagentStart` hooks. On any host, including one where those hooks never ran, the gate can use a capability bundle at either of these locations:
 
 1. `<project>/.gsd/capabilities/sota-numerics`
 2. `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics`
@@ -177,7 +177,7 @@ You can run the checker directly:
 python3 .gsd/capabilities/sota-numerics/scripts/check-alternatives.py .planning/phases/11-example
 ```
 
-Under the current gsd-core plan workflow, `plan:post` runs after the plan commit. The plan checker should catch a bad section earlier; this gate is the fail-closed backstop. If the gate fires, fix the plans and rerun the phase with `--force` as printed.
+Under the current gsd-core plan workflow, `plan:post` runs after the plan commit. The plan checker should catch a bad section earlier; this gate is the fail-closed backstop.
 
 If the gate script is absent from both project and global scope, the gate exits with a direct installation error instead of silently passing.
 
