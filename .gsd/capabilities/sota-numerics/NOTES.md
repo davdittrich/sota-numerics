@@ -28,13 +28,17 @@ which "is always `blocking: false`" — this capability is the first to actually
 
 ## 3. Script path resolution and the missing-script guard
 
-The gate command resolves the script through `$(git rev-parse --show-toplevel)` rather than
-`${CLAUDE_PLUGIN_ROOT}`: gsd-core runs the check command at the runtime project root with the
-parent process's environment inherited, which makes the project root a reliable anchor and
-leaves the plugin root dependent on a variable this capability does not set. The command then
-falls back to `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/`, so a global-scope-only
-install resolves too. `README.md` states the full resolution order and its precedence rule;
-this note records only why the project root is found the way it is.
+Write `_SN` for `.gsd/capabilities/sota-numerics/scripts/check-alternatives.py`. The gate
+command tries three paths in order: `./$_SN`, then `$(git rev-parse --show-toplevel)/$_SN`,
+then `${GSD_HOME:-$HOME}/$_SN`. gsd-core runs the check command at the runtime project root
+with the parent process's environment inherited, so the first rung reaches the project copy
+with no Git at all. The second finds that same copy when the working directory is below the
+project root, and the third resolves a global-scope-only install. `README.md` lists the two
+locations and the rule that the project copy wins; the order above is how that rule is met.
+
+`${CLAUDE_PLUGIN_ROOT}` is used at no rung: it is a variable this capability does not set, so
+it would leave the lookup dependent on the host, where the project root is an anchor gsd-core
+itself establishes.
 
 The gate command carries a `test -f` guard. This fails closed
 deliberately — removing the guard, or softening it to exit 0, would let an uninstalled

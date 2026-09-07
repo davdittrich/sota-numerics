@@ -212,7 +212,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
 - gsd-core 1.10.0 or newer.
-- Git. The project-scope gate lookup uses it, and a global-only install still works when that lookup fails. Claude's automatic global install also uses it to show the bundle is already published, and refuses to install when Git cannot answer.
+- Git. The gate does not need it: the project copy resolves relative to the project root, and a global-only install resolves under `${GSD_HOME:-$HOME}`. Git only widens the project lookup to working directories below the project root. Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
 ## Update or remove
