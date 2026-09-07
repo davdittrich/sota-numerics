@@ -86,15 +86,27 @@ SECTION_HEADING_RE = re.compile(
 # in-section construct, so bounding on H3 would cut the body short and drop
 # the `Decided by:` line that follows it. Bounding earlier only ever shrinks
 # the body, which is the fail-closed direction.
-# A setext H1 underline (`===`) ends the section too: the heading TEXT line
-# above it is harmless (it is not an entry), but bullets below it would
-# otherwise be donated into the section the way an ATX H1 once was.
-# `-` underlines are deliberately NOT a boundary: `---` is equally a
-# thematic break and a frontmatter fence, so treating it as one would
-# false-BLOCK a plan that puts a horizontal rule inside the section. `=`
-# has no such second meaning. Bounding earlier only shrinks the body, so
-# every case this moves, it moves fail-closed.
-NEXT_HEADING_RE = re.compile(r"^[ \t]{0,3}(?:#{1,2}[ \t]+|=+[ \t]*$)", re.MULTILINE)
+# A setext H1 ends the section too: the heading TEXT line is not an entry, but
+# bullets below it would otherwise be donated into the section the way an ATX
+# H1 once was. The boundary is placed at the TEXT line, not the underline, so
+# the heading itself falls outside the section exactly as `## Later` does.
+#
+# The underline alone is NOT enough, and that was a real defect rather than a
+# nicety. A bare `=+` run with no preceding text line is a horizontal rule, not
+# a heading -- CommonMark requires a paragraph immediately above -- and firing
+# on it truncated the section at the rule and discarded every alternative below
+# it. Measured before this predicate: a `===` rule between two compliant
+# entries reported "fewer than 2 named alternatives (found 1)", a false block
+# on a plan that had both, with a diagnostic naming neither the rule nor the
+# truncation. `-` underlines are deliberately NOT a boundary at all: `---` is
+# equally a thematic break and a frontmatter fence, so treating it as one would
+# false-block the commonest horizontal rule of the two. `=` has no such second
+# meaning once the paragraph predecessor is required.
+NEXT_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}#{1,2}[ \t]+"
+    r"|^[ \t]{0,3}[^\s][^\n]*\n[ \t]{0,3}=+[ \t]*$",
+    re.MULTILINE,
+)
 H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
@@ -369,15 +381,43 @@ def mask_fenced_regions(text):
 
 
 def extract_section_body(text):
-    """Text from just after the heading line to the next `## ` heading or EOF.
-    Returns None if the heading is absent."""
+    """The section body, and what ended it.
+
+    Returns `(body, boundary)`, or `(None, None)` when the heading is absent.
+    `body` runs from just after the `## Alternatives Considered` line to the
+    next H1/H2 heading or EOF. `boundary` is None when the section reaches EOF,
+    else `(heading_line, tail)` -- the heading that ended it, and everything
+    from that heading onward.
+
+    The boundary is returned rather than discarded so a diagnostic can tell
+    "this is absent" from "this is below the line where the section ended".
+    Both produce the same exit code and ask the author for opposite things,
+    and the second reads as a false accusation when reported as the first: the
+    `Decided by:` line the gate said was missing was visible on screen, three
+    lines down, under a heading the author had not noticed writing.
+    """
     m = SECTION_HEADING_RE.search(text)
     if not m:
-        return None
+        return None, None
     start = m.end()
     next_m = NEXT_HEADING_RE.search(text, start)
-    end = next_m.start() if next_m else len(text)
-    return text[start:end]
+    if next_m is None:
+        return text[start:], None
+    end = next_m.start()
+    return text[start:end], (text[end:].split("\n", 1)[0].strip(), text[end:])
+
+
+def below_the_boundary(boundary, *patterns):
+    """A clause naming the boundary when what the section lacks is below it."""
+    if boundary is None:
+        return ""
+    heading, tail = boundary
+    if not any(p.search(tail) for p in patterns):
+        return ""
+    return (
+        f"; the section ended at the heading '{heading}' and what it needs is"
+        " below that heading -- move the heading down, or the content up"
+    )
 
 
 def is_exempt(body):
@@ -518,7 +558,7 @@ def validate_plan(path):
             f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start});"
             " re-save the plan as UTF-8"
         ) from exc
-    body = extract_section_body(mask_fenced_regions(text))
+    body, boundary = extract_section_body(mask_fenced_regions(text))
     if body is None:
         return "missing '## Alternatives Considered' section"
     if is_exempt(body):
@@ -532,14 +572,20 @@ def validate_plan(path):
         if not internal
     ]
     if len(mechanism_entries) < MIN_ALTERNATIVES:
-        return f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
+        return (
+            f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
+            + below_the_boundary(boundary, BULLET_RE, TABLE_ROW_RE)
+        )
     today_year = datetime.date.today().year
     for name, entry_text in mechanism_entries:
         issues = validate_entry(name, entry_text, today_year)
         if issues:
             return issues[0]
     if not DECIDED_BY_RE.search(body):
-        return "no 'Decided by:' line naming a ranked criterion"
+        return (
+            "no 'Decided by:' line naming a ranked criterion"
+            + below_the_boundary(boundary, DECIDED_BY_RE)
+        )
     return None
 
 

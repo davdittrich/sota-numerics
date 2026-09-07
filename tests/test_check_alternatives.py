@@ -619,9 +619,61 @@ class TestSectionBoundary(unittest.TestCase):
     def test_thematic_break_does_not_end_the_section(self):
         # `---` is a setext H2 underline AND a thematic break AND a frontmatter
         # fence. Treating it as a boundary would false-BLOCK a plan that puts a
-        # horizontal rule between its alternatives, so `=` is a boundary and `-`
-        # deliberately is not. This pins that asymmetry as intended.
+        # horizontal rule between its alternatives, so `-` is never a boundary.
         self.assert_stays_inside("---")
+
+    def test_bare_setext_rule_does_not_end_the_section(self):
+        # `===` with nothing above it is a horizontal rule, not a heading:
+        # CommonMark makes an underline a heading only under a paragraph. The
+        # first version of the setext boundary fired on the run alone, cut the
+        # section at the rule, and reported "fewer than 2 named alternatives
+        # (found 1)" on a plan that had two -- a false block whose diagnostic
+        # named neither the rule nor the truncation, on a gate that halts
+        # planning.
+        self.assert_stays_inside("===")
+
+    def test_a_truncating_heading_is_named_in_the_count_message(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, split_across_boundary("Timing table\n============"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.assertIn("the section ended at the heading 'Timing table'",
+                      result.stderr)
+
+    def test_a_truncating_heading_is_named_rather_than_a_missing_field(self):
+        # Same exit code, opposite instruction to the author. The
+        # `Decided by:` line is not absent -- it is three lines down, below a
+        # heading nobody noticed writing. Reported as absence, the message
+        # sends the author to fix a line that is already correct, which is how
+        # a correct block still wastes the round.
+        entries = "\n".join(
+            f"- **{name}**: {prose} {citation} ({year})."
+            for name, prose, citation, year in SHAPE_ENTRIES)
+        with scratch_dir() as tmp:
+            write_plan(tmp, f"## Alternatives Considered\n\n{entries}\n\n"
+                            f"Timing table\n============\n\n{SHAPE_DECISION}\n")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no 'Decided by:' line", result.stderr)
+        self.assertIn("the section ended at the heading 'Timing table'",
+                      result.stderr)
+
+    def test_a_boundary_is_not_blamed_when_the_field_is_simply_absent(self):
+        # The note exists to stop a misdiagnosis. Firing it unconditionally
+        # would be the same misdiagnosis pointing the other way: sending an
+        # author to move a heading when what they owe is a line they never
+        # wrote.
+        entries = "\n".join(
+            f"- **{name}**: {prose} {citation} ({year})."
+            for name, prose, citation, year in SHAPE_ENTRIES)
+        with scratch_dir() as tmp:
+            write_plan(tmp, f"## Alternatives Considered\n\n{entries}\n\n"
+                            "## Approach\n\nNothing relevant here.\n")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no 'Decided by:' line", result.stderr)
+        self.assertNotIn("the section ended at the heading", result.stderr)
 
     def test_h3_does_not_end_the_section(self):
         self.assert_stays_inside("### Notes")
@@ -850,6 +902,52 @@ class TestFencedRegions(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    # FENCE_LINE_RE's three conditions -- the `^` anchor, the three-marker
+    # minimum, and the backtick info-string rule -- each transcribe a CommonMark
+    # requirement, and each was unpinned: all three could be removed and the
+    # whole suite stayed green (ponytail-2 F-Py-4). Every one of them fails in
+    # the same direction, which is why nothing caught them: a false opener
+    # blanks to EOF, so the section reads as truncated and a compliant plan is
+    # BLOCKED. A gate that halts planning on correct input is not the safe
+    # error. One case each, and each asserts the reason.
+
+    def test_a_backtick_run_mid_line_does_not_open_a_fence(self):
+        # CommonMark: a fence opener starts its line. Without the anchor, prose
+        # that ends in a marker opens a fence nothing closes.
+        text, _ = bullet_plan()
+        plan = text.replace(SHAPE_DECISION,
+                            "The marker is written ```\n\n" + SHAPE_DECISION)
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_two_marker_run_does_not_open_a_fence(self):
+        # CommonMark: three or more. Strikethrough at the start of a line is
+        # two tildes, and the info-string rule below does not cover tildes, so
+        # the count is the only thing keeping this from opening a fence.
+        text, _ = bullet_plan()
+        plan = text.replace(SHAPE_DECISION,
+                            "~~An earlier approach~~ is not considered.\n\n"
+                            + SHAPE_DECISION)
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_backtick_info_string_does_not_open_a_fence(self):
+        # CommonMark: a backtick fence's info string may not contain a
+        # backtick, which is what makes ```code``` an inline code span on its
+        # own line rather than an opener.
+        text, _ = bullet_plan()
+        plan = text.replace(SHAPE_DECISION,
+                            "```code``` is how this plan writes it.\n\n"
+                            + SHAPE_DECISION)
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class TestHtmlComments(unittest.TestCase):
     """An `## Alternatives Considered` inside an HTML comment renders nothing,
@@ -989,6 +1087,22 @@ class TestCurrentPhaseResolution(unittest.TestCase):
             result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2)
         self.assertIn("current_phase", result.stderr)
+
+    def test_state_md_without_frontmatter_blocks(self):
+        # Without the guard the resolver dereferences a None match and dies on
+        # a traceback -- still non-zero, but exit 1 means "these plans are bad"
+        # and nothing here was ever read. Only the shell suite touched this
+        # path, and it does not reach this shape.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "11-plain").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "# Project State\n\ncurrent_phase: 11\n", encoding="utf-8")
+            write_plan(root / ".planning" / "phases" / "11-plain",
+                       fixture_text("plan-compliant.md"), name="11-01-PLAN.md")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("no YAML frontmatter block", result.stderr)
 
     def test_current_phase_in_prose_does_not_redirect_the_gate(self):
         # Phase identity must come from the frontmatter, never from document
