@@ -131,12 +131,17 @@ echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "ca
 pass "case3d: bogus role falls back to generic"
 
 # --- Case 4: injection-shaped role argument -> falls through to generic, no side effect ---
-rm -f /tmp/sota-numerics-pwned
+# The payload target lives inside the per-run scratch dir, not at a fixed /tmp
+# path: a fixed name in a world-writable shared namespace can be pre-created by
+# another user, which turns this assertion into a false failure, or symlinked,
+# which turns a passing run into a write somewhere else (gsd-beads-91q).
 mk_scratch '{"sota-numerics": {"enabled": true}}'
-OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "x; touch /tmp/sota-numerics-pwned")"
+PWNED="$SCRATCH/pwned"
+OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "x; touch $PWNED")"
+[ -e "$PWNED" ] && PWNED_CREATED=yes || PWNED_CREATED=no
 run_and_cleanup
 echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "case4: injection payload did not fall back to generic framing"
-[ ! -e /tmp/sota-numerics-pwned ] || fail "case4: injection payload created /tmp/sota-numerics-pwned"
+[ "$PWNED_CREATED" = no ] || fail "case4: injection payload created $PWNED"
 pass "case4: role-argument injection guarded"
 
 # --- Case 5: the suite itself performed no real global install (gsd-beads-fma) ---
