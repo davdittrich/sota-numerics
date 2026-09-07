@@ -1,7 +1,7 @@
 {
   "name": "sota-numerics",
-  "version": "0.1.3",
-  "description": "SOTA-research/numerical-stability advisory steering across gsd's plan/execute/verify/ship lifecycle, plus a blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase",
+  "version": "0.2.0",
+  "description": "SOTA-research/numerical-stability advisory steering across gsd's plan/execute/verify/ship lifecycle -- now also steering toward internal/project consistency, unambiguity, completeness, efficiency, and agent-facing quiet code -- plus a blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase",
   "author": {
     "name": "Dennis A. V. Dittrich",
     "email": "davdittrich@gmail.com"
