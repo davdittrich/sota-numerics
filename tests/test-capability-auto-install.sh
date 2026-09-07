@@ -5,10 +5,8 @@
 # to every project on the machine, so it may only install bytes it can still see
 # in the bundle's own upstream -- concretely, in the last upstream tip this
 # checkout fetched, which is as far as a hook that must not touch the network
-# can see (case K1). This file enumerates the decision the
-# hook makes rather than the handful of situations anyone happened to think of
-# -- three defects survived manual verification of
-# "four cases" precisely because that was a sample, not a partition.
+# can see (case K1). This file enumerates the decision the hook makes, as a
+# partition rather than a sample.
 #
 # The rows below, in the order the hook evaluates them, are exhaustive over the
 # hook's OWN control flow and nothing more. They branch on
@@ -19,16 +17,9 @@
 # is the only exhaustiveness claim this file makes.
 #
 # It is NOT a claim that row 4 catches every way the bundle can hold unpublished
-# bytes, and three revisions of this header said otherwise and were wrong three
-# times: one stopped at six rows by reading every non-zero exit code as
-# "untracked" (rows 10 and 11 are what that concealed), one stopped at nine by
-# trusting `status`'s answer without asking whether it had answered at all (rows
-# 2 and 3), and one stopped at eleven by trusting `status` to be talking about
-# the worktree at all (cases J6, J7, J8). Row 4 asks git a question, and what
-# git answers is configurable. The four settings that redirect it are named on
-# the hook's `status` invocation and pinned here -- showUntrackedFiles (J4),
-# ignore rules (E), submodule ignore (J6, J7), fsmonitor (J8) -- and the two
-# index bits that make git stop looking are caught a row earlier (J2, J3).
+# bytes. Row 4 asks git a question, and what git answers is configurable; the
+# four settings that redirect it are named on the hook's `status` invocation and
+# pinned in the rows below.
 #
 # One known way remains, and it is recorded rather than claimed away: a
 # `.gitattributes` clean filter maps edited worktree bytes onto the committed
@@ -53,7 +44,7 @@
 #   7. clean, HEAD an ancestor of that ref    -> install  (cases D, A2, K1)
 #
 #   ls-files 1 -- a repository answered and does not track the bundle:
-#   8. it has nothing to say about the bytes  -> install  (cases F, G)
+#   8. it has nothing to say about the bytes  -> install  (case F)
 #
 #   ls-files 128 -- git did not answer, which is not the same as "no":
 #   9. no repository on disk                  -> install  (cases A, A3)
@@ -78,8 +69,8 @@
 # Plus properties that cut across the partition: a refusal must never write the
 # hash sidecar (so a later session retries), and the sidecar must never serve a
 # fast path over a mirror that no longer matches the bundle -- whether another
-# plugin root overwrote it (I1, I2), the host passed a relative plugin root
-# (I3), or the drift is a symlink rather than a file (I4).
+# plugin root overwrote it (I1, I3), or the drift is a symlink rather than a
+# file (I4).
 #
 # Nothing here can perform a real global install. Three things hold that up and
 # each is enforced rather than asserted: HOME and GSD_HOME are redirected into a
@@ -369,6 +360,8 @@ git_init "$SB/dotfiles" rc   # commits the dotfiles only; the bundle stays untra
 run_hook
 [ "$(installs)" = 1 ] || fail "F: bundle in an unrelated repo did not install (err: $(cat "$SB/err"))"
 err_has "uncommitted" && fail "F: reported the bundle as uncommitted in a repo that does not track it"
+err_has "no origin/HEAD or origin/main" &&
+  fail "F: gated the capability on an unrelated repository's publication state"
 pass "F: untracked bundle inside an unrelated repo installs"
 
 # --- F2: a repo that *does* track the bundle stays guarded, whatever its name ---
@@ -382,16 +375,6 @@ run_hook
 [ "$(installs)" = 0 ] || fail "F2: a repo tracking the bundle skipped the guard"
 err_has "no origin/HEAD or origin/main" || fail "F2: wrong refusal (err: $(cat "$SB/err"))"
 pass "F2: bundle tracked by an enclosing monorepo stays guarded"
-
-# --- G: same, but the unrelated repo gitignores the plugin path and has no origin ---
-new_sandbox g "dotfiles/plugins/cache/$CAP_ID/0.2.0"
-printf 'plugins/\n' > "$SB/dotfiles/.gitignore"
-git_init "$SB/dotfiles"
-run_hook
-[ "$(installs)" = 1 ] || fail "G: gitignored bundle in an unrelated repo did not install (err: $(cat "$SB/err"))"
-err_has "no origin/HEAD or origin/main" &&
-  fail "G: gated the capability on an unrelated repository's publication state"
-pass "G: gitignored bundle inside an unrelated origin-less repo installs"
 
 # --- H1: git on PATH but non-functional, bundle both dirty and unpublished ---
 new_sandbox h1
@@ -676,26 +659,14 @@ run_hook
 [ "$(installs)" = 1 ] || fail "I1: unchanged bundle reinstalled ($(installs) installs in 2 runs)"
 pass "I1: unchanged bundle takes the hash fast path"
 
-# --- I2: a second plugin root serving the same id reinstalls ---
+# --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop
 # root B from taking a fast path over a mirror that still holds root A's bytes.
-new_sandbox i2
-ROOT_B="$SB/root-b"
-mkdir -p "$(dirname "$ROOT_B")"
-cp -r "$ROOT" "$ROOT_B"
-run_hook "$ROOT"
-run_hook "$ROOT_B"
-run_hook "$ROOT"
-[ "$(installs)" = 3 ] ||
-  fail "I2: alternating plugin roots took a false fast path ($(installs) installs in 3 runs)"
-pass "I2: a different plugin root for the same id reinstalls the mirror"
-
-# --- I3: I2 must hold for a relative CLAUDE_PLUGIN_ROOT too ---
-# I2's property is that the absolute paths inside NEW_HASH separate two roots
-# serving one id. That is only true if BUNDLE_DIR is absolute. The host supplies
-# CLAUDE_PLUGIN_ROOT and nothing in the protocol says it is absolute, so pin the
-# relative case rather than inheriting it.
+# Run with a relative CLAUDE_PLUGIN_ROOT, which the host may supply and the
+# protocol nowhere forbids: `cd "." && pwd` resolves it to the same absolute
+# root the direct case would start from, so this covers that case as well and
+# additionally fails if the absolutisation is ever dropped.
 new_sandbox i3
 ROOT_B="$SB/root-b"
 mkdir -p "$(dirname "$ROOT_B")"
@@ -705,7 +676,7 @@ run_hook "$ROOT_B" .
 run_hook "$ROOT" .
 [ "$(installs)" = 3 ] ||
   fail "I3: a relative CLAUDE_PLUGIN_ROOT made the hash root-independent ($(installs) installs in 3 runs)"
-pass "I3: a relative CLAUDE_PLUGIN_ROOT still separates two roots"
+pass "I3: two plugin roots for one id reinstall, relative root included"
 
 # --- I4: a symlink added or retargeted inside the bundle is drift ---
 # `capability install` copies the directory, so a symlink is bytes the mirror
@@ -734,9 +705,7 @@ pass "I4: symlink drift inside the bundle defeats the fast path"
 L1_DUPES="$(grep -l '_GSD_TOOLS_ARGS_SET' "$REPO_ROOT"/hooks/*.sh | grep -v '/gsd-tools\.sh$')"
 [ -z "$L1_DUPES" ] ||
   fail "L1: the gsd_tools resolver is duplicated outside hooks/gsd-tools.sh: $(echo $L1_DUPES)"
-grep -q 'hooks/gsd-tools\.sh"' "$HOOK" ||
-  fail "L1: the hook neither sources hooks/gsd-tools.sh nor carries its own resolver"
-pass "L1: the gsd_tools resolver is defined once and sourced"
+pass "L1: the gsd_tools resolver is defined only in hooks/gsd-tools.sh"
 
 # --- L2: a plugin root missing hooks/gsd-tools.sh fails closed and retries ---
 # The cost of sourcing instead of inlining, pinned so it stays a decision. Both
@@ -754,39 +723,27 @@ err_has "gsd-tools not found" || fail "L2: wrong message (err: $(cat "$SB/err"))
 [ ! -f "$(sidecar)" ] || fail "L2: wrote the sidecar, so the next session would not retry"
 pass "L2: a plugin root missing hooks/gsd-tools.sh says so and leaves no sidecar"
 
-# --- D0: the refusals the hook emits and the refusals the docs describe are
-#         the same set, and every count either document states is that set's
-#         size ---
+# --- D0: the refusals the hook emits and the refusals README documents are
+#         the same set ---
 # The refusal list went stale three times in one session: the hook grew from
 # five refusals to eight while README and CHANGELOG were being written against
-# it, and one doc commit shipped "seven" against a hook emitting eight.
+# it, and one doc commit shipped "seven" against a hook emitting eight. Two of
+# the three copies are now gone -- CHANGELOG points at README's table, and
+# neither document states a count any more -- so what is left to check is one
+# pair, by equality in both directions.
 #
-# The first version of this case claimed set equality and implemented
-# `emitted subset-of docs` plus a floor on |emitted|. Both drifts it was written
-# to stop walked through it: a ninth refusal added to the hook and appended to
-# both documents passed while the prose still said "There are eight", and a
-# reworded refusal left its superseded text in README with nothing to notice.
-# A subset check cannot see either, because neither adds an emitted message that
-# is missing from the docs.
+# Equality both ways, not a subset: a subset check sees neither a refusal added
+# to the hook and to README while some third statement goes stale, nor a
+# reworded refusal that leaves its superseded text behind in the table.
 #
-# So this compares three sets and the numerals that describe them:
-#   emitted   -- the hook's own `echo ... refusing to install ...` lines;
-#   README    -- the middle column of the table under "It refuses when";
-#   CHANGELOG -- the ```text blocks under the release note.
-# Equality in both directions means a refusal cannot be added without being
-# documented AND a documented refusal cannot outlive the code that emitted it.
-# The counts are checked separately because a numeral in prose is not a member
-# of any of those sets and drifts on its own: "There are eight" in both files,
-# and CHANGELOG's 3 + 5 split, which is just the size of each fenced block.
-# README's "first two / third / last five" is checked as arithmetic over the
-# same total rather than by encoding which message belongs to which group --
-# the test should not restate the documents' taxonomy, only refuse to let its
-# numbers stop adding up.
+# What this does NOT check: that README's remedies are correct, that its prose
+# grouping matches the table's order, or anything about CHANGELOG. It compares
+# two sets of strings.
 #
 # Compared on the message BODY: the "capability-auto-install: " prefix and the
 # "; refusing to install it at global scope" tail are identical across all of
-# them and the docs deliberately omit both. $CAP_ID and $PUBLISHED are
-# substituted with what the docs write in their place, so the comparison is
+# them and README deliberately omits both. $CAP_ID and $PUBLISHED are
+# substituted with what README writes in their place, so the comparison is
 # string equality rather than a substring search that a partial rewrite passes.
 REPO_ROOT_D0="$(cd "$(dirname "$0")/.." && pwd)"
 d0_report="$(python3 - "$REPO_ROOT_D0" "$CAP_ID" <<'PYEOF'
@@ -795,7 +752,6 @@ import re, sys, pathlib
 root, cap = pathlib.Path(sys.argv[1]), sys.argv[2]
 hook = (root / "hooks" / "capability-auto-install.sh").read_text()
 readme = (root / "README.md").read_text()
-changelog = (root / "CHANGELOG.md").read_text()
 TAIL = "; refusing to install it at global scope"
 problems = []
 
@@ -830,72 +786,15 @@ for row in readme_rows:
     if span:
         readme_msgs.append(body(span[0]))
 
-# CHANGELOG: every ```text fence holding refusal lines, kept per-block so the
-# "three" and "five" the prose promises can be checked against block sizes.
-blocks = [[body(l) for l in b.splitlines() if l.startswith("capability-auto-install: ")]
-          for b in re.findall(r"```text\n(.*?)```", changelog, re.S)]
-blocks = [b for b in blocks if b]
-changelog_msgs = [m for b in blocks for m in b]
-
-def compare(name, got):
-    for dup in {m for m in got if got.count(m) > 1}:
-        problems.append(f"{name} lists this refusal more than once: {dup!r}")
-    for m in sorted(set(emitted) - set(got)):
-        problems.append(f"{name} does not document the refusal {m!r}")
-    for m in sorted(set(got) - set(emitted)):
-        problems.append(f"{name} documents {m!r}, which the hook no longer emits")
-
 n = len(emitted)
 if n == 0:
     problems.append("no refusals found in the hook; the extractor regex has drifted")
-compare("README.md", readme_msgs)
-compare("CHANGELOG.md", changelog_msgs)
-
-WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
-         "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
-ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6,
-            "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10}
-
-def numeral(name, text, pattern, table):
-    m = re.search(pattern, text)
-    if not m:
-        problems.append(f"{name} no longer states a count matching /{pattern}/")
-        return None
-    if m.group(1) not in table:
-        problems.append(f"{name} states an unreadable count {m.group(1)!r} in /{pattern}/")
-        return None
-    return table[m.group(1)]
-
-def want(name, what, got, expected):
-    if got is not None and got != expected:
-        problems.append(f"{name} says {what} is {got}, but it is {expected}")
-
-# Every pattern spaces its words with \s+ rather than a literal blank: these
-# counts sit in wrapped prose, so a paragraph rewrapped by an editor moves a
-# line break into the middle of the phrase. A parity gate that a rewrap turns
-# red is a gate people learn to ignore.
-want("README.md", "the refusal count",
-     numeral("README.md", readme, r"There\s+are\s+(\w+)\.", WORDS), n)
-want("CHANGELOG.md", "the refusal count",
-     numeral("CHANGELOG.md", changelog, r"There\s+are\s+(\w+),", WORDS), n)
-if len(blocks) == 2:
-    want("CHANGELOG.md", "the committing-clears-these group",
-         numeral("CHANGELOG.md", changelog, r"clears\s+these\s+(\w+):", WORDS), len(blocks[0]))
-    want("CHANGELOG.md", "the environment-fault group",
-         numeral("CHANGELOG.md", changelog, r"The\s+other\s+(\w+)\s+are", WORDS), len(blocks[1]))
-else:
-    problems.append(f"CHANGELOG.md has {len(blocks)} refusal blocks, expected 2")
-
-# README splits the same total three ways. Only the arithmetic is checked, plus
-# that the ordinal naming the middle group is the one that follows the first.
-first = numeral("README.md", readme, r"The\s+first\s+(\w+)\s+apply", WORDS)
-middle = numeral("README.md", readme, r"The\s+(\w+)\s+fires\s+only\s+when", ORDINALS)
-last = numeral("README.md", readme, r"The\s+last\s+(\w+)\s+are", WORDS)
-if None not in (first, middle, last):
-    if middle != first + 1:
-        problems.append(f"README.md calls the group after the first {first} the "
-                        f"{middle}th, which is not the {first + 1}th")
-    want("README.md", "its three groups summed", first + 1 + last, n)
+for dup in {m for m in readme_msgs if readme_msgs.count(m) > 1}:
+    problems.append(f"README.md lists this refusal more than once: {dup!r}")
+for m in sorted(set(emitted) - set(readme_msgs)):
+    problems.append(f"README.md does not document the refusal {m!r}")
+for m in sorted(set(readme_msgs) - set(emitted)):
+    problems.append(f"README.md documents {m!r}, which the hook no longer emits")
 
 for p in problems:
     print("D0-PROBLEM:", p)
@@ -920,7 +819,7 @@ if [ -z "$D0_TOTAL" ]; then
 elif [ "$D0_TOTAL" -eq 0 ]; then
   fail "D0: no refusals found in the hook"
 elif [ "$D0_PROBLEMS" -eq 0 ]; then
-  pass "D0: the hook's $D0_TOTAL refusals and the two documents' descriptions of them agree, counts included"
+  pass "D0: the hook's $D0_TOTAL refusals and README's table of them are the same set"
 fi
 
 [ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }

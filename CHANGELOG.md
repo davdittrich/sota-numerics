@@ -50,49 +50,11 @@ uncommitted-or-ignored test.
 
 A refusal reaches you in two situations: an environment fault, or running this
 plugin from a git checkout that tracks the bundle — a development clone or
-worktree. There are eight, on stderr once per hook run — and the hook runs on
-session start and again on each `gsd-planner`, `gsd-executor` and
-`gsd-verifier` subagent spawn. No refusal records the bundle hash, so a refusal
-repeats on every one of those until you clear it. Committing and pushing clears
-these three:
-
-```text
-capability-auto-install: sota-numerics bundle has uncommitted or ignored files; refusing to install it at global scope
-capability-auto-install: sota-numerics bundle has no origin/HEAD or origin/main to prove it is published; refusing to install it at global scope
-capability-auto-install: sota-numerics bundle HEAD is not published (not an ancestor of <ref>); refusing to install it at global scope
-```
-
-The other five are faults in the environment, the bundle's permissions, or the
-index, and committing does nothing for any of them:
-
-```text
-capability-auto-install: the sota-numerics bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope
-capability-auto-install: git is unusable, so sota-numerics bundle provenance cannot be verified; refusing to install it at global scope
-capability-auto-install: git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified; refusing to install it at global scope
-capability-auto-install: git could not report the state of the sota-numerics bundle, so its contents cannot be verified; refusing to install it at global scope
-capability-auto-install: the index marks sota-numerics bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope
-```
-
-`could not be read in full` means the walk over the bundle hit a directory it
-could not enter; make the bundle readable and searchable to the user that runs
-the session. `git is unusable` means no working `git` on `PATH`; install one.
-`cannot read the repository` covers two faults with one message: git would not
-open the repository — most often a root- or service-installed plugin, a shared
-checkout, or a container UID remap, where git rejects the checkout for dubious
-ownership — or git opened the repository and could not read its index.
-`git -C <bundle> rev-parse --git-dir` tells them apart: it fails for the first
-and prints a path for the second. Add a `safe.directory` entry, or re-install
-the plugin as the user that runs the session, for the first; `safe.directory`
-does nothing for the second, which needs a readable `.git/index`, a `git fsck`,
-or a re-clone. `could not report the state` means `git status` failed outright,
-so the worktree bytes are unknown; repair the repository with `git fsck` or
-re-clone it. `the index marks` means the index was told to stop watching bundle files;
-`git update-index --no-assume-unchanged` (or `--no-skip-worktree`) on the
-flagged paths clears it. Of the eight, only `could not be read in full`,
-`git is unusable` and `cannot read the repository` can reach an install no
-repository tracks; the other five are decided inside a tracked bundle.
-README's "What the Claude hooks do" tabulates all eight
-with their remedies.
+worktree. It goes to stderr once per hook run — and the hook runs on session
+start and again on each `gsd-planner`, `gsd-executor` and `gsd-verifier`
+subagent spawn. No refusal records the bundle hash, so a refusal repeats on
+every one of those until you clear it. README's "What the Claude hooks do"
+tabulates every refusal, the stderr it prints, and what clears it.
 
 The hook then installs nothing and records nothing, so the next session retries.
 The ignored-files case catches contributors by surprise: running the test suite
