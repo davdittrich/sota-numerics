@@ -52,6 +52,19 @@ NEW_HASH="$(bundle_hash)"
 # D-02 fast path: unchanged bundle exits silently, never spawns node.
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
+# Refuse a dirty bundle. Installing at global scope publishes to every project
+# on the machine, so the bytes must already be committed somewhere. When this
+# plugin is developed in a git worktree that sits inside another project, the
+# host loads that worktree as a plugin and this hook would otherwise install
+# each uncommitted edit machine-wide (gsd-beads-d2b). A bundle outside any git
+# work tree -- the normal plugin-cache install -- is unaffected. Deliberately
+# does NOT write STATE_FILE, so a later session retries once the tree is clean.
+if git -C "$BUNDLE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+   [ -n "$(git -C "$BUNDLE_DIR" status --porcelain -- . 2>/dev/null)" ]; then
+  echo "capability-auto-install: $CAP_ID bundle has uncommitted changes; refusing to install it at global scope" >&2
+  exit 0
+fi
+
 # gsd_tools() resolver, inlined verbatim from
 # hooks/gsd-tools.sh in the ponytail-everywhere repo rather than sourced -- the
 # root plugin ships no gsd-tools.sh, and an inline copy keeps this script
