@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Vendored auto-install hook (D-05: vendored copy per plugin, not shared at
-# runtime -- see hooks/capability-auto-install.sh in the ponytail-everywhere repo
-# for the byte-identical sibling copy, Phase 10.1 Plan 02).
+# runtime). The ponytail-everywhere repo carries a sibling copy of this file
+# which has not yet taken the publication guard added in sota-numerics 0.2.0,
+# so the two have diverged and neither may be edited as a copy of the other.
 #
 # Detects bundle drift via a whole-directory hash and re-grants the
 # capability at global ("user") scope on every SessionStart (D-01..D-03).
