@@ -746,6 +746,82 @@ class TestSupportedEntryShapes(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+class TestBulletIndentationBound(unittest.TestCase):
+    """`BULLET_RE` and the framed table-row scan bound their leading
+    indentation to CommonMark's zero-to-three-space top-level range (D-03,
+    REVIEW-CRITICAL-FINAL P1-1(b)). Unbounded, either scan let a
+    four-space-indented sub-entry -- nested under an organizational
+    top-level bullet that names no mechanism of its own -- satisfy the
+    "at least two named alternatives" requirement, on a plan that named
+    exactly zero alternatives at the level the requirement is about.
+    `mask_indented_code_blocks` (D-02, plan 24-01) does not close this: it
+    deliberately never masks a line inside an open list item, because an
+    ordinary continuation paragraph under a bullet must stay readable.
+    """
+
+    def test_entries_stated_only_as_four_space_sub_bullets_are_not_top_level(self):
+        text = (
+            "## Alternatives Considered\n\n"
+            "- Candidates evaluated:\n"
+            f"    - **Householder QR**: stable. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"    - **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance -- QR is the stable first choice.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("section found but no alternatives parsed", result.stderr)
+
+    def test_entries_stated_only_as_four_space_table_rows_are_not_top_level(self):
+        text = (
+            "## Alternatives Considered\n\n"
+            "- Candidates evaluated:\n\n"
+            "    | Rank | Mechanism | Evidence |\n"
+            "    |---:|---|---|\n"
+            f"    | 1 | **Householder QR**: stable. | `https://numpy.org/doc` ({TODAY_YEAR}). |\n"
+            f"    | 2 | **Pivoted LU**: baseline. | `https://scipy.org/doc` ({TODAY_YEAR}). |\n\n"
+            "Decided by: performance -- QR is the stable first choice.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("section found but no alternatives parsed", result.stderr)
+
+    def test_zero_to_three_space_indented_bullets_still_count(self):
+        # CommonMark's own top-level range: a bullet indented up to three
+        # spaces is unaffected by the bound and must keep passing.
+        text = (
+            "## Alternatives Considered\n\n"
+            f"   - **Householder QR**: stable. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"   - **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance -- QR is the stable first choice.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_compliant_top_level_entry_still_draws_citation_from_a_sub_bullet(self):
+        # D-05's negative case: a compliant top-level entry that carries an
+        # indented sub-bullet underneath must still count, and the
+        # sub-bullet must still contribute its citation/year to the parent
+        # entry -- the bound applies only to what counts as a NEW top-level
+        # entry, never to a top-level entry's own continuation content.
+        text = (
+            "## Alternatives Considered\n\n"
+            "- **Householder QR**: stable algorithm.\n"
+            f"    - Citation: `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"- **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance -- QR is the stable first choice.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestCitationAndDate(unittest.TestCase):
     """Citation and recency-date requirements."""
 
