@@ -56,7 +56,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$REPO_ROOT/hooks/capability-auto-install.sh"
 CAP_ID="sota-numerics"
 
-fail() { echo "FAIL: $1"; exit 1; }
+# Record and continue rather than exit: one broken case otherwise masks every
+# case after it, and a partition is only useful if a run reports which of its
+# rows are red. Continuing also reaches the chmod that each unreadable-repo case
+# undoes, without which the sandbox cannot be removed on the way out.
+FAILURES=0
+fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
 REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
@@ -438,5 +443,6 @@ pass "I4: symlink drift inside the bundle defeats the fast path"
   fail "I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
 pass "I0: real GSD_HOME untouched by the suite"
 
+[ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }
 echo "ALL PASS"
 exit 0

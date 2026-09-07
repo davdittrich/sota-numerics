@@ -15,7 +15,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$REPO_ROOT/hooks/session-start.sh"
 PLUGIN_DIR="$REPO_ROOT"
 
-fail() { echo "FAIL: $1"; exit 1; }
+# Record and continue rather than exit, so one broken case does not mask the
+# rest of the run. The two cd failures below stay fatal: they are the harness
+# itself failing, not a case, and continuing would run the remaining cases in
+# the wrong directory.
+FAILURES=0
+fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
 # Snapshot the real global GSD state before any redirect, so the last assertion
@@ -149,5 +154,6 @@ pass "case4: role-argument injection guarded"
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
 pass "case5: real GSD_HOME untouched by the suite"
 
+[ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }
 echo "ALL PASS"
 exit 0
