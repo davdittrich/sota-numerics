@@ -571,7 +571,7 @@ class TestDocumentedSyntax(unittest.TestCase):
 
 
 class TestSectionPresence(unittest.TestCase):
-    """D-01/D-02: the section heading itself."""
+    """The section heading itself."""
 
     def test_missing_section_exits_1(self):
         with scratch_dir() as tmp:
@@ -667,7 +667,7 @@ class TestSupportedEntryShapes(unittest.TestCase):
 
 
 class TestCitationAndDate(unittest.TestCase):
-    """D-06/D-07: citation and recency-date requirements."""
+    """Citation and recency-date requirements."""
 
     def test_uncited_undated_exits_1_names_both_issues(self):
         with scratch_dir() as tmp:
@@ -705,7 +705,7 @@ class TestCitationAndDate(unittest.TestCase):
 
 
 class TestDecidedBy(unittest.TestCase):
-    """D-09: the ranked-criterion line."""
+    """The ranked-criterion line."""
 
     def test_missing_decided_by_exits_1(self):
         compliant = fixture_text("plan-compliant.md")
@@ -749,7 +749,7 @@ class TestExemption(unittest.TestCase):
 
 
 class TestMultiPlanCoverage(unittest.TestCase):
-    """RESEARCH Pattern 3: every plan in the directory is checked, not just
+    """Every plan in the directory is checked, not just
     the first readdir match."""
 
     def test_multiplan_dir_exits_1_even_though_first_plan_compliant(self):

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Stdlib-only coverage for hooks/capability-auto-install.sh (gsd-beads-dsa).
+# Stdlib-only coverage for hooks/capability-auto-install.sh.
 #
 # The hook enforces one invariant: `capability install --scope global` publishes
 # to every project on the machine, so it may only install bytes that are already
 # published in the bundle's own upstream. This file enumerates the decision the
 # hook makes rather than the handful of situations anyone happened to think of
-# -- three defects (gsd-beads-70t, -iy2, -ju2) survived manual verification of
+# -- three defects survived manual verification of
 # "four cases" precisely because that was a sample, not a partition.
 #
 # The partition, in the order the hook evaluates it. It is a partition and not
@@ -44,7 +44,7 @@
 #
 # Nothing here can perform a real global install: HOME and GSD_HOME are
 # redirected into a per-case mktemp sandbox and gsd-tools is a stub that only
-# appends to a log (gsd-beads-fma). Assertion I0 proves that redirect held.
+# appends to a log. Assertion I0 proves that redirect held.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -201,7 +201,7 @@ run_hook
 [ -f "$(sidecar)" ] || fail "D: successful install did not write the hash sidecar"
 pass "D: tracked, clean, published bundle installs"
 
-# --- E: published bundle carrying gitignored bytes (gsd-beads-ju2) ---
+# --- E: published bundle carrying gitignored bytes ---
 # `capability install` copies the directory, not the index, so these bytes would
 # be mirrored machine-wide while `git status --porcelain` reports clean.
 new_sandbox e
@@ -217,7 +217,7 @@ run_hook
 err_has "uncommitted or ignored" || fail "E: no refusal for ignored bytes (err: $(cat "$SB/err"))"
 pass "E: gitignored bytes inside a clean published bundle refuse"
 
-# --- F: bundle merely enclosed by an unrelated repo, untracked (gsd-beads-70t) ---
+# --- F: bundle merely enclosed by an unrelated repo, untracked ---
 # The ~/.claude-in-git consumer. Enclosure is not ownership; that repo has
 # nothing to say about these bytes, so the guard must not apply at all.
 new_sandbox f "dotfiles/plugins/cache/$CAP_ID/0.2.0"
@@ -353,7 +353,7 @@ run_hook
 [ "$(installs)" = 1 ] || fail "I1: unchanged bundle reinstalled ($(installs) installs in 2 runs)"
 pass "I1: unchanged bundle takes the hash fast path"
 
-# --- I2: a second plugin root serving the same id reinstalls (gsd-beads-9ap) ---
+# --- I2: a second plugin root serving the same id reinstalls ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop
 # root B from taking a fast path over a mirror that still holds root A's bytes.

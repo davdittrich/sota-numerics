@@ -8,7 +8,7 @@
 # capability-auto-install.sh, which on a clean published checkout writes the
 # real ${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics mirror and its hash
 # sidecar. Running this suite must never perform a real global install
-# (gsd-beads-fma).
+# (a suite that installs for real would mutate the developer's own machine).
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -134,7 +134,7 @@ pass "case3d: bogus role falls back to generic"
 # The payload target lives inside the per-run scratch dir, not at a fixed /tmp
 # path: a fixed name in a world-writable shared namespace can be pre-created by
 # another user, which turns this assertion into a false failure, or symlinked,
-# which turns a passing run into a write somewhere else (gsd-beads-91q).
+# which turns a passing run into a write somewhere else.
 mk_scratch '{"sota-numerics": {"enabled": true}}'
 PWNED="$SCRATCH/pwned"
 OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "x; touch $PWNED")"
@@ -144,7 +144,7 @@ echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "ca
 [ "$PWNED_CREATED" = no ] || fail "case4: injection payload created $PWNED"
 pass "case4: role-argument injection guarded"
 
-# --- Case 5: the suite itself performed no real global install (gsd-beads-fma) ---
+# --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
 pass "case5: real GSD_HOME untouched by the suite"
