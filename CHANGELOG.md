@@ -5,9 +5,11 @@
 **The gate changed in four narrow ways.** `capability.json` still declares
 exactly one gate, and the rules about what a plan must contain are unchanged --
 with one exception, the fenced-code-block fix below, which changes verdicts.
-Running this release's 68-test suite against the 0.1.3 checker, 52 pass
-unchanged and 16 fail: 7 phase-resolution cases, 5 fenced-region cases, the two
-empty-argument cases, one message, and one documented-syntax case.
+Running this release's full 78-test suite against the 0.1.3 checker, 59 pass
+unchanged and 19 fail: 7 phase-resolution cases, 9 section-boundary cases
+(fenced regions, HTML comments, and the ATX, indented and setext heading
+boundaries), the two empty-argument cases, and one error-message case. Those 19
+are the behaviour this release changes; every other test passes against both.
 
 An empty phase-directory argument now prints a reason and exits `2`, which
 blocks. Under 0.1.3 the same call read the process working directory instead:
