@@ -129,8 +129,24 @@ real_gsd_state() {
 }
 REAL_GSD_BEFORE="$(real_gsd_state)"
 
+# I0 runs from the EXIT trap rather than from the foot of this file. It is the
+# assertion that the suite did not overwrite the developer's real global mirror
+# -- the incident the hook under test exists to prevent -- and an assertion that
+# only runs when everything above it succeeded is not a containment check. Any
+# exit reaches it: an early precondition, a `set -u` abort on an unbound
+# variable (which is exactly how a missing python3 used to skip it), or an
+# `exit` some future case adds mid-file. It also decides the suite's status, so
+# a leak is red even if every case passed.
 SANDBOX_ROOT="$(mktemp -d)"
-trap 'rm -rf "$SANDBOX_ROOT" 2>/dev/null' EXIT
+check_containment() {
+  if [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ]; then
+    pass "I0: real GSD_HOME untouched by the suite"
+    exit "$1"
+  fi
+  echo "FAIL: I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
+  exit 1
+}
+trap '_rc=$?; rm -rf "$SANDBOX_ROOT" 2>/dev/null; check_containment "$_rc"' EXIT
 
 # TMPDIR decides where the sandbox lands, and a sandbox inside a checkout is not
 # a sandbox: the hook's git commands would discover that repository, which both
@@ -702,43 +718,174 @@ run_hook
 [ "$(installs)" = 3 ] || fail "I4: a retargeted symlink did not change the bundle hash"
 pass "I4: symlink drift inside the bundle defeats the fast path"
 
-# --- D0: every refusal the hook can emit is documented, and nothing else is ---
+# --- D0: the refusals the hook emits and the refusals the docs describe are
+#         the same set, and every count either document states is that set's
+#         size ---
 # The refusal list went stale three times in one session: the hook grew from
 # five refusals to eight while README and CHANGELOG were being written against
-# it, and one doc commit shipped "seven" against a hook emitting eight. Each
-# drift was caught only because a human re-measured. Assert the set equality
-# instead, so adding a refusal without documenting it fails here.
+# it, and one doc commit shipped "seven" against a hook emitting eight.
 #
-# Compared on the message PREFIX, up to "; refusing to install it at global
-# scope" -- that tail is identical across all eight and the docs deliberately
-# omit it. $CAP_ID is substituted because the docs name the capability.
+# The first version of this case claimed set equality and implemented
+# `emitted subset-of docs` plus a floor on |emitted|. Both drifts it was written
+# to stop walked through it: a ninth refusal added to the hook and appended to
+# both documents passed while the prose still said "There are eight", and a
+# reworded refusal left its superseded text in README with nothing to notice.
+# A subset check cannot see either, because neither adds an emitted message that
+# is missing from the docs.
+#
+# So this compares three sets and the numerals that describe them:
+#   emitted   -- the hook's own `echo ... refusing to install ...` lines;
+#   README    -- the middle column of the table under "It refuses when";
+#   CHANGELOG -- the ```text blocks under the release note.
+# Equality in both directions means a refusal cannot be added without being
+# documented AND a documented refusal cannot outlive the code that emitted it.
+# The counts are checked separately because a numeral in prose is not a member
+# of any of those sets and drifts on its own: "There are eight" in both files,
+# and CHANGELOG's 3 + 5 split, which is just the size of each fenced block.
+# README's "first two / third / last five" is checked as arithmetic over the
+# same total rather than by encoding which message belongs to which group --
+# the test should not restate the documents' taxonomy, only refuse to let its
+# numbers stop adding up.
+#
+# Compared on the message BODY: the "capability-auto-install: " prefix and the
+# "; refusing to install it at global scope" tail are identical across all of
+# them and the docs deliberately omit both. $CAP_ID and $PUBLISHED are
+# substituted with what the docs write in their place, so the comparison is
+# string equality rather than a substring search that a partial rewrite passes.
 REPO_ROOT_D0="$(cd "$(dirname "$0")/.." && pwd)"
-doc_parity="$(python3 - "$REPO_ROOT_D0" <<'PYEOF'
+d0_report="$(python3 - "$REPO_ROOT_D0" "$CAP_ID" <<'PYEOF'
 import re, sys, pathlib
-root = pathlib.Path(sys.argv[1])
+
+root, cap = pathlib.Path(sys.argv[1]), sys.argv[2]
 hook = (root / "hooks" / "capability-auto-install.sh").read_text()
 readme = (root / "README.md").read_text()
 changelog = (root / "CHANGELOG.md").read_text()
-emitted = [m for m in re.findall(r'echo "capability-auto-install: ([^"]+)" >&2', hook)
-           if "refusing to install" in m]
-def key(m):
-    body = m.split("; refusing to install")[0]
-    body = body.replace("$CAP_ID", "sota-numerics").replace("${CAP_ID}", "sota-numerics")
-    return re.sub(r"\s*\$\{?\w+\}?\s*\)?$", "", body).strip()
-missing = [key(m) for m in emitted if key(m) not in readme or key(m) not in changelog]
-print(len(emitted), len(missing), "|".join(missing))
+TAIL = "; refusing to install it at global scope"
+problems = []
+
+def body(msg):
+    msg = msg.split(TAIL)[0]
+    msg = re.sub(r"\$\{?CAP_ID\}?", cap, msg)
+    msg = re.sub(r"\$\{?PUBLISHED\}?", "<ref>", msg)
+    return msg.removeprefix("capability-auto-install: ").strip()
+
+emitted = [body(m) for m in re.findall(r'echo "(capability-auto-install: [^"]+)" >&2', hook)
+           if TAIL in m]
+
+# README: the rows of the table whose header names the refusals. Anchoring on
+# the header rather than on "any table row holding a code span" keeps this from
+# silently matching some other table if this one is moved or renamed -- it
+# fails loudly instead, which is the correct answer for a parity gate.
+readme_rows = []
+lines = readme.splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("| It refuses when |"):
+        for row in lines[i + 2:]:
+            if not row.startswith("|"):
+                break
+            readme_rows.append(row)
+        break
+else:
+    problems.append("README.md has no table headed '| It refuses when |'")
+readme_msgs = []
+for row in readme_rows:
+    cells = row.split("|")
+    span = re.findall(r"`([^`]+)`", cells[2] if len(cells) > 2 else "")
+    if span:
+        readme_msgs.append(body(span[0]))
+
+# CHANGELOG: every ```text fence holding refusal lines, kept per-block so the
+# "three" and "five" the prose promises can be checked against block sizes.
+blocks = [[body(l) for l in b.splitlines() if l.startswith("capability-auto-install: ")]
+          for b in re.findall(r"```text\n(.*?)```", changelog, re.S)]
+blocks = [b for b in blocks if b]
+changelog_msgs = [m for b in blocks for m in b]
+
+def compare(name, got):
+    for dup in {m for m in got if got.count(m) > 1}:
+        problems.append(f"{name} lists this refusal more than once: {dup!r}")
+    for m in sorted(set(emitted) - set(got)):
+        problems.append(f"{name} does not document the refusal {m!r}")
+    for m in sorted(set(got) - set(emitted)):
+        problems.append(f"{name} documents {m!r}, which the hook no longer emits")
+
+n = len(emitted)
+if n == 0:
+    problems.append("no refusals found in the hook; the extractor regex has drifted")
+compare("README.md", readme_msgs)
+compare("CHANGELOG.md", changelog_msgs)
+
+WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+         "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6,
+            "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10}
+
+def numeral(name, text, pattern, table):
+    m = re.search(pattern, text)
+    if not m:
+        problems.append(f"{name} no longer states a count matching /{pattern}/")
+        return None
+    if m.group(1) not in table:
+        problems.append(f"{name} states an unreadable count {m.group(1)!r} in /{pattern}/")
+        return None
+    return table[m.group(1)]
+
+def want(name, what, got, expected):
+    if got is not None and got != expected:
+        problems.append(f"{name} says {what} is {got}, but it is {expected}")
+
+# Every pattern spaces its words with \s+ rather than a literal blank: these
+# counts sit in wrapped prose, so a paragraph rewrapped by an editor moves a
+# line break into the middle of the phrase. A parity gate that a rewrap turns
+# red is a gate people learn to ignore.
+want("README.md", "the refusal count",
+     numeral("README.md", readme, r"There\s+are\s+(\w+)\.", WORDS), n)
+want("CHANGELOG.md", "the refusal count",
+     numeral("CHANGELOG.md", changelog, r"There\s+are\s+(\w+),", WORDS), n)
+if len(blocks) == 2:
+    want("CHANGELOG.md", "the committing-clears-these group",
+         numeral("CHANGELOG.md", changelog, r"clears\s+these\s+(\w+):", WORDS), len(blocks[0]))
+    want("CHANGELOG.md", "the environment-fault group",
+         numeral("CHANGELOG.md", changelog, r"The\s+other\s+(\w+)\s+are", WORDS), len(blocks[1]))
+else:
+    problems.append(f"CHANGELOG.md has {len(blocks)} refusal blocks, expected 2")
+
+# README splits the same total three ways. Only the arithmetic is checked, plus
+# that the ordinal naming the middle group is the one that follows the first.
+first = numeral("README.md", readme, r"The\s+first\s+(\w+)\s+apply", WORDS)
+middle = numeral("README.md", readme, r"The\s+(\w+)\s+fires\s+only\s+when", ORDINALS)
+last = numeral("README.md", readme, r"The\s+last\s+(\w+)\s+are", WORDS)
+if None not in (first, middle, last):
+    if middle != first + 1:
+        problems.append(f"README.md calls the group after the first {first} the "
+                        f"{middle}th, which is not the {first + 1}th")
+    want("README.md", "its three groups summed", first + 1 + last, n)
+
+for p in problems:
+    print("D0-PROBLEM:", p)
+print("D0-TOTAL:", n)
 PYEOF
 )"
-set -- $doc_parity
-D0_TOTAL="$1"; D0_MISSING="$2"
-[ "$D0_TOTAL" -ge 8 ] || fail "D0: found only $D0_TOTAL refusals in the hook; the extractor regex has drifted"
-[ "$D0_MISSING" -eq 0 ] || fail "D0: $D0_MISSING refusal(s) undocumented in README.md or CHANGELOG.md: ${doc_parity#* * }"
-pass "D0: all $D0_TOTAL refusals documented verbatim in README.md and CHANGELOG.md"
-
-# --- I0: no case above touched the developer's real global GSD state ---
-[ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
-  fail "I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
-pass "I0: real GSD_HOME untouched by the suite"
+# read, not `set --`: an empty $d0_report (no python3 on PATH, or a python that
+# died) leaves `set --` with no positional parameters, and reading $1 under
+# `set -u` then aborts the whole suite -- silently skipping the containment
+# assertion, which is the one thing here that must never be skipped. `read`
+# leaves D0_TOTAL empty instead, which the check below reports as a failure.
+D0_TOTAL=""
+D0_PROBLEMS=0
+read -r _ D0_TOTAL <<<"$(printf '%s\n' "$d0_report" | grep '^D0-TOTAL:')"
+while IFS= read -r _problem; do
+  [ -n "$_problem" ] || continue
+  fail "D0: ${_problem#D0-PROBLEM: }"
+  D0_PROBLEMS=$((D0_PROBLEMS + 1))
+done <<<"$(printf '%s\n' "$d0_report" | grep '^D0-PROBLEM:')"
+if [ -z "$D0_TOTAL" ]; then
+  fail "D0: the doc-parity check produced no result; is python3 on PATH?"
+elif [ "$D0_TOTAL" -eq 0 ]; then
+  fail "D0: no refusals found in the hook"
+elif [ "$D0_PROBLEMS" -eq 0 ]; then
+  pass "D0: the hook's $D0_TOTAL refusals and the two documents' descriptions of them agree, counts included"
+fi
 
 [ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }
 echo "ALL PASS"
