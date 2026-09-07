@@ -16,6 +16,12 @@ jobs:
       - name: session-start smoke test
         run: bash tests/test-session-start.sh
 
+      # Self-contained: every case builds its own git repos, bare origin and
+      # stub gsd-tools under mktemp -d, so the runner's own shallow checkout
+      # (whose HEAD is not reachable from origin/main) is never the subject.
+      - name: capability auto-install guard test
+        run: bash tests/test-capability-auto-install.sh
+
       - name: gate script resolution test
         run: bash tests/test-gate-script-resolution.sh
 
