@@ -8,19 +8,39 @@
 # -- three defects (gsd-beads-70t, -iy2, -ju2) survived manual verification of
 # "four cases" precisely because that was a sample, not a partition.
 #
-# The partition, in the order the hook evaluates it:
+# The partition, in the order the hook evaluates it. It is a partition and not
+# a list because it branches on `git ls-files --error-unmatch`, whose three
+# exit codes are exhaustive by construction -- 0, 1, and everything else -- and
+# because each of those three is then split on conditions that are themselves
+# complementary. An earlier version of this header stopped at six rows by
+# reading every non-zero exit code as "untracked", and rows 8 and 9 are the two
+# halves of what that concealed.
 #
-#   1. git unusable                          -> refuse   (cases H1, H2)
-#   2. bundle not tracked by an enclosing repo
-#      (no repo at all, or an unrelated one) -> install  (cases A, F, G)
-#   3. tracked, uncommitted or ignored bytes -> refuse   (cases B, E)
-#   4. tracked, clean, no upstream ref       -> refuse   (case C2)
-#   5. tracked, clean, HEAD not upstream     -> refuse   (case C)
-#   6. tracked, clean, HEAD published        -> install  (case D)
+#   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
-# Plus two properties that cut across it: a refusal must never write the hash
-# sidecar (so a later session retries), and the sidecar must never serve a fast
-# path for a mirror some other plugin root has since overwritten (cases I1, I2).
+#   ls-files 0 -- a repository tracks the bundle:
+#   2. uncommitted or ignored bytes           -> refuse   (cases B, E)
+#   3. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
+#   4. clean, HEAD not an ancestor of it      -> refuse   (case C)
+#   5. clean, HEAD published                  -> install  (cases D, A2)
+#
+#   ls-files 1 -- a repository answered and does not track the bundle:
+#   6. it has nothing to say about the bytes  -> install  (cases F, G)
+#
+#   ls-files 128 -- git did not answer, which is not the same as "no":
+#   7. no repository on disk                  -> install  (cases A, A3)
+#   8. a repository git will not open         -> refuse   (cases H3, H5)
+#   9. a repository whose index it cannot read-> refuse   (case H4)
+#
+# Rows 8 and 9 are separate because they need different evidence: in row 9 git
+# has already opened the repository, so `rev-parse --git-dir` sees it, while in
+# row 8 discovery itself fails and only the filesystem can answer.
+#
+# Plus properties that cut across the partition: a refusal must never write the
+# hash sidecar (so a later session retries), and the sidecar must never serve a
+# fast path over a mirror that no longer matches the bundle -- whether another
+# plugin root overwrote it (I1, I2), the host passed a relative plugin root
+# (I3), or the drift is a symlink rather than a file (I4).
 #
 # Nothing here can perform a real global install: HOME and GSD_HOME are
 # redirected into a per-case mktemp sandbox and gsd-tools is a stub that only
