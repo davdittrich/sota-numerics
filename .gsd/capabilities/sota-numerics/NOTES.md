@@ -74,53 +74,71 @@ regression — it lives outside this bundle, so a reader of an installed copy wi
 here. `planner-sota.md`, which does ship here, teaches the planner the same pairing rule. If
 either is edited, update the other — they teach and enforce one rule from two seats.
 
-## 6. Single-quoting `${PHASE_DIR}` narrows the splice; it does not close it
+## 6. The gate command is constant; the phase comes from STATE.md
 
-gsd-core builds the gate command by replacing the literal text `${PHASE_DIR}` with the
-phase directory (`gsd-core/bin/lib/gate-predicate-evaluator.cjs`, `interpolate`) and then
-runs the result through `sh -c`. The value never exists as a shell variable, so the quoting
-written in `capability.json` is the only protection there is.
+`capability.json` interpolates nothing. `grep -c PHASE_DIR capability.json` is `0`, and the
+command ends `python3 "$SOTA_SCRIPT"` with no argument. `check-alternatives.py` takes the
+phase directory as an optional positional and, given none, resolves it from
+`.planning/STATE.md`'s `current_phase` (`resolve_current_phase_dir`), then globs
+`.planning/phases/` for the single directory carrying that number. The directory name is
+read from the filesystem into Python and never reaches a shell.
 
-The gate command wraps the splice in single quotes. Measured against 0.1.3's double quotes,
-with the same phase directory holding the same passing plan:
+That is the whole fix. The injection seam is gone because there is nothing left to quote,
+not because the quoting improved.
 
-| phase directory name | 0.1.3 `"${PHASE_DIR}"` | 0.2.0 `'${PHASE_DIR}'` |
+**Do not reintroduce a splice.** gsd-core interpolates `${PHASE_DIR}` with a plain string
+`replace` and hands the result to `sh -c`, so the manifest's quoting would again be the only
+protection, and no quoting is sufficient. Every `sh` quoting context terminates on a
+delimiter the value may contain, and a directory name may hold every byte but `/` and NUL:
+
+- unquoted — any metacharacter;
+- `"..."` — a double quote, and `$` and a backtick expand inside it anyway;
+- `'...'` — an apostrophe. It does not end the literal into a syntax error; it ends it into
+  code. Measured: `sh -c "python3 -c 'pass' '11-a'; touch PWNED; :'b'"` exits 127 having
+  created `PWNED`. A previous version of this section claimed the opposite and was wrong.
+- a quoted-delimiter heredoc — a line equal to the delimiter. It survives the apostrophe,
+  which is why it looked like the way out, but a name containing a newline plus that
+  delimiter line closes it early and the rest is parsed as commands. Pinned as
+  `test-gate-script-resolution.sh` case3b.
+
+Measured against the current constant command, with a compliant plan in each directory. The
+control matters: the same gate exits `1` on `plan-missing-section.md`, so these `0`s are
+verdicts, not a gate that failed to find anything.
+
+| phase directory name | exit | side effect |
 | --- | --- | --- |
-| `11-$(touch PWNED)-x` | ran `touch`, exit 2 | no file created, exit 0 |
-| ``11-`touch PWNED2`-x`` | ran `touch`, exit 2 | no file created, exit 0 |
-| `11-o'brien` | exit 0 | `sh: unexpected EOF`, exit 2 |
+| `11-a'; touch PWNED; :'b` | 0 | none |
+| `11-o'$(touch PWNED)'brien` | 0 | none |
+| ``11-x'`touch PWNED`'y`` | 0 | none |
+| `11-r'\|touch PWNED\|\|:'s` | 0 | none |
+| `11-t'>canary.txt;:'u` | 0 | none; `canary.txt` intact |
+| `11-o'brien` | 0 | none |
 
-Command substitution is closed. A name containing `'` is not: it ends the quoted string and
-the command dies as a shell syntax error, which the evaluator maps to a block verdict. That
-is fail-closed rather than a bypass, but it is a regression against 0.1.3 for that one name
-shape, and it is the reason this section exists.
+`11-o'brien` exiting `0` is a behaviour change: it exited `2` before. The apostrophe
+limitation is fixed, not documented away. A hostile name with a non-compliant plan still
+exits `1`, so the name change did not cost the verdict.
 
-No quoting this manifest can write removes the remaining hole, because the splice is
-textual. The splice site is gsd-core's `gate-predicate-evaluator.cjs`: `INTERPOLATION_RE`
-matches the three `${PHASE_*}` names and a plain string `replace` substitutes them, after
-which the command goes to `sh -c`. So the phase directory reaches a shell as text, and no
-capability manifest can undo that from its side. The fix belongs upstream, and is one of:
-pass the phase directory as an argv element, or shell-escape it at interpolation time.
-Until that lands, single quotes are the better of the two available failures.
+### Residual: the gate now depends on gsd-core's workflow ordering
 
-Do not "simplify" these back to double quotes to make an apostrophe work. That re-opens
-command substitution, which is the worse failure of the two.
+Phase identity comes from STATE.md rather than from the caller, which couples this gate to
+the order in which gsd-core writes that file. `plan-phase.md:1524` is step 13b, "Record
+Planning Completion in STATE.md"; the `plan:post` gate dispatch is step 13e at
+`plan-phase.md:1558`. `current_phase` is therefore written before the gate runs, and at gate
+time it names the phase just planned.
 
-The one manifest-side alternative that looks like it escapes the dilemma does not. A
-quoted-delimiter heredoc — `PHASE_DIR_ARG="$(cat <<'SOTA_NUMERICS_PHASE_DIR'` / `${PHASE_DIR}`
-/ delimiter / `)"` — performs no expansion of any kind, so it accepts the apostrophe *and*
-keeps command substitution closed. Measured against the same nine name shapes, it passes all
-nine where single quotes fail on `11-o'brien`. It was still rejected, because its terminator
-is a *line*, not a character:
+Every failure path is fail-closed, and `main()` maps each raise to exit `2`. Measured:
 
-| phase directory name | `'${PHASE_DIR}'` | quoted heredoc |
-| --- | --- | --- |
-| `11-o'brien` | `sh: unexpected EOF`, exit 2 | exit 0 |
-| `11-x` NL `SOTA_NUMERICS_PHASE_DIR` NL `touch PWNED` NL `#` | exit 2, no file created | exit 2, **`touch` ran** |
+| condition | exit |
+| --- | --- |
+| no `.planning/STATE.md` | 2 |
+| STATE.md with no `current_phase` | 2 |
+| `current_phase` not matching `^\d+(\.\d+)?$` (traversal, metacharacters) | 2 |
+| `current_phase` matching 0 directories | 2 |
+| `current_phase` matching 2 directories | 2 |
 
-A name carrying a newline plus a line equal to the delimiter closes the heredoc early and the
-rest of the name is parsed as commands. Single quotes have no such escape: only `'` ends them,
-and it ends them into a syntax error rather than into code. So the heredoc trades a
-fail-closed availability bug for a live execution hole, which is the wrong direction for this
-release. An apostrophe in a phase directory name therefore still blocks the gate, and the fix
-is still upstream — tracked as `gsd-beads-g72`.
+Do not oversell that. Fail-closed covers the cases where the phase cannot be identified. It
+does not cover the case where it is identified *wrongly*: if that 13b/13e ordering ever
+changed, `current_phase` would name a different phase and the gate would check that one and
+pass, with nothing to notice. The upstream fix is unchanged — pass the phase directory as an
+argv element, tracked as `gsd-beads-g72`. Until then the coupling is real and this is where
+it is written down.

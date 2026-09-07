@@ -92,7 +92,7 @@ The checker reads direct child files whose names match these shapes:
 
 Both numeric segments are required; the phase segment may contain one decimal point. Nested plans and names such as `draft-PLAN.md` are ignored. Every matching plan is checked in sorted order. A directory with no matching plans passes.
 
-Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-two heading or at end of file.
+Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-two heading or at end of file. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
 
 ### Accepted entries
 
@@ -183,16 +183,23 @@ Handled outcomes use these exit codes:
 
 - `0`: all matching plans pass, or no matching plans exist;
 - `1`: one or more plans violate the gate;
-- `2`: the phase path argument is empty, is not an existing directory, has no `.planning`
-  ancestor within ten levels, or a matching plan file is not valid UTF-8. The decode
-  failure names the offending plan, the decode reason, the byte offset, and the remedy:
+- `2`: the phase directory could not be identified, or a matching plan file is not valid
+  UTF-8. Identification fails when an explicitly passed path is empty or is not an existing
+  directory, when there is no `.planning` ancestor within ten levels, or -- when no path is
+  passed and the phase is resolved from `.planning/STATE.md` -- when that file is unreadable,
+  states no `current_phase`, or names a number matching anything other than exactly one
+  directory under `.planning/phases/`. The decode failure names the offending plan, the
+  decode reason, the byte offset, and the remedy:
   `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as UTF-8`.
 
 Other unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name takes this path, as does a plan file the process cannot read.
 
-You can run the checker directly:
+The phase directory argument is optional. The gate itself passes none: its command is
+constant, and the checker resolves the phase from `.planning/STATE.md`'s `current_phase`, so
+a phase directory name never reaches a shell. You can run the checker either way:
 
 ```bash
+python3 .gsd/capabilities/sota-numerics/scripts/check-alternatives.py
 python3 .gsd/capabilities/sota-numerics/scripts/check-alternatives.py .planning/phases/11-example
 ```
 

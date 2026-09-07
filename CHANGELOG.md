@@ -2,22 +2,42 @@
 
 ## 0.2.0
 
-**The gate changed in three narrow ways.** No rule about plan content moved:
-same checks, same literals, and `capability.json` still declares exactly one
-gate. Running this release's 55-test suite against the 0.1.3 checker, 52 pass
-unchanged and 3 fail: the two empty-argument cases below, and one message.
+**The gate changed in four narrow ways.** `capability.json` still declares
+exactly one gate, and the rules about what a plan must contain are unchanged --
+with one exception, the fenced-code-block fix below, which changes verdicts.
+Running this release's 68-test suite against the 0.1.3 checker, 52 pass
+unchanged and 16 fail: 7 phase-resolution cases, 5 fenced-region cases, the two
+empty-argument cases, one message, and one documented-syntax case.
 
-An empty `${PHASE_DIR}` now prints a reason and exits `2`, which blocks. Under
-0.1.3 the same call read the process working directory instead: run from a
-phase directory holding one passing plan, it exited `0` on a phase nobody had
-named.
+An empty phase-directory argument now prints a reason and exits `2`, which
+blocks. Under 0.1.3 the same call read the process working directory instead:
+run from a phase directory holding one passing plan, it exited `0` on a phase
+nobody had named.
 
-The gate command now single-quotes the interpolated phase directory. gsd-core
+The gate command no longer carries the phase directory at all. gsd-core
 splices `${PHASE_DIR}` in as text before handing the command to `sh -c`, so
-under 0.1.3 a phase directory named with `$(...)` or a backtick ran that text
-as a command; it no longer does. The trade is that a name containing `'` now
-breaks the command as a shell syntax error and blocks, where 0.1.3 accepted
-it. `NOTES.md` §6 records the measurements and why this is the better failure.
+under 0.1.3 a phase directory named with `$(...)`, a backtick, or an apostrophe
+could run that text as a command -- and a payload could exit `0` while doing
+it, so the blocking gate reported success on a phase that had just executed
+arbitrary code. The command is now constant, and `check-alternatives.py`
+resolves the phase from `.planning/STATE.md` itself, so the name never reaches
+a shell. No quoting fix was available: every `sh` quoting context ends on a
+delimiter a directory name may contain.
+
+A directory named `11-o'brien` now exits `0`. Under 0.1.3 it exited `2`: the
+apostrophe limitation is fixed, not merely documented. In exchange the gate now
+depends on gsd-core writing `current_phase` before it dispatches `plan:post`.
+`NOTES.md` §6 records the measurements, the fail-closed paths, and that
+coupling.
+
+Fenced code blocks no longer count as plan content. Under 0.1.3 an
+`## Alternatives Considered` section that existed only inside a ```` ```markdown ````
+fence satisfied the gate, and bullets or table rows inside a fence counted as
+real mechanism entries. A plan quoting an example in its README-style prose
+could therefore pass on the example's own text. **This changes verdicts: a plan
+that passed under 0.1.3 may now fail.** That is the intended direction for a
+blocking gate, and it matters more on this release than before it, because the
+README now ships four fenced examples for authors to copy.
 
 A plan file that is not valid UTF-8 still exits `2`, but the message changed.
 0.1.3 printed the codec's own text — a byte offset and no path — so a phase
@@ -25,9 +45,10 @@ holding twenty plans named none of them. It now reads
 `<plan_path>: not valid UTF-8 (<reason> at byte <n>); re-save the plan as UTF-8`.
 No verdict changes; only the message.
 
-Any plan the gate read under 0.1.3 it still judges the same way. Only a caller
-that named no phase directory, or named one carrying shell metacharacters,
-gets a different verdict.
+Plans whose `Alternatives Considered` content sits outside code fences are
+judged exactly as before. A plan that relied on fenced text to satisfy the
+gate now fails, and a caller that named no phase directory, or named one
+carrying shell metacharacters, gets a different verdict.
 
 **Steering covers more ground.** All four advisory fragments changed. Between
 them they now also steer toward internal and project consistency, unambiguity,
