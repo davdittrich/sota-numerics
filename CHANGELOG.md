@@ -2,10 +2,26 @@
 
 ## 0.2.0
 
-**The gate did not change.** `scripts/check-alternatives.py` is behaviourally
-identical to 0.1.3 — same checks, same literals, same control flow — and
-`capability.json` still declares exactly one gate. Every plan that passed
-`plan:post` under 0.1.3 still passes. Nothing to re-check, nothing to fix.
+**The gate changed in two narrow ways.** No rule about plan content moved: same
+checks, same literals, and `capability.json` still declares exactly one gate.
+Running this release's 55-test suite against the 0.1.3 checker, 53 pass
+unchanged and the only two failures are the empty-argument cases below.
+
+An empty `${PHASE_DIR}` now prints a reason and exits `2`, which blocks. Under
+0.1.3 the same call read the process working directory instead: run from a
+phase directory holding one passing plan, it exited `0` on a phase nobody had
+named.
+
+The gate command now single-quotes the interpolated phase directory. gsd-core
+splices `${PHASE_DIR}` in as text before handing the command to `sh -c`, so
+under 0.1.3 a phase directory named with `$(...)` or a backtick ran that text
+as a command; it no longer does. The trade is that a name containing `'` now
+breaks the command as a shell syntax error and blocks, where 0.1.3 accepted
+it. `NOTES.md` §6 records the measurements and why this is the better failure.
+
+Any plan the gate read under 0.1.3 it still judges the same way. Only a caller
+that named no phase directory, or named one carrying shell metacharacters,
+gets a different verdict.
 
 **Steering covers more ground.** All four advisory fragments changed. Between
 them they now also steer toward internal and project consistency, unambiguity,
