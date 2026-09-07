@@ -45,10 +45,11 @@ The project copy wins when both exist.
 
 At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
-A global install publishes those bytes to every project on the machine, so the hook installs only bytes it can show are already published. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. There are seven:
+A global install publishes those bytes to every project on the machine, so the hook installs only bytes it can show are already published. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. There are eight. The first is a precondition on reading the bundle at all and applies to every install; the rest are the publication check, which applies only to a tracked bundle.
 
 | It refuses when | stderr says | What clears it |
 | --- | --- | --- |
+| The bundle directory cannot be walked in full, so the bytes a global mirror would receive are unknown. | `the sota-numerics bundle directory could not be read in full, so what the global mirror would receive cannot be verified` | Make the bundle readable and searchable to the user that runs the session. |
 | No working `git` is on `PATH`. | `git is unusable, so sota-numerics bundle provenance cannot be verified` | Install `git`. |
 | Git finds the repository holding the bundle and declines to open it — a root- or service-installed plugin, a shared checkout, a container UID remap. | `git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified` | Add a `safe.directory` entry for the checkout, or re-install the plugin as the user that runs the session. |
 | `git status` itself fails, so nothing can be said about the worktree bytes. A repository missing the object behind `HEAD`'s tree does this: `status` exits non-zero having printed nothing, while `ls-files` and `merge-base` still answer from the index and the commit objects. | `git could not report the state of the sota-numerics bundle, so its contents cannot be verified` | Repair the repository — `git fsck`, or re-clone it. |
