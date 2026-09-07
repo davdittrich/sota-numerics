@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Regression test for the plan:post gate's SOTA_SCRIPT resolution
-# (github.com/davdittrich/gsd-beads/issues/1's packaging investigation):
-# hooks/capability-auto-install.sh always installs at global scope
-# (--scope global), never project scope, so the gate command must find the
-# script there too, not only under a project's own git root. Extracts the
-# gate command verbatim from capability.json (not a hand-copied duplicate)
-# so this test tracks the real predicate string, not a stale mirror of it.
+# Regression test for the plan:post gate command: how it resolves SOTA_SCRIPT
+# (github.com/davdittrich/gsd-beads/issues/1's packaging investigation --
+# hooks/capability-auto-install.sh always installs at global scope, never
+# project scope, so the command must find the script there too), and that it
+# carries no consumer-supplied data into the shell at all (gsd-beads-cqt).
+# Extracts the gate command verbatim from capability.json (not a hand-copied
+# duplicate) so this test tracks the real predicate string, not a stale mirror.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,85 +22,154 @@ PY
 )"
 [ -n "$GATE_CMD" ] || fail "could not extract gate command from capability.json"
 
-# gsd-core substitutes ${PHASE_DIR} TEXTUALLY into the command string and only
-# then hands the result to `sh -c` (gate-predicate-evaluator.cjs:41 builds the
-# literal /\$\{(PHASE_NUMBER|PHASE_DIR|PHASE_REQ_IDS)\}/g and replaces against
-# it; :47 supplies the PHASE_DIR value). The shell therefore never expands the
-# placeholder, which is why the command quotes it in single quotes -- a
-# consumer-supplied path must reach argv as data, not as shell source.
+# --- Case 0: the gate command is CONSTANT (gsd-beads-cqt) ---
+# gsd-core interpolates ${PHASE_NUMBER}/${PHASE_DIR}/${PHASE_REQ_IDS} with a
+# plain String.replace (gate-predicate-evaluator.cjs, INTERPOLATION_RE) and
+# hands the result to execTool('sh', ['-c', cmd]) (check-command-router.cjs
+# :1039-1055). There is no argv and no env channel, so any placeholder in the
+# command becomes shell SOURCE.
 #
-# Emulate that splice here. Exporting PHASE_DIR and letting `bash -c` expand it
-# tests a substitution that never happens in production: it passed only while
-# the command double-quoted the placeholder, and went red the moment the
-# quoting was hardened, reporting a defect in the fix rather than in itself.
-gate_cmd_for() {
-  local phase_dir="$1"
-  printf '%s' "${GATE_CMD//\$\{PHASE_DIR\}/$phase_dir}"
-}
+# No shell quoting makes that safe. Enumerated over sh's quoting contexts, each
+# has a delimiter the value can contain: unquoted ends at any metacharacter;
+# "..." ends at `"`; '...' ends at `'`; a quoted heredoc ends at its delimiter
+# line. A phase directory name may contain every byte except `/` and NUL, so
+# every context is escapable and the class of payload differs only in which
+# delimiter it spells. The fix is therefore not better quoting -- it is having
+# nothing to quote. This assertion is the root-cause pin; case 3 below is the
+# behavioural one.
+case "$GATE_CMD" in
+  *'${PHASE_DIR}'*|*'${PHASE_NUMBER}'*|*'${PHASE_REQ_IDS}'*)
+    fail "case0: the gate command still interpolates a \${PHASE_*} placeholder into \`sh -c\` source" ;;
+esac
+pass "case0: the gate command is constant -- no \${PHASE_*} splice reaches sh -c"
 
 trap '[ -n "${SCRATCH:-}" ] && rm -rf "$SCRATCH" 2>/dev/null; [ -n "${FAKE_HOME:-}" ] && rm -rf "$FAKE_HOME" 2>/dev/null' EXIT
 
+# Build a project root the gate can run in: gsd-core sets the subprocess cwd to
+# the PROJECT ROOT (cmdCheckPredicate(cwd,...) -> ctx.cwd -> runBoundedShell),
+# and the checker resolves the phase from .planning/STATE.md there.
+# $1 = project root, $2 = phase directory basename, $3 = current_phase value.
+make_project() {
+  mkdir -p "$1/.planning/phases/$2" || return 1
+  printf -- '---\ngsd_state_version: 1.0\ncurrent_phase: %s\nstatus: planning\n---\n' "$3" \
+    > "$1/.planning/STATE.md"
+  printf '## Alternatives Considered\n\n- **A**: prose. `doc-a` (2024).\n- **B**: prose. `doc-b` (2024).\n\nDecided by: performance.\n' \
+    > "$1/.planning/phases/$2/11-01-PLAN.md"
+}
+
 # --- Case 1: global-scope-only install (no project-scope copy) -> gate finds
-# the script via GSD_HOME fallback and runs it (exit reflects the checker's
-# own verdict on an empty phase dir: 0, no plans to check). ---
+# the script via GSD_HOME fallback and runs it (exit 0: the discovered plan
+# passes). ---
 SCRATCH="$(mktemp -d)"
-mkdir -p "$SCRATCH/.planning" "$SCRATCH/phase"
+make_project "$SCRATCH" "11-plain" "11" || fail "case1: could not build fixture project"
 FAKE_HOME="$(mktemp -d)"
 mkdir -p "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts"
 cp "$REPO_ROOT/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py" \
   "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
 
-( cd "$SCRATCH" && GSD_HOME="$FAKE_HOME" bash -c "$(gate_cmd_for "$SCRATCH/phase")" )
+( cd "$SCRATCH" && GSD_HOME="$FAKE_HOME" bash -c "$GATE_CMD" )
 STATUS=$?
-[ "$STATUS" -eq 0 ] || fail "case1: global-scope-only install did not resolve the gate script (exit $STATUS)"
+[ "$STATUS" -eq 0 ] || fail "case1: global-scope-only install did not resolve and run the gate script (exit $STATUS)"
 pass "case1: global-scope-only install resolves SOTA_SCRIPT via GSD_HOME fallback"
 
-# --- Case 2: neither scope has the script -> exit 1 with a clear message on stderr. ---
+# --- Case 2: neither scope has the script -> exit 1 with a clear message. ---
 EMPTY_HOME="$(mktemp -d)"
-ERR="$(cd "$SCRATCH" && GSD_HOME="$EMPTY_HOME" bash -c "$(gate_cmd_for "$SCRATCH/phase")" 2>&1 >/dev/null)"
+ERR="$(cd "$SCRATCH" && GSD_HOME="$EMPTY_HOME" bash -c "$GATE_CMD" 2>&1 >/dev/null)"
 STATUS=$?
 rm -rf "$EMPTY_HOME"
 [ "$STATUS" -eq 1 ] || fail "case2: missing-everywhere install did not exit 1 (exit $STATUS)"
 echo "$ERR" | grep -q "gate script not found at project or global scope" || fail "case2: missing message text"
 pass "case2: script missing at both scopes exits 1 with clear message"
 
-# --- Case 3: a hostile phase directory name reaches the checker as data ---
-# gsd-core substitutes ${PHASE_DIR} textually and hands the result to `sh -c`
-# (gate-predicate-evaluator.cjs:41-53, check-command-router.cjs:985-987), so the
-# quoting in capability.json is the only thing between a directory name and the
-# shell. There is no argv or env channel to use instead.
+# --- Case 3: hostile phase directory names (gsd-beads-cqt) ---
+# One payload per ESCAPE MECHANISM the shell offers, not per example. The
+# previous revision of this test enumerated examples and passed while three of
+# these executed, because every payload it carried was UNBALANCED -- it never
+# closed the single-quoted literal and reopened it. `apostrophe` below was the
+# tell: it was pinned as a documented exit-2 limitation, which is precisely the
+# statement that a name CAN terminate the literal.
 #
-# Every shape below must leave PWNED uncreated. The apostrophe case additionally
-# pins a KNOWN LIMITATION rather than a desired behaviour: a single quote in the
-# name terminates the literal, `sh` fails to parse the command before any of it
-# runs, and the blocking gate rejects an otherwise valid phase with exit 2. That
-# is a fail-CLOSED availability bug. It is recorded because the alternatives are
-# worse -- double quotes restore command substitution, and a quoted-delimiter
-# heredoc is terminated by a newline in the name, which executes. The real fix is
-# upstream: pass the phase directory as an argv element, or escape it at the
-# interpolation site.
-for spec in 'plain:11-plain' \
-            'cmdsub:11-$(touch PWNED)-x' \
-            'backtick:11-`touch PWNED`-x' \
-            'semicolon:11-semi;touch PWNED' \
-            'dquote:11-quote"x' \
-            'apostrophe:11-o'"'"'brien'; do
-  label="${spec%%:*}"; name="${spec#*:}"
-  H="$(mktemp -d)"; mkdir -p "$H/.planning" "$H/$name" 2>/dev/null || { rm -rf "$H"; continue; }
-  printf '## Alternatives Considered\n\n- A vs B. Decided by: speed.\n\nSeen 2024.\n' \
-    > "$H/$name/01-01-PLAN.md"
-  ( cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$(gate_cmd_for "$H/$name")" ) >/dev/null 2>&1
+# Each name must now reach the checker as a directory it validates: exit 0 on
+# the compliant plan inside it, nothing executed, nothing clobbered.
+CANARY_TEXT="do-not-truncate"
+for spec in \
+    'plain                 :11-plain' \
+    'apostrophe            :11-o'"'"'brien' \
+    'balanced+separator    :11-a'"'"'; touch PWNED; :'"'"'b' \
+    'balanced+cmdsub       :11-o'"'"'$(touch PWNED)'"'"'brien' \
+    'balanced+backtick     :11-x'"'"'`touch PWNED`'"'"'y' \
+    'balanced+andlist      :11-p'"'"'&&touch PWNED&&:'"'"'q' \
+    'balanced+pipeline     :11-r'"'"'|touch PWNED||:'"'"'s' \
+    'balanced+redirect     :11-t'"'"'>canary.txt;:'"'"'u' \
+    'balanced+dquote       :11-v'"'"'"$(touch PWNED)"'"'"'w' \
+    'balanced+paramexp     :11-y'"'"'$HOME'"'"'z' \
+    'balanced+glob         :11-g'"'"'*'"'"'h' \
+    'balanced+backslash    :11-b'"'"'\'"'"'c' \
+    ; do
+  label="${spec%%:*}"; label="${label%"${label##*[![:space:]]}"}"
+  name="${spec#*:}"
+  H="$(mktemp -d)"
+  # A newline in a directory name is legal on POSIX and defeats a quoted
+  # heredoc, so it is covered too -- appended here because it cannot survive
+  # the single-line `for` list above.
+  if ! make_project "$H" "$name" "11" 2>/dev/null; then
+    rm -rf "$H"; fail "case3/$label: could not create the fixture (the name must be testable)"
+  fi
+  printf '%s\n' "$CANARY_TEXT" > "$H/canary.txt"
+  ( cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$GATE_CMD" ) >/dev/null 2>&1
   rc=$?
-  if [ -e "$H/PWNED" ] || [ -e "$H/$name/PWNED" ]; then
+  if [ -n "$(find "$H" -name PWNED -print -quit 2>/dev/null)" ]; then
     rm -rf "$H"; fail "case3/$label: the phase directory name was executed as shell source"
   fi
-  if [ "$label" = apostrophe ] && [ "$rc" -ne 2 ]; then
-    rm -rf "$H"
-    fail "case3/apostrophe: expected the documented exit 2; got $rc -- if upstream now escapes the splice, delete this arm and the NOTES.md section 6 entry"
+  if [ "$(cat "$H/canary.txt" 2>/dev/null)" != "$CANARY_TEXT" ]; then
+    rm -rf "$H"; fail "case3/$label: the phase directory name redirected over an existing file"
+  fi
+  if [ "$rc" -ne 0 ]; then
+    rm -rf "$H"; fail "case3/$label: the gate did not reach the checker's own verdict on a compliant plan (exit $rc)"
   fi
   rm -rf "$H"
 done
-pass "case3: hostile phase directory names reach the checker as data, not shell source"
+pass "case3: hostile phase directory names are never shell source; the gate still reaches its verdict"
+
+# --- Case 3b: a newline in the phase directory name. ---
+# Separate from the loop only because a literal newline cannot be carried in a
+# single-line `for` list. This is the payload that defeats the quoted-heredoc
+# alternative NOTES.md considered, so it is pinned explicitly.
+NL_NAME="$(printf '11-n\ntouch PWNED\nm')"
+H="$(mktemp -d)"
+if make_project "$H" "$NL_NAME" "11" 2>/dev/null; then
+  ( cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+  rc=$?
+  [ -z "$(find "$H" -name PWNED -print -quit 2>/dev/null)" ] \
+    || { rm -rf "$H"; fail "case3b/newline: the phase directory name was executed as shell source"; }
+  [ "$rc" -eq 0 ] \
+    || { rm -rf "$H"; fail "case3b/newline: the gate did not reach the checker's verdict (exit $rc)"; }
+  pass "case3b: a newline in the phase directory name is data, not a command separator"
+else
+  echo "SKIP: case3b (this filesystem rejects a newline in a directory name)"
+fi
+rm -rf "$H"
+
+# --- Case 4: the gate fails CLOSED when it cannot identify its phase. ---
+# The phase no longer travels in the command, so an unresolvable current_phase
+# is the new failure mode. A blocking gate must block, never pass vacuously.
+H="$(mktemp -d)"
+mkdir -p "$H/.planning/phases"
+printf -- '---\ngsd_state_version: 1.0\nstatus: planning\n---\n' > "$H/.planning/STATE.md"
+ERR="$(cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$GATE_CMD" 2>&1 >/dev/null)"
+rc=$?
+[ "$rc" -eq 2 ] || { rm -rf "$H"; fail "case4: STATE.md without current_phase did not fail closed (exit $rc)"; }
+echo "$ERR" | grep -q "current_phase" || { rm -rf "$H"; fail "case4: message does not name current_phase"; }
+rm -rf "$H"
+
+H="$(mktemp -d)"
+make_project "$H" "11-a" "11" >/dev/null
+mkdir -p "$H/.planning/phases/11-b"
+rc=0
+( cd "$H" && GSD_HOME="$FAKE_HOME" sh -c "$GATE_CMD" ) >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] || { rm -rf "$H"; fail "case4: an ambiguous current_phase did not fail closed (exit $rc)"; }
+rm -rf "$H"
+pass "case4: an unresolvable or ambiguous current_phase blocks (exit 2), never passes"
 
 echo "ALL PASS"
 exit 0

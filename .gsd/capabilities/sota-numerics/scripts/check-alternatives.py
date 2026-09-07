@@ -66,6 +66,11 @@ HOST_RE = re.compile(r"^https?://([^/\s]{1,255})")
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
+# `current_phase` in STATE.md's YAML frontmatter. Constrained to a phase number
+# at the point of reading, so nothing else can become a directory lookup.
+STATE_CURRENT_PHASE_RE = re.compile(
+    r"^current_phase:[ \t]*[\"']?(\d+(?:\.\d+)?)[\"']?[ \t]*$", re.MULTILINE
+)
 
 # A CommonMark fenced code block opener: up to three leading spaces, then three
 # or more backticks or tildes, then an optional info string. Anchored per line,
@@ -84,6 +89,58 @@ def find_project_root(start):
             break
         current = current.parent
     raise ValueError(f"could not locate a .planning/ ancestor above {start}")
+
+
+def normalize_phase(number):
+    """Comparison key for a phase number: `06` equals `6`, `10.1` does not
+    equal `10.10`."""
+    major, _, minor = number.partition(".")
+    return int(major), minor
+
+
+def resolve_current_phase_dir(start):
+    """The phase directory named by `.planning/STATE.md`'s `current_phase`.
+
+    The gate command carries no `${PHASE_DIR}` splice, because no shell
+    quoting survives an arbitrary directory name: a single quote in the name
+    closes the literal and everything after it is parsed as shell source. So
+    the phase identity travels through the project's own state file instead,
+    where this function reads it directly and it never reaches a shell.
+
+    gsd-core writes `current_phase` in plan-phase step 13b ("Record Planning
+    Completion in STATE.md"), which runs before the plan:post gate dispatch in
+    step 13e -- at gate time it names the phase just planned. Every failure
+    below raises, and main() maps a raise to exit 2: a blocking gate that
+    cannot identify its phase must block rather than pass vacuously.
+    """
+    root = find_project_root(start)
+    state_path = root / ".planning" / "STATE.md"
+    try:
+        state_text = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(
+            f"cannot read {state_path} to resolve the current phase ({exc.strerror})"
+        ) from exc
+    m = STATE_CURRENT_PHASE_RE.search(state_text)
+    if not m:
+        raise ValueError(
+            f"{state_path} has no `current_phase: <number>` field;"
+            " pass the phase directory explicitly"
+        )
+    wanted = normalize_phase(m.group(1))
+    phases_root = root / ".planning" / "phases"
+    matches = []
+    if phases_root.is_dir():
+        for entry in sorted(phases_root.iterdir()):
+            num = PHASE_NUM_RE.match(entry.name)
+            if entry.is_dir() and num and normalize_phase(num.group(1)) == wanted:
+                matches.append(entry)
+    if len(matches) != 1:
+        raise ValueError(
+            f"current_phase {m.group(1)} matches {len(matches)} directories"
+            f" under {phases_root} (expected exactly 1)"
+        )
+    return matches[0]
 
 
 def discover_plan_files(phase_dir):
@@ -347,24 +404,35 @@ def check_alternatives(phase_dir_arg):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="check-alternatives.py")
-    parser.add_argument("phase_dir")
+    parser.add_argument("phase_dir", nargs="?")
     args = parser.parse_args(argv)
 
-    if not args.phase_dir:
+    if args.phase_dir is None:
+        # No argument is the gate's own calling convention: the gate command is
+        # constant so that no consumer-supplied byte is ever spliced into the
+        # `sh -c` string it becomes. Resolve the phase from the project's own
+        # state instead, where a directory name never reaches a shell.
+        try:
+            phase_dir_arg = resolve_current_phase_dir(Path.cwd())
+        except ValueError as exc:
+            print(f"check-alternatives.py: {exc}", file=sys.stderr)
+            return 2
+    elif not args.phase_dir:
         # `Path("")` is `Path(".")`, so an empty argument would otherwise make
         # the checker inspect its own cwd and report every plan there as
-        # passing. The gate's `${PHASE_DIR}` renders to "" whenever the caller
-        # omits the phase dir, so this is the fail-closed edge of that seam.
+        # passing. Reachable only from a hand-written invocation now that the
+        # gate passes no argument at all, but still fail-closed.
         print(
             "check-alternatives.py: empty phase_dir argument"
-            " (the gate's ${PHASE_DIR} interpolated to nothing)",
+            " (pass a phase directory, or no argument to use the project's current phase)",
             file=sys.stderr,
         )
         return 2
+    else:
+        phase_dir_arg = Path(args.phase_dir)
 
-    phase_dir_arg = Path(args.phase_dir)
     if not phase_dir_arg.is_dir():
-        print(f"check-alternatives.py: not a directory: {args.phase_dir}", file=sys.stderr)
+        print(f"check-alternatives.py: not a directory: {phase_dir_arg}", file=sys.stderr)
         return 2
 
     try:
@@ -378,7 +446,7 @@ def main(argv=None):
 
     for plan_path, reason in violations:
         print(f"{plan_path}: {reason}", file=sys.stderr)
-    phase_label = phase_label_from_dirname(args.phase_dir)
+    phase_label = phase_label_from_dirname(phase_dir_arg)
     print(
         f"remediation: fix the plans above, then re-run /gsd-plan-phase {phase_label} --force",
         file=sys.stderr,

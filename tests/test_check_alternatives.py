@@ -823,6 +823,99 @@ class TestFencedRegions(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestCurrentPhaseResolution(unittest.TestCase):
+    """With no argument, the checker resolves its phase from the project's own
+    STATE.md (gsd-beads-cqt).
+
+    The gate command is constant precisely so that no directory name is ever
+    spliced into the `sh -c` string gsd-core builds. That moves phase identity
+    onto this path, which must therefore fail CLOSED whenever it is unsure.
+    """
+
+    def build_project(self, root, phase_dir_name, current_phase, plan_text):
+        (root / ".planning" / "phases" / phase_dir_name).mkdir(parents=True)
+        (root / ".planning" / "STATE.md").write_text(
+            "---\ngsd_state_version: 1.0\n"
+            f"current_phase: {current_phase}\nstatus: planning\n---\n",
+            encoding="utf-8",
+        )
+        write_plan(root / ".planning" / "phases" / phase_dir_name, plan_text,
+                   name="11-01-PLAN.md")
+
+    def run_no_arg(self, cwd):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            capture_output=True, text=True, timeout=15, cwd=str(cwd),
+            env={**os.environ, "TMPDIR": str(PLAN_TMPDIR)},
+        )
+
+    def test_resolves_the_current_phase_and_reaches_its_verdict(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-missing-section.md"))
+            result = self.run_no_arg(root)
+        # Exit 1, naming the plan: proof it read THAT directory, not cwd.
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("11-01-PLAN.md", result.stderr)
+
+    def test_apostrophe_in_the_phase_directory_name_is_accepted(self):
+        # The behaviour this fix exists to restore. Under the previous
+        # `'${PHASE_DIR}'` splice this name aborted the gate with exit 2
+        # before the checker ran at all.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-o'brien", "11",
+                               fixture_text("plan-compliant.md"))
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_zero_padded_current_phase_matches_an_unpadded_directory(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "6-six", "06", fixture_text("plan-compliant.md"))
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_current_phase_blocks(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n", encoding="utf-8")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("current_phase", result.stderr)
+
+    def test_ambiguous_current_phase_blocks(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-a", "11", fixture_text("plan-compliant.md"))
+            (root / ".planning" / "phases" / "11-b").mkdir()
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("expected exactly 1", result.stderr)
+
+    def test_unmatched_current_phase_blocks(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "12", fixture_text("plan-compliant.md"))
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("expected exactly 1", result.stderr)
+
+    def test_dotted_current_phase_does_not_match_a_longer_sibling(self):
+        # `10.1` must not resolve to `10.10`: the fractional part is compared
+        # as text, so a truncated match cannot silently validate another phase.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "10.10-ten-ten", "10.1",
+                               fixture_text("plan-compliant.md"))
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("expected exactly 1", result.stderr)
+
+
 class TestMultiPlanCoverage(unittest.TestCase):
     """Every plan in the directory is checked, not just
     the first readdir match."""
