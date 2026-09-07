@@ -116,15 +116,22 @@ fi
 # HEAD -- a stray empty directory -- is not a repository and is walked past.
 unverifiable_repo() {
   git -C "$BUNDLE_DIR" rev-parse --git-dir >/dev/null 2>&1 && return 0
-  local _d="$BUNDLE_DIR" _g
+  local _d="$BUNDLE_DIR" _g _prev
   while :; do
     _g="$_d/.git"
     if [ -e "$_g" ] &&
        ! { [ -d "$_g" ] && [ -r "$_g" ] && [ -x "$_g" ] && [ ! -e "$_g/HEAD" ]; }; then
       return 0
     fi
-    [ "$_d" = "/" ] && return 1
+    # Stop when dirname stops moving, not at a literal "/". Both terminate for
+    # an absolute path, but only this one terminates for a relative one, where
+    # dirname converges on "." and never equals "/" -- an unattended hang in a
+    # SessionStart hook. BUNDLE_DIR is absolute today, so that state is
+    # unreachable; keying termination on the walk itself means it stays
+    # unreachable without depending on how PLUGIN_ROOT is built.
+    _prev="$_d"
     _d="$(dirname "$_d")"
+    [ "$_d" = "$_prev" ] && return 1
   done
 }
 
