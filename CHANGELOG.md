@@ -40,7 +40,7 @@ publishes the bundle to every project on the machine, so where a repository
 tracks the bundle, the `SessionStart` and `SubagentStart` hook now installs only
 bytes it can show are already published. Where no repository tracks the bundle
 there is nothing to check against, and those bytes install unverified.
-A marketplace install is unaffected. Claude Code caches plugins both as depth-1
+A marketplace install is not protected by it in every form. Claude Code caches plugins both as depth-1
 git clones and as plain directories. The plain form has no repository over it,
 so the check does not apply. The clone form is tracked, so the check applies and
 passes: the clone is clean, and its `HEAD` is the published tip it was cloned

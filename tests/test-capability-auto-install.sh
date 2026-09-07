@@ -16,18 +16,36 @@
 # lands in exactly one row. That claim is provable by reading the script, and it
 # is the only exhaustiveness claim this file makes.
 #
-# It is NOT a claim that row 4 catches every way the bundle can hold unpublished
-# bytes. Row 4 asks git a question, and what git answers is configurable; the
-# four settings that redirect it are named on the hook's `status` invocation and
-# pinned in the rows below.
+# It is explicitly NOT a claim that row 5 catches every way the bundle can hold
+# unpublished bytes. That stronger claim has now been made and falsified five
+# times, so this file no longer makes it in any form. Row 5 asks git a question,
+# and what git answers is configurable. What follows is an ENUMERATION, not a
+# partition: the mechanisms known as of 2026-09-07 to make `git status` report
+# clean about bytes `capability install` would still copy, and what closes each.
 #
-# One known way remains, and it is recorded rather than claimed away: a
+#   status.showUntrackedFiles=no  -> --untracked-files=all      (case J4)
+#   ignore rules                  -> --ignored                  (case E)
+#   submodule.<name>.ignore       -> --ignore-submodules=none   (cases J6, J7)
+#   core.fsmonitor                -> -c core.fsmonitor=         (case J8)
+#   assume-unchanged, skip-worktree -> the index check, row 3   (cases J2, J3)
+#   core.sparseCheckout           -> the index check, row 3     (case J9)
+#
+# core.sparseCheckout is on that list as a measurement, not by analogy: it
+# excludes paths by setting skip-worktree, so it needs no new flag, and the
+# obvious `-c core.sparseCheckout=false` would not have worked anyway because
+# sparse checkout also deletes the excluded files. J9 records the measurement.
+#
+# An enumeration that admits it is an enumeration ages better than a partition
+# claim that keeps being falsified. Adding to it is expected; the standard for
+# adding is a red case, not an argument.
+#
+# One entry has no closer, and it is recorded rather than claimed away: a
 # `.gitattributes` clean filter maps edited worktree bytes onto the committed
 # blob, so `status` is honestly clean about the index while the directory copy
 # carries the edit. No `status` option reaches that; a byte comparison against
 # the published tree would. The filter driver lives in local config, which no
 # clone carries, so unlike J7 it cannot follow the bundle to a consumer.
-# Tracked as gsd-beads-5yy. The honest predicate for row 4 is therefore "git,
+# Tracked as gsd-beads-5yy. The honest predicate for row 5 is therefore "git,
 # asked without inheriting the repository's configuration, reports the worktree
 # clean" -- not "the bundle's bytes are the published bytes", which is stronger
 # than what this hook measures.
@@ -35,31 +53,34 @@
 #   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
 #   ls-files 0 -- a repository tracks the bundle:
-#   2. index told not to check some entries   -> refuse   (cases J2, J3)
-#   3. `status` could not answer at all       -> refuse   (case J1)
-#   4. uncommitted or ignored bytes           -> refuse   (cases B, E, J4, J6,
+#   2. index tags could not be read at all    -> refuse   (case J10)
+#   3. index told not to check some entries   -> refuse   (cases J2, J3, J9)
+#   4. `status` could not answer at all       -> refuse   (case J1)
+#   5. uncommitted or ignored bytes           -> refuse   (cases B, E, J4, J6,
 #                                                          J7, J8)
-#   5. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
-#   6. clean, HEAD not an ancestor of it      -> refuse   (case C)
-#   7. clean, HEAD an ancestor of that ref    -> install  (cases D, A2, K1)
+#   6. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
+#   7. clean, HEAD not an ancestor of it      -> refuse   (case C)
+#   8. clean, HEAD an ancestor of that ref    -> install  (cases D, A2, K1)
 #
 #   ls-files 1 -- a repository answered and does not track the bundle:
-#   8. it has nothing to say about the bytes  -> install  (case F)
+#   9. it has nothing to say about the bytes  -> install  (case F)
 #
 #   ls-files 128 -- git did not answer, which is not the same as "no":
-#   9. no repository on disk                  -> install  (cases A, A3)
-#  10. a repository git will not open         -> refuse   (cases H3, H5)
-#  11. a repository whose index it cannot read-> refuse   (case H4)
+#  10. no repository on disk                  -> install  (cases A, A3)
+#  11. a repository git will not open         -> refuse   (cases H3, H5)
+#  12. a repository whose index it cannot read-> refuse   (case H4)
 #
-# Rows 2 to 7 are complementary because they qualify `status`'s answer before
-# reading it: first whether the index has been told to hide entries from it,
-# then whether it exited non-zero, then whether it printed anything, then the
-# only remaining state. That ordering is why the settings in J4, J6, J7 and J8
-# all land in row 4 rather than in rows of their own: none of them changes which
-# branch runs, only what `status` reports inside it, so each is a case that must
-# make row 4 fire rather than a twelfth row. Rows 10 and 11 are separate because
-# they need different evidence: in row 11 git has already opened the repository, so
-# `rev-parse --git-dir` sees it, while in row 10 discovery itself fails and only
+# Rows 2 to 8 are complementary because they qualify each answer before reading
+# it: first whether `ls-files -v` answered at all, then whether the index has
+# been told to hide entries, then whether `status` exited non-zero, then whether
+# it printed anything, then the only remaining state. Rows 2 and 4 are the same
+# rule applied to two commands -- a probe that failed is not a probe that said
+# "clean" -- and both exist because both were once missing. That ordering is why
+# the settings in J4, J6, J7, J8 and J9 land in rows 3 and 5 rather than in rows
+# of their own: none of them changes which branch runs, only what the probe
+# reports inside it. Rows 11 and 12 are separate because they need different
+# evidence: in row 12 git has already opened the repository, so
+# `rev-parse --git-dir` sees it, while in row 11 discovery itself fails and only
 # the filesystem can answer.
 #
 # The partition is reached at all only if the bundle can be read: the walk that
@@ -651,6 +672,79 @@ run_hook
 err_has "uncommitted or ignored" || fail "J8: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "J8: refusal wrote the sidecar, making the miss permanent"
 pass "J8: a file-system monitor that under-reports does not hide edits from the guard"
+
+# --- J9: sparse checkout hides bundle bytes from `status`, and row 2 catches it ---
+# core.sparseCheckout excludes paths by setting skip-worktree on their index
+# entries, so it is the same mechanism J3 pins rather than a fifth one, and the
+# index check above refuses before `status` is ever consulted. On coverage
+# alone this case is therefore dominated by J3 -- it reaches row 3 with the same
+# S tag, and no mutation of the hook separates them. It is kept for the
+# measurement below, not for the branch. Measured rather
+# than assumed, because two plausible neutralisations do not work: a
+# `-c core.sparseCheckout=false` on the `status` invocation cannot help, since
+# sparse checkout also deletes the excluded files, leaving nothing on disk to
+# compare; and writing an excluded file back makes git CLEAR the bit, after
+# which `status` reports the edit normally and row 5 has it.
+#
+# The state that reaches this guard with a live bundle directory is therefore a
+# partial exclusion: one entry written back so the directory exists, another
+# still excluded and still tagged S. `status` reports that bundle completely
+# clean while the mirror would receive a bundle missing a file.
+new_sandbox j9
+git_init "$ROOT"
+publish "$ROOT"
+git -C "$ROOT" config core.sparseCheckout true
+printf '/hooks\n' > "$ROOT/.git/info/sparse-checkout"
+git -C "$ROOT" read-tree -mu HEAD 2>/dev/null
+mkdir -p "$BUNDLE"
+printf '{"id":"%s","version":"0.2.0"}\n' "$CAP_ID" > "$BUNDLE/capability.json"
+[ -z "$(git -c core.fsmonitor= -C "$BUNDLE" status --porcelain --ignored --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)" ] ||
+  fail "J9: precondition -- status should report this partially-excluded bundle clean"
+[ "$(git -C "$BUNDLE" ls-files -v -- . | cut -c1 | sort -u | tr -d '\n')" = "HS" ] ||
+  fail "J9: precondition -- expected one written-back H entry and one excluded S entry"
+run_hook
+[ "$(installs)" = 0 ] || fail "J9: a sparse-checkout-hidden bundle was installed"
+err_has "will not report edits" || fail "J9: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J9: refusal wrote the sidecar, making the miss permanent"
+pass "J9: sparse checkout cannot hide bundle bytes from the index check"
+
+# --- J10: `ls-files -v` fails, and its exit status is not discarded ---
+# The index check reads that command's OUTPUT. Piping it straight into `grep`
+# would make the pipeline exit with grep's status, so an `ls-files` that failed
+# would read as "no suspicious tags" and the guard would proceed on evidence it
+# never obtained -- the same defect J1 pins for `status`.
+#
+# The bundle here is clean and published, so every other row would install it.
+# That is deliberate: it is what makes this case fail if the status is dropped,
+# rather than being caught by the dirty check on the way past.
+new_sandbox j10
+git_init "$ROOT"
+publish "$ROOT"
+REAL_GIT="$(command -v git)"
+cat > "$SB/bin/git" <<EOF
+#!/usr/bin/env bash
+# Real git, except that `ls-files -v` fails the way an unreadable index does.
+# `ls-files --error-unmatch` still answers, so this lands in the tracked branch
+# rather than in the unverifiable-repo rows.
+_lsf=0; _v=0
+for _a in "\$@"; do
+  [ "\$_a" = "ls-files" ] && _lsf=1
+  [ "\$_a" = "-v" ] && _v=1
+done
+if [ "\$_lsf" = 1 ] && [ "\$_v" = 1 ]; then
+  echo "fatal: index file corrupt" >&2
+  exit 128
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x "$SB/bin/git"
+( cd "$ROOT" && PATH="$SB/bin:$PATH" git ls-files --error-unmatch .gsd >/dev/null 2>&1 ) ||
+  fail "J10: precondition -- --error-unmatch must still answer, or this is not the tracked branch"
+run_hook
+[ "$(installs)" = 0 ] || fail "J10: a bundle whose index tags could not be read was installed"
+err_has "could not list the index entries" || fail "J10: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J10: refusal wrote the sidecar, making the miss permanent"
+pass "J10: an ls-files that cannot answer refuses rather than reading as clean"
 
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1

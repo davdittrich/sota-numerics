@@ -139,7 +139,21 @@ if [ "$TRACKED" -eq 0 ]; then
   # for assume-unchanged and uses S for skip-worktree, so anything that is not H
   # is an entry git has been told not to check. `diff --quiet HEAD` is not an
   # alternative here: it honours the same bit and reports no difference.
-  if git -C "$BUNDLE_DIR" ls-files -v -- . 2>/dev/null | grep -q '^[^H]'; then
+  # core.sparseCheckout needs no separate handling: it excludes paths by setting
+  # skip-worktree, so an out-of-cone bundle entry is tagged S and refused here
+  # (case J9). `-c core.sparseCheckout=false` would not have helped -- sparse
+  # checkout also removes the file from disk, so there is nothing for `status`
+  # to compare (measured, not assumed).
+  #
+  # The status is captured before the output, for the same reason `status`'s is
+  # below: piping straight into `grep` makes the pipeline exit with grep's
+  # status, so an `ls-files` that failed reads as "no suspicious tags" and the
+  # guard proceeds on evidence it never obtained (case J10).
+  if ! INDEX_TAGS="$(git -C "$BUNDLE_DIR" ls-files -v -- . 2>/dev/null)"; then
+    echo "capability-auto-install: git could not list the index entries for the $CAP_ID bundle, so whether the index hides edits cannot be determined; refusing to install it at global scope" >&2
+    exit 0
+  fi
+  if printf '%s\n' "$INDEX_TAGS" | grep -q '^[^H]'; then
     echo "capability-auto-install: the index marks $CAP_ID bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope" >&2
     exit 0
   fi
