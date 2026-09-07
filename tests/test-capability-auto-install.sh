@@ -169,7 +169,12 @@ new_sandbox() {
   ROOT="$SB/${2:-root}"
   BUNDLE="$ROOT/.gsd/capabilities/$CAP_ID"
   PATH_OVERRIDE=""
-  mkdir -p "$BUNDLE/scripts" "$SB/home" "$SB/bin"
+  mkdir -p "$BUNDLE/scripts" "$SB/home" "$SB/bin" "$ROOT/hooks"
+  # A plugin root ships hooks/gsd-tools.sh next to the hook, and the hook
+  # sources it for the gsd_tools resolver. A sandbox root without it is a shape
+  # that cannot occur in an installed plugin, so every root gets it; case L2
+  # removes it on purpose to pin what happens when it is missing.
+  cp "$REPO_ROOT/hooks/gsd-tools.sh" "$ROOT/hooks/gsd-tools.sh"
   printf '{"id":"%s","version":"0.2.0"}\n' "$CAP_ID" > "$BUNDLE/capability.json"
   printf 'print("gate")\n' > "$BUNDLE/scripts/check.py"
   cat > "$SB/bin/gsd-tools" <<'STUB'
@@ -717,6 +722,37 @@ ln -sfn ../scripts/check.py "$BUNDLE/scripts/link"
 run_hook
 [ "$(installs)" = 3 ] || fail "I4: a retargeted symlink did not change the bundle hash"
 pass "I4: symlink drift inside the bundle defeats the fast path"
+
+# --- L1: the gsd_tools resolver exists once in this repo ---
+# It used to exist twice: hooks/gsd-tools.sh, which this repo ships and
+# hooks/session-start.sh sources, and a byte-identical inline copy in the hook.
+# The copy's comment justified itself with a fact about a different repository.
+# Two copies of a resolver is two things to change when the resolution order
+# changes, and the release's own bar -- each meaning in exactly one place --
+# rules it out. Asserted on the marker rather than on the whole body, so
+# re-inlining a *modified* copy fails here too.
+L1_DUPES="$(grep -l '_GSD_TOOLS_ARGS_SET' "$REPO_ROOT"/hooks/*.sh | grep -v '/gsd-tools\.sh$')"
+[ -z "$L1_DUPES" ] ||
+  fail "L1: the gsd_tools resolver is duplicated outside hooks/gsd-tools.sh: $(echo $L1_DUPES)"
+grep -q 'hooks/gsd-tools\.sh"' "$HOOK" ||
+  fail "L1: the hook neither sources hooks/gsd-tools.sh nor carries its own resolver"
+pass "L1: the gsd_tools resolver is defined once and sourced"
+
+# --- L2: a plugin root missing hooks/gsd-tools.sh fails closed and retries ---
+# The cost of sourcing instead of inlining, pinned so it stays a decision. Both
+# files ship from the same directory of the same repo, so a root missing one is
+# a broken install rather than a supported configuration -- but it must say so
+# and leave no sidecar, not install silently or write a hash that suppresses the
+# next attempt. `gsd-tools` is on PATH here, so the install would otherwise
+# succeed: this measures the dependency, not the absence of a binary.
+new_sandbox l2
+rm -f "$ROOT/hooks/gsd-tools.sh"
+[ -x "$SB/bin/gsd-tools" ] || fail "L2: precondition -- the PATH stub should still be there"
+run_hook
+[ "$(installs)" = 0 ] || fail "L2: installed without the resolver it sources"
+err_has "gsd-tools not found" || fail "L2: wrong message (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "L2: wrote the sidecar, so the next session would not retry"
+pass "L2: a plugin root missing hooks/gsd-tools.sh says so and leaves no sidecar"
 
 # --- D0: the refusals the hook emits and the refusals the docs describe are
 #         the same set, and every count either document states is that set's
