@@ -12,7 +12,9 @@ Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
 `remediation: ...` line. Exit 2 = usage/IO error: an empty, missing or
 non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
-10 levels, or a discovered plan file that is not valid UTF-8.
+10 levels, a discovered plan file that is not valid UTF-8, or -- when no
+phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
+`## Current Position` `Phase:` line do not corroborate each other.
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
 text is authored by a different principal (the planner agent), so it is
@@ -93,6 +95,28 @@ STATE_CURRENT_PHASE_RE = re.compile(
     r"^current_phase:[ \t]*[\"']?(\d+(?:\.\d+)?)[\"']?[ \t]*$", re.MULTILINE
 )
 
+# The second witness to phase identity: the `Phase:` line inside the
+# `## Current Position` section. gsd-core's `plannedPhaseCore` OWNS that line
+# (#3395) and the frontmatter `current_phase` is re-derived FROM it, so step
+# 13b writes both or neither. Requiring them to agree is what lets this gate
+# notice a half-applied transition instead of validating whatever phase the
+# stale frontmatter still names.
+#
+# `Current Phase:` is deliberately NOT accepted as the label, even though
+# gsd-core's own `completePhaseCore` reads `Current Phase` before `Phase`. A
+# section spelled that way is one `plannedPhaseCore` could not rewrite --
+# measured: `state.planned-phase --phase 7` exits 0 reporting only
+# `Last Activity Description`, leaving both the body line and `current_phase`
+# on the previous phase. Accepting the label would make the two witnesses
+# agree on a value neither of them refreshed, which is the whole defect.
+STATE_POSITION_SECTION_RE = re.compile(
+    r"^##[ \t]+Current Position[ \t]*$(.*?)(?=^##[ \t]|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+STATE_BODY_PHASE_RE = re.compile(
+    r"^[ \t]{0,3}\*{0,2}Phase:\*{0,2}[ \t]*(\d+(?:\.\d+)?)\b", re.MULTILINE
+)
+
 # A CommonMark fenced code block opener: up to three leading spaces, then three
 # or more backticks or tildes, then an optional info string. Anchored per line,
 # no nested quantifiers -- same ReDoS discipline as the scans above.
@@ -128,9 +152,18 @@ def resolve_current_phase_dir(start):
     the phase identity travels through the project's own state file instead,
     where this function reads it directly and it never reaches a shell.
 
-    gsd-core writes `current_phase` in plan-phase step 13b ("Record Planning
+    gsd-core writes phase identity in plan-phase step 13b ("Record Planning
     Completion in STATE.md"), which runs before the plan:post gate dispatch in
-    step 13e -- at gate time it names the phase just planned. Every failure
+    step 13e. It writes TWO places -- the `## Current Position` `Phase:` line
+    and the frontmatter `current_phase` re-derived from it -- and on three
+    measured `## Current Position` shapes it silently writes NEITHER while
+    still exiting 0, leaving `current_phase` naming the PREVIOUS phase. Reading
+    that field alone therefore does not name the phase just planned; it names
+    whichever phase was last recorded successfully, and the gate would report a
+    clean pass on an old compliant phase while the new one went uninspected.
+
+    So both are read and required to agree. One witness cannot detect its own
+    staleness; two witnesses written by one transaction can. Every failure
     below raises, and main() maps a raise to exit 2: a blocking gate that
     cannot identify its phase must block rather than pass vacuously.
     """
@@ -159,6 +192,29 @@ def resolve_current_phase_dir(start):
         raise ValueError(
             f"{state_path} has no `current_phase: <number>` field;"
             " pass the phase directory explicitly"
+        )
+    # Second witness. See STATE_POSITION_SECTION_RE for why `Current Phase:`
+    # is not an accepted label and why disagreement means block, not pick-one.
+    section = STATE_POSITION_SECTION_RE.search(state_text[fm.end():])
+    if not section:
+        raise ValueError(
+            f"{state_path} has no `## Current Position` section to corroborate"
+            f" `current_phase: {m.group(1)}`; pass the phase directory explicitly"
+        )
+    body_phases = STATE_BODY_PHASE_RE.findall(section.group(1))
+    if len(body_phases) != 1:
+        raise ValueError(
+            f"{state_path} `## Current Position` carries {len(body_phases)}"
+            f" `Phase: <number>` lines to corroborate `current_phase:"
+            f" {m.group(1)}` (need exactly one); pass the phase directory"
+            " explicitly"
+        )
+    if normalize_phase(body_phases[0]) != normalize_phase(m.group(1)):
+        raise ValueError(
+            f"{state_path} disagrees with itself: frontmatter `current_phase:"
+            f" {m.group(1)}` but `## Current Position` says `Phase:"
+            f" {body_phases[0]}`; re-run /gsd-plan-phase for the phase you mean,"
+            " or pass the phase directory explicitly"
         )
     wanted = normalize_phase(m.group(1))
     phases_root = root / ".planning" / "phases"

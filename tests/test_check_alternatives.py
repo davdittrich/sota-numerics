@@ -914,11 +914,15 @@ class TestCurrentPhaseResolution(unittest.TestCase):
     onto this path, which must therefore fail CLOSED whenever it is unsure.
     """
 
-    def build_project(self, root, phase_dir_name, current_phase, plan_text):
+    def build_project(self, root, phase_dir_name, current_phase, plan_text,
+                      position="Phase: {phase} (Name) — READY TO EXECUTE"):
         (root / ".planning" / "phases" / phase_dir_name).mkdir(parents=True)
         (root / ".planning" / "STATE.md").write_text(
             "---\ngsd_state_version: 1.0\n"
-            f"current_phase: {current_phase}\nstatus: planning\n---\n",
+            f"current_phase: {current_phase}\nstatus: planning\n---\n"
+            "\n# Project State\n\n## Current Position\n\n"
+            + position.format(phase=current_phase)
+            + "\nPlan: 1 of 1\nStatus: Ready to execute\n",
             encoding="utf-8",
         )
         write_plan(root / ".planning" / "phases" / phase_dir_name, plan_text,
@@ -1032,6 +1036,88 @@ class TestCurrentPhaseResolution(unittest.TestCase):
             result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2)
         self.assertIn("expected exactly 1", result.stderr)
+
+    # Two witnesses, not one (gsd-beads-76k). gsd-core's step 13b writes the
+    # `## Current Position` `Phase:` line and re-derives `current_phase` from
+    # it, so it updates both or neither. On three measured section shapes it
+    # updates neither and still exits 0, and the surviving stale
+    # `current_phase` then pointed this gate at the PREVIOUS phase: it opened
+    # an old compliant directory, found nothing wrong, and printed a clean
+    # zero-byte pass while the phase actually planned went uninspected. Every
+    # case below asserts the refusal REASON, because the exit code alone
+    # cannot tell a real verdict from a gate that checked the wrong thing.
+
+    def test_stale_frontmatter_under_a_non_canonical_position_label_blocks(self):
+        # The reproduction. `## Current Position` spelled `Current Phase:` is a
+        # section `plannedPhaseCore` cannot rewrite -- measured, it exits 0
+        # updating only `Last Activity Description` -- so both witnesses still
+        # name phase 11 after phase 99 was planned. Phase 11 is compliant and
+        # phase 99 is not, so a gate that trusts `current_phase` alone passes.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-stale", "11",
+                               fixture_text("plan-compliant.md"),
+                               position="Current Phase: {phase} (Stale)")
+            (root / ".planning" / "phases" / "99-just-planned").mkdir()
+            write_plan(root / ".planning" / "phases" / "99-just-planned",
+                       fixture_text("plan-missing-section.md"),
+                       name="99-01-PLAN.md")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("carries 0 `Phase: <number>` lines", result.stderr)
+        # No verdict was reached on either phase -- least of all a pass on the
+        # stale one, which is what the exit 0 used to mean.
+        self.assertNotIn("11-01-PLAN.md", result.stderr)
+
+    def test_current_position_disagreeing_with_the_frontmatter_blocks(self):
+        # Half-applied transition: one witness moved, the other did not. The
+        # gate cannot know which is fresh, so it blocks and says so.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-compliant.md"),
+                               position="Phase: 99 (Elsewhere) — READY TO EXECUTE")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("disagrees with itself", result.stderr)
+
+    def test_missing_current_position_section_blocks(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-compliant.md"))
+            state = root / ".planning" / "STATE.md"
+            state.write_text(
+                state.read_text(encoding="utf-8").split("## Current Position")[0],
+                encoding="utf-8")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("no `## Current Position` section", result.stderr)
+
+    def test_two_phase_lines_in_current_position_block(self):
+        # gsd-core #3807 refuses to write a section carrying more than one
+        # `Phase:` line; a reader of one cannot tell which is the fresh one.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-compliant.md"),
+                               position="Phase: {phase} (One)\nPhase: 99 (Two)")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("carries 2 `Phase: <number>` lines", result.stderr)
+
+    def test_bold_phase_label_corroborates(self):
+        # gsd-core preserves the author's `**Phase:**` styling when it rewrites
+        # the line, so the bold form is a correctly-updated section. Refusing
+        # it would block planning on formatting.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-missing-section.md"),
+                               position="**Phase:** {phase} (Name) — READY TO EXECUTE")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("11-01-PLAN.md", result.stderr)
 
 
 class TestMultiPlanCoverage(unittest.TestCase):

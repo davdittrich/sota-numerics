@@ -51,7 +51,9 @@ trap '[ -n "${SCRATCH:-}" ] && rm -rf "$SCRATCH" 2>/dev/null; [ -n "${FAKE_HOME:
 # $1 = project root, $2 = phase directory basename, $3 = current_phase value.
 make_project() {
   mkdir -p "$1/.planning/phases/$2" || return 1
-  printf -- '---\ngsd_state_version: 1.0\ncurrent_phase: %s\nstatus: planning\n---\n' "$3" \
+  # Both witnesses the checker requires: the frontmatter field and the
+  # `## Current Position` `Phase:` line gsd-core's step 13b writes with it.
+  printf -- '---\ngsd_state_version: 1.0\ncurrent_phase: %s\nstatus: planning\n---\n\n## Current Position\n\nPhase: %s (Plain) — READY TO EXECUTE\nPlan: 1 of 1\n' "$3" "$3" \
     > "$1/.planning/STATE.md"
   printf '## Alternatives Considered\n\n- **A**: prose. `doc-a` (2024).\n- **B**: prose. `doc-b` (2024).\n\nDecided by: performance.\n' \
     > "$1/.planning/phases/$2/11-01-PLAN.md"
