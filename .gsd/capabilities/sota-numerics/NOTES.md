@@ -73,3 +73,32 @@ repository carries a `TestFoundationalCitationPairing` class that fails on exact
 regression — it lives outside this bundle, so a reader of an installed copy will not find it
 here. `planner-sota.md`, which does ship here, teaches the planner the same pairing rule. If
 either is edited, update the other — they teach and enforce one rule from two seats.
+
+## 6. Single-quoting `${PHASE_DIR}` narrows the splice; it does not close it
+
+gsd-core builds the gate command by replacing the literal text `${PHASE_DIR}` with the
+phase directory (`gsd-core/bin/lib/gate-predicate-evaluator.cjs`, `interpolate`) and then
+runs the result through `sh -c`. The value never exists as a shell variable, so the quoting
+written in `capability.json` is the only protection there is.
+
+The gate command wraps the splice in single quotes. Measured against 0.1.3's double quotes,
+with the same phase directory holding the same passing plan:
+
+| phase directory name | 0.1.3 `"${PHASE_DIR}"` | 0.2.0 `'${PHASE_DIR}'` |
+| --- | --- | --- |
+| `11-$(touch PWNED)-x` | ran `touch`, exit 2 | no file created, exit 0 |
+| ``11-`touch PWNED2`-x`` | ran `touch`, exit 2 | no file created, exit 0 |
+| `11-o'brien` | exit 0 | `sh: unexpected EOF`, exit 2 |
+
+Command substitution is closed. A name containing `'` is not: it ends the quoted string and
+the command dies as a shell syntax error, which the evaluator maps to a block verdict. That
+is fail-closed rather than a bypass, but it is a regression against 0.1.3 for that one name
+shape, and it is the reason this section exists.
+
+No quoting this manifest can write removes the remaining hole, because the splice is
+textual. The fix belongs upstream in gsd-core: pass the phase directory as an argv element,
+or shell-escape it at interpolation time. Until that lands, single quotes are the better of
+the two available failures.
+
+Do not "simplify" these back to double quotes to make an apostrophe work. That re-opens
+command substitution, which is the worse failure of the two.
