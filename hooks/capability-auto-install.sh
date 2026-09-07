@@ -28,15 +28,14 @@ else
   exit 0
 fi
 
-# Whole-bundle-directory hash (D-03): LC_ALL=C-sorted list of every path
-# under the bundle (files AND directories, so an added empty directory is
-# caught -- Assumption A1) followed by the concatenated contents of the
-# sorted regular files.
+# Whole-bundle-directory hash (D-03). Directories contribute their path, so an
+# added empty directory is caught (Assumption A1); files contribute their own
+# digest, which binds content to path. Concatenating raw contents instead, as
+# this did, is ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"}
+# produce the same path list and the same byte stream.
 bundle_hash() {
-  {
-    find "$BUNDLE_DIR" \( -type f -o -type d \) | LC_ALL=C sort
-    find "$BUNDLE_DIR" -type f | LC_ALL=C sort | while IFS= read -r _f; do cat "$_f"; done
-  } | "${HASH_CMD[@]}" | awk '{print $1}'
+  find "$BUNDLE_DIR" -type d -print -o -type f -exec "${HASH_CMD[@]}" {} + |
+    LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
 # One sidecar file per capability id (Pitfall 4), matching the single global
@@ -96,18 +95,16 @@ if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
   fi
-  PUBLISHED_REF=""
-  for _ref in origin/HEAD origin/main; do
-    if git -C "$BUNDLE_DIR" rev-parse --verify --quiet "$_ref" >/dev/null 2>&1; then
-      PUBLISHED_REF="$_ref"
-      break
-    fi
-  done
   # Fail closed: an unresolvable upstream means we cannot prove the bytes are
   # published, and a guard that cannot verify must not answer "safe".
-  if [ -z "$PUBLISHED_REF" ] ||
-     ! git -C "$BUNDLE_DIR" merge-base --is-ancestor HEAD "$PUBLISHED_REF" 2>/dev/null; then
-    echo "capability-auto-install: $CAP_ID bundle HEAD is not published (${PUBLISHED_REF:-no upstream ref found}); refusing to install it at global scope" >&2
+  PUBLISHED="$(git -C "$BUNDLE_DIR" rev-parse --verify --quiet origin/HEAD ||
+               git -C "$BUNDLE_DIR" rev-parse --verify --quiet origin/main)"
+  if [ -z "$PUBLISHED" ]; then
+    echo "capability-auto-install: $CAP_ID bundle has no origin/HEAD or origin/main to prove it is published; refusing to install it at global scope" >&2
+    exit 0
+  fi
+  if ! git -C "$BUNDLE_DIR" merge-base --is-ancestor HEAD "$PUBLISHED" 2>/dev/null; then
+    echo "capability-auto-install: $CAP_ID bundle HEAD is not published (not an ancestor of $PUBLISHED); refusing to install it at global scope" >&2
     exit 0
   fi
 fi
@@ -135,9 +132,9 @@ gsd_tools() {
   "${_GSD_TOOLS_ARGS[@]}" "$@"
 }
 
-# Spec is always the absolute bundle dir (Pattern 2) -- a relative spec would
-# resolve against the end user's cwd, not the plugin. Prose "user scope"
-# (D-01) maps to the CLI's literal --scope global value (Pitfall 1).
+# Absolute spec (Pattern 2): a relative one would resolve against the end user's
+# cwd, not the plugin. Prose "user scope" (D-01) is the CLI's --scope global
+# (Pitfall 1).
 gsd_tools capability install "$BUNDLE_DIR" --scope global --yes >/dev/null 2>&1
 INSTALL_STATUS=$?
 
