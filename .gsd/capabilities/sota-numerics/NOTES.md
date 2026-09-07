@@ -28,12 +28,13 @@ which "is always `blocking: false`" — this capability is the first to actually
 
 ## 3. Script path resolution and the missing-script guard
 
-The gate command resolves the script through `$(git rev-parse --show-toplevel)`, not
-`${CLAUDE_PLUGIN_ROOT}`, because the gate-evaluation subprocess's environment was not
-verified to carry that variable while its `cwd` is the project root (RESEARCH Open
-Question 1). Consequence: the gate only works where the bundle is installed at the project
-root under `.gsd/capabilities/sota-numerics/`, which is exactly what `gsd capability
-install sota-numerics` produces (D-04's dogfood copy is this repo's own such install).
+The gate command resolves the script through `$(git rev-parse --show-toplevel)` rather than
+`${CLAUDE_PLUGIN_ROOT}`: gsd-core runs the check command at the runtime project root with the
+parent process's environment inherited, which makes the project root a reliable anchor and
+leaves the plugin root dependent on a variable this capability does not set. The command then
+falls back to `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/`, so a global-scope-only
+install resolves too. `README.md` states the full resolution order and its precedence rule;
+this note records only why the project root is found the way it is.
 
 The gate command carries a `test -f` guard (REVIEWS finding 3). This fails closed
 deliberately — removing the guard, or softening it to exit 0, would let an uninstalled
