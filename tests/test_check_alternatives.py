@@ -814,12 +814,19 @@ class TestUnreadablePlanFiles(unittest.TestCase):
     Python exits 1. The two look alike in the source and behave differently.
     """
 
-    def test_non_utf8_plan_exits_2(self):
+    def test_non_utf8_plan_names_the_file_and_the_remedy(self):
+        # The bare codec message named a byte offset and no path, so a phase
+        # holding twenty plans gave the author no way to tell which one to fix.
+        # Assert the contract -- offending path, and a remedy -- not the
+        # wording, so the message can be reworded without breaking this.
         with scratch_dir() as tmp:
-            (Path(tmp) / "01-01-PLAN.md").write_bytes(b"\xff\xfe# plan\n")
+            plan = Path(tmp) / "01-01-PLAN.md"
+            plan.write_bytes(b"\xff\xfe# plan\n")
             result = run_check(tmp)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("codec can't decode", result.stderr)
+        self.assertIn(str(plan), result.stderr)
+        self.assertIn("UTF-8", result.stderr)
+        self.assertIn("re-save", result.stderr)
 
     def test_directory_named_like_a_plan_exits_1(self):
         # Discovery matches on the name, so a directory named NN-NN-PLAN.md is

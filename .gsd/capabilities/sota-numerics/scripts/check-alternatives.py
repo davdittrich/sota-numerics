@@ -232,7 +232,17 @@ def validate_entry(name, entry_text, today_year):
 
 def validate_plan(path):
     """Return None if `path` is compliant, else a violation reason string."""
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        # Name the file and the remedy. UnicodeDecodeError subclasses
+        # ValueError, so main() already exits 2 here -- but it printed only the
+        # codec's own message, which names a byte offset and no path. A phase
+        # holding twenty plans gave the author no way to tell which one to fix.
+        raise ValueError(
+            f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start});"
+            " re-save the plan as UTF-8"
+        ) from exc
     body = extract_section_body(text)
     if body is None:
         return "missing '## Alternatives Considered' section"
