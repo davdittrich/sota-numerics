@@ -45,6 +45,8 @@ The project copy wins when both exist.
 
 At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
+A global install publishes those bytes to every project on the machine, so the hook installs only bytes it can show are already published. It refuses when Git is unusable, when the bundle's repository reports uncommitted changes, or when the bundle's `HEAD` is not reachable from `origin/HEAD` or `origin/main`. A refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so the next session retries once the bundle is published. The check covers only a bundle its enclosing repository tracks; the plugin cache Claude normally installs from belongs to no repository, so it installs without it.
+
 Planner, executor, and verifier subagents receive role-specific banners. A normal session start uses the generic SOTA/numerics banner; calling the script directly with an unknown role falls back to that same text. Other subagent roles do not trigger this plugin's `SubagentStart` hook.
 
 Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the startup install check.
@@ -186,7 +188,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
 - gsd-core 1.10.0 or newer.
-- Git for project-scope gate lookup. A global-only install still works when Git lookup fails.
+- Git. The project-scope gate lookup uses it, and a global-only install still works when that lookup fails. Claude's automatic global install also uses it to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
 ## Update or remove
