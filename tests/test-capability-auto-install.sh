@@ -54,9 +54,19 @@
 # plugin root overwrote it (I1, I2), the host passed a relative plugin root
 # (I3), or the drift is a symlink rather than a file (I4).
 #
-# Nothing here can perform a real global install: HOME and GSD_HOME are
-# redirected into a per-case mktemp sandbox and gsd-tools is a stub that only
-# appends to a log. Assertion I0 proves that redirect held.
+# Nothing here can perform a real global install. Three things hold that up and
+# each is enforced rather than asserted: HOME and GSD_HOME are redirected into a
+# per-case mktemp sandbox; GIT_CEILING_DIRECTORIES stops every git command the
+# hook runs from discovering a repository above that sandbox, which is what
+# keeps the hook's first gsd-tools rung (`git rev-parse --show-toplevel`, then
+# $toplevel/gsd-core/bin/gsd-tools.cjs) from reaching a real binary when TMPDIR
+# happens to sit inside a checkout; and the PATH stub then answers instead. The
+# precondition below refuses to run at all if the sandbox is inside a
+# repository, because the cases would then be exercising a different partition
+# row than the one they name. Assertion I0 compares the real mirror's contents
+# and its sidecar's contents, not their existence: a real install overwrites
+# both in place, which leaves any check of "are these two paths still there"
+# passing.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -71,15 +81,38 @@ FAILURES=0
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
+if command -v sha256sum >/dev/null 2>&1; then HASH_CMD=(sha256sum)
+elif command -v shasum >/dev/null 2>&1; then HASH_CMD=(shasum -a 256)
+else echo "FAIL: no sha256 tool, so I0 could not tell whether the real mirror changed"; exit 1
+fi
+
 REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
+# Contents, not existence. The failure this guards against -- the hook
+# installing an uncommitted bundle over the developer's own global mirror -- has
+# happened on this project, and it adds and removes no path: it overwrites the
+# mirror's files and rewrites the sidecar. The digest is the one 23-01-PLAN.md
+# quotes for this directory, so a mismatch can be read against that recorded
+# value rather than only against this run's own baseline.
 real_gsd_state() {
-  ls -d "$REAL_GSD/capabilities/$CAP_ID" \
-        "$REAL_GSD/capability-auto-install-$CAP_ID.hash" 2>&1
+  ( cd "$REAL_GSD/capabilities/$CAP_ID" 2>/dev/null &&
+    find . -name __pycache__ -prune -o -type f -print |
+      LC_ALL=C sort | xargs "${HASH_CMD[@]}" | "${HASH_CMD[@]}"
+  ) 2>&1
+  cat "$REAL_GSD/capability-auto-install-$CAP_ID.hash" 2>&1
 }
 REAL_GSD_BEFORE="$(real_gsd_state)"
 
 SANDBOX_ROOT="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX_ROOT" 2>/dev/null' EXIT
+
+# TMPDIR decides where the sandbox lands, and a sandbox inside a checkout is not
+# a sandbox: the hook's git commands would discover that repository, which both
+# moves cases into partition rows they do not name and points gsd-tools
+# resolution at whatever gsd-core that checkout ships.
+if OUTER="$(git -C "$SANDBOX_ROOT" rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "FAIL: sandbox $SANDBOX_ROOT lies inside the repository $OUTER; point TMPDIR at a directory outside any checkout"
+  exit 1
+fi
 
 # Commit without depending on the developer's git identity or signing config.
 GIT_ID=(-c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false)
@@ -113,6 +146,7 @@ run_hook() {
   ( cd "$_root" &&
     PATH="${PATH_OVERRIDE:-$SB/bin:$PATH}" \
     HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
+    GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" \
     CLAUDE_PLUGIN_ROOT="${2:-$_root}" \
     bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err"
 }

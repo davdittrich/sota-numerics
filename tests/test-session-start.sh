@@ -24,11 +24,22 @@ fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
 # Snapshot the real global GSD state before any redirect, so the last assertion
-# can prove the suite did not touch it.
+# can prove the suite did not touch it. Contents, not existence: the failure
+# being guarded against is capability-auto-install.sh mirroring this worktree's
+# uncommitted bundle over the developer's global copy, which overwrites the
+# mirror's files and rewrites the sidecar without adding or removing either
+# path. The digest is the one 23-01-PLAN.md quotes for this directory.
+if command -v sha256sum >/dev/null 2>&1; then HASH_CMD=(sha256sum)
+elif command -v shasum >/dev/null 2>&1; then HASH_CMD=(shasum -a 256)
+else echo "FAIL: no sha256 tool, so case5 could not tell whether the real mirror changed"; exit 1
+fi
 REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
 real_gsd_state() {
-  ls -d "$REAL_GSD/capabilities/sota-numerics" \
-        "$REAL_GSD/capability-auto-install-sota-numerics.hash" 2>&1
+  ( cd "$REAL_GSD/capabilities/sota-numerics" 2>/dev/null &&
+    find . -name __pycache__ -prune -o -type f -print |
+      LC_ALL=C sort | xargs "${HASH_CMD[@]}" | "${HASH_CMD[@]}"
+  ) 2>&1
+  cat "$REAL_GSD/capability-auto-install-sota-numerics.hash" 2>&1
 }
 REAL_GSD_BEFORE="$(real_gsd_state)"
 REAL_HOME="$HOME"
@@ -74,7 +85,17 @@ mk_scratch() {
   local _pdir=".planning"
   local _cfg="config.json"
   mkdir -p "$SCRATCH/$_pdir" "$SCRATCH/home"
-  export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home"
+  # The HOME redirect is not the only thing holding the install back. The hook
+  # resolves gsd-tools from `git rev-parse --show-toplevel` before it consults
+  # PATH, and the walk starts at the cwd -- this scratch dir. With TMPDIR inside
+  # a checkout that ships gsd-core, that rung finds a real binary and the stub
+  # below never runs. The ceiling names the scratch dir's parent, not the
+  # scratch dir: git ignores a ceiling entry that is the directory the walk
+  # starts in, and the hook runs with the scratch dir as its cwd. The hook's own
+  # `git -C "$BUNDLE_DIR"` calls are unaffected, since that path does not lie
+  # under the ceiling.
+  export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home" \
+         GIT_CEILING_DIRECTORIES="$(dirname "$SCRATCH")"
   if [ -n "$1" ]; then
     printf '%s\n' "$1" > "$SCRATCH/$_pdir/$_cfg"
   fi
@@ -84,7 +105,7 @@ mk_scratch() {
 run_and_cleanup() {
   rm -rf "$SCRATCH" 2>/dev/null
   export HOME="$REAL_HOME"
-  unset GSD_HOME
+  unset GSD_HOME GIT_CEILING_DIRECTORIES
   cd "$REPO_ROOT" || { echo "FAIL: cd back to repo root failed"; exit 1; }
 }
 
