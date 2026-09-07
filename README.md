@@ -92,7 +92,7 @@ The checker reads direct child files whose names match these shapes:
 
 Both numeric segments are required; the phase segment may contain one decimal point. Nested plans and names such as `draft-PLAN.md` are ignored. Every matching plan is checked in sorted order. A directory with no matching plans passes.
 
-Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-two heading or at end of file. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
+Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-one or level-two heading -- indented up to the three leading spaces CommonMark allows -- or at end of file. Level-three and deeper headings stay inside it, which is what lets the internal-alternatives marker below sit within the section. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
 
 ### Accepted entries
 

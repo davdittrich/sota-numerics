@@ -117,6 +117,24 @@ def table_plan(heading="## Alternatives Considered", entries=SHAPE_ENTRIES):
     )
 
 
+def split_across_boundary(boundary):
+    """One cited alternative inside the section; a second cited alternative
+    and the `Decided by:` line placed after `boundary`.
+
+    The plan holds two compliant alternatives in total but only one within
+    the section, so it is compliant exactly when `boundary` fails to end
+    the section and donates its entry to it."""
+    first, second = SHAPE_ENTRIES
+    entries = [
+        f"- **{name}**: {prose} {citation} ({year})."
+        for name, prose, citation, year in (first, second)
+    ]
+    return (
+        f"## Alternatives Considered\n\n{entries[0]}\n\n"
+        f"{boundary}\n\n{entries[1]}\n\n{SHAPE_DECISION}\n"
+    )
+
+
 DOCUMENTED_MIXED_BODY = f"""## Alternatives Considered
 
 - **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
@@ -597,6 +615,57 @@ class TestSectionPresence(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1)
         self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+
+class TestSectionBoundary(unittest.TestCase):
+    """Which heading forms end the section body.
+
+    Donation is the dangerous direction: an entry written under a *later*
+    heading, counted as if it sat in this section, turns a one-alternative
+    plan into a passing two-alternative one. H1 and H2 end the section,
+    indented up to the three leading spaces CommonMark allows on an ATX
+    heading. H3 and deeper stay inside: `### Internal design alternatives`
+    is a documented in-section construct, so widening the boundary scan to
+    `#{1,6}` would truncate the body at that H3 and drop the `Decided by:`
+    line following it.
+
+    Each donation case asserts the *reason*, not merely the exit code. A
+    donated entry that happens to be uncited also exits 1 -- but names the
+    donated bullet, which leaves the boundary defect live behind a red
+    exit status.
+    """
+
+    def assert_does_not_donate(self, boundary):
+        with scratch_dir() as tmp:
+            write_plan(tmp, split_across_boundary(boundary))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.assertNotIn(SHAPE_ENTRIES[1][0], result.stderr)
+
+    def assert_stays_inside(self, boundary):
+        with scratch_dir() as tmp:
+            write_plan(tmp, split_across_boundary(boundary))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_h2_ends_the_section(self):
+        self.assert_does_not_donate("## Later Section")
+
+    def test_h1_ends_the_section(self):
+        self.assert_does_not_donate("# Later Section")
+
+    def test_indented_h2_ends_the_section(self):
+        self.assert_does_not_donate("   ## Later Section")
+
+    def test_indented_h1_ends_the_section(self):
+        self.assert_does_not_donate("   # Later Section")
+
+    def test_h3_does_not_end_the_section(self):
+        self.assert_stays_inside("### Notes")
+
+    def test_h4_does_not_end_the_section(self):
+        self.assert_stays_inside("#### Notes")
 
 
 class TestSupportedEntryShapes(unittest.TestCase):

@@ -41,7 +41,16 @@ PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
-NEXT_HEADING_RE = re.compile(r"^##[ \t]+", re.MULTILINE)
+# Ends the section body. H1 as well as H2, because `^##` alone let a later
+# `# Section` donate its bullets to this one: a plan with a single real
+# alternative passed on an entry written somewhere else entirely. Up to the
+# three leading spaces CommonMark allows on an ATX heading, matching
+# FENCE_LINE_RE below -- an indented `## Later` donated for the same reason.
+# Deliberately not `#{1,6}`: `### Internal design alternatives` is an
+# in-section construct, so bounding on H3 would cut the body short and drop
+# the `Decided by:` line that follows it. Bounding earlier only ever shrinks
+# the body, which is the fail-closed direction.
+NEXT_HEADING_RE = re.compile(r"^[ \t]{0,3}#{1,2}[ \t]+", re.MULTILINE)
 H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
