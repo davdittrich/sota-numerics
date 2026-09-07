@@ -748,6 +748,81 @@ class TestExemption(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+class TestFencedRegions(unittest.TestCase):
+    """A `## Alternatives Considered` inside a code fence is illustration, not
+    a decision record (gsd-beads-358).
+
+    `extract_section_body` took the FIRST occurrence anywhere in the file, so a
+    plan whose only occurrence sat inside a ```markdown fence -- README ships
+    four such examples for authors to copy -- satisfied the blocking gate on
+    the example's text. Both directions are pinned: a fence-only heading must
+    NOT count, and a fence must not hide a real heading that follows it.
+    """
+
+    def test_fenced_only_heading_does_not_satisfy_the_gate(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-fenced-only.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_fenced_example_before_a_real_section_still_passes(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-fenced-then-real.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_fenced_entries_do_not_count_toward_the_minimum(self):
+        # Same root cause one level down: bullets inside a fence were counted
+        # as mechanism alternatives, so a single real entry plus a fenced
+        # example reached the two-alternative minimum.
+        plan = (
+            "## Alternatives Considered\n\n"
+            f"- **Real mechanism**: prose. `real-doc` ({TODAY_YEAR}).\n\n"
+            "```markdown\n"
+            f"- **Example mechanism**: prose. `example-doc` ({TODAY_YEAR}).\n"
+            "```\n\n"
+            "Decided by: performance.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+    def test_tilde_fence_is_skipped_too(self):
+        plan = (
+            "## Approach\n\n~~~markdown\n## Alternatives Considered\n\n"
+            "N/A — no mechanism choice is made by this plan.\n~~~\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_unterminated_fence_fails_closed(self):
+        # An unterminated fence blanks to EOF. The section then reads as
+        # missing, which blocks -- the safe direction for a blocking gate.
+        plan = (
+            "## Approach\n\n```markdown\n## Alternatives Considered\n\n"
+            "N/A — no mechanism choice is made by this plan.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+
+    def test_inline_backticks_are_not_mistaken_for_a_fence(self):
+        # Doc-ref citations are backtick-delimited; only a line of three or
+        # more opens a fence, so ordinary citations must survive untouched.
+        text, _ = bullet_plan()
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestMultiPlanCoverage(unittest.TestCase):
     """Every plan in the directory is checked, not just
     the first readdir match."""

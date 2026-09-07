@@ -67,6 +67,12 @@ PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
 
+# A CommonMark fenced code block opener: up to three leading spaces, then three
+# or more backticks or tildes, then an optional info string. Anchored per line,
+# no nested quantifiers -- same ReDoS discipline as the scans above.
+FENCE_LINE_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
+NON_NEWLINE_RE = re.compile(r"[^\n]")
+
 
 def find_project_root(start):
     """Walk up from `start` to the nearest ancestor containing `.planning/`."""
@@ -91,6 +97,49 @@ def discover_plan_files(phase_dir):
         for candidate in Path(phase_dir).iterdir()
         if PLAN_FILE_RE.match(candidate.name)
     )
+
+
+def mask_fenced_regions(text):
+    """Blank every fenced code block, preserving offsets and line structure.
+
+    Without this, the first `## Alternatives Considered` anywhere in the file
+    won -- including one inside a ```markdown fence. README ships four fenced
+    examples for authors to copy, so a plan that pasted an example (an `N/A --
+    no mechanism choice` exemption, say) without writing a real section
+    satisfied the blocking gate on the example's text. Bullets and table rows
+    inside a fence were counted as real entries for the same reason.
+
+    Replacing fenced bytes with spaces rather than deleting them keeps every
+    offset intact, so the scans below stay one pass and slices still line up.
+    An unterminated fence blanks to EOF: the section then reads as missing and
+    the gate blocks, which is the fail-closed direction.
+    """
+    spans = []
+    open_marker = None
+    start = 0
+    for m in FENCE_LINE_RE.finditer(text):
+        marker, info = m.group(1), m.group(2)
+        if open_marker is None:
+            # A backtick fence's info string may not itself contain a backtick.
+            if marker[0] == "`" and "`" in info:
+                continue
+            open_marker = marker
+            start = m.start()
+        elif marker[0] == open_marker[0] and len(marker) >= len(open_marker) and not info.strip():
+            spans.append((start, m.end()))
+            open_marker = None
+    if open_marker is not None:
+        spans.append((start, len(text)))
+    if not spans:
+        return text
+    out = []
+    prev = 0
+    for span_start, span_end in spans:
+        out.append(text[prev:span_start])
+        out.append(NON_NEWLINE_RE.sub(" ", text[span_start:span_end]))
+        prev = span_end
+    out.append(text[prev:])
+    return "".join(out)
 
 
 def extract_section_body(text):
@@ -243,7 +292,7 @@ def validate_plan(path):
             f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start});"
             " re-save the plan as UTF-8"
         ) from exc
-    body = extract_section_body(text)
+    body = extract_section_body(mask_fenced_regions(text))
     if body is None:
         return "missing '## Alternatives Considered' section"
     if is_exempt(body):
