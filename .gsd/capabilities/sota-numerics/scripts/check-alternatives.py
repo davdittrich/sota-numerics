@@ -174,6 +174,20 @@ HTML_COMMENT_OPEN = "<!--"
 HTML_COMMENT_CLOSE = "-->"
 NON_NEWLINE_RE = re.compile(r"[^\n]")
 
+# CommonMark list markers at zero-to-three-space indentation: a bullet
+# (-, +, *) or an ordered marker (1-9 digits then . or )), each followed
+# by required whitespace. Matched only against single already-isolated
+# lines below, so no MULTILINE flag is needed here.
+LIST_MARKER_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+")
+# A non-blank line at zero-to-three-space indentation -- the same shallow
+# range FENCE_LINE_RE and LIST_MARKER_RE anchor to.
+SHALLOW_LINE_RE = re.compile(r"^[ \t]{0,3}\S")
+# A non-blank line indented four or more spaces/tabs: an indented-code-
+# block candidate (https://spec.commonmark.org/0.31.2/#indented-code-blocks,
+# 2024). No tab-stop expansion -- literal character count, the same
+# simplicity this whole pre-pass already trades for a dependency-free scan.
+INDENTED_CODE_LINE_RE = re.compile(r"^[ \t]{4,}\S")
+
 
 def find_project_root(start):
     """Walk up from `start` to the nearest ancestor containing `.planning/`."""
@@ -353,6 +367,13 @@ def mask_fenced_regions(text):
     Openers are consumed left to right and whichever opens first wins, so a
     `<!--` inside a fence is code and a fence inside a comment is comment --
     matching CommonMark, where neither construct nests inside the other.
+
+    CommonMark's other invisible-on-the-page construct is the indented code
+    block: four or more leading spaces, no delimiter at all (D-02). Fences
+    above are masked by explicit open/close bytes; an indented block is
+    masked per line instead, by `mask_indented_code_blocks` below, run last
+    so a fenced or commented interior -- already blank -- cannot forge the
+    blank-line-before or list-marker state that scan reads.
     """
     spans = []
     pos = 0
@@ -369,7 +390,7 @@ def mask_fenced_regions(text):
             pos = fence_close(text, fence)
             spans.append((fence.start(), pos))
     if not spans:
-        return text
+        return mask_indented_code_blocks(text)
     out = []
     prev = 0
     for span_start, span_end in spans:
@@ -377,7 +398,48 @@ def mask_fenced_regions(text):
         out.append(NON_NEWLINE_RE.sub(" ", text[span_start:span_end]))
         prev = span_end
     out.append(text[prev:])
-    return "".join(out)
+    return mask_indented_code_blocks("".join(out))
+
+
+def mask_indented_code_blocks(text):
+    """Blank indented code blocks the same way the fence scan above blanks
+    fences: same-length spaces for every non-newline byte, so offsets and
+    line numbers survive (D-02, REVIEW-CRITICAL-FINAL P1-1a).
+
+    A run starts at a non-blank line indented four or more spaces that
+    follows a blank line, and continues -- through blank lines and further
+    indented lines -- until the next non-blank line at zero to three spaces
+    (https://spec.commonmark.org/0.31.2/#indented-code-blocks, 2024).
+
+    Guarded by list context so an ordinary continuation paragraph under a
+    bullet is never masked: a top-level list marker (0-3 spaces) sets the
+    flag, any other non-blank 0-3-space line clears it, and a run may only
+    start while the flag is clear. A 4+-space line never touches the flag,
+    so it cannot change mid-run.
+    """
+    lines = text.splitlines(keepends=True)
+    in_list = False
+    prev_blank = True
+    run_start = None
+    for i, line in enumerate(lines):
+        body = line[:-1] if line.endswith("\n") else line
+        blank = body.strip() == ""
+        if run_start is not None and not (blank or INDENTED_CODE_LINE_RE.match(body)):
+            for j in range(run_start, i):
+                lines[j] = NON_NEWLINE_RE.sub(" ", lines[j])
+            run_start = None
+        if run_start is None:
+            if LIST_MARKER_RE.match(body):
+                in_list = True
+            elif not blank and SHALLOW_LINE_RE.match(body):
+                in_list = False
+            if not blank and prev_blank and not in_list and INDENTED_CODE_LINE_RE.match(body):
+                run_start = i
+        prev_blank = blank
+    if run_start is not None:
+        for j in range(run_start, len(lines)):
+            lines[j] = NON_NEWLINE_RE.sub(" ", lines[j])
+    return "".join(lines)
 
 
 def extract_section_body(text):
