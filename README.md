@@ -32,7 +32,7 @@ codex plugin marketplace add davdittrich/gsd-beads
 codex plugin add sota-numerics@gsd-beads
 ```
 
-The marketplace remains in `davdittrich/gsd-beads`; its entry points to this repository.
+The marketplace is `davdittrich/gsd-beads`; its `sota-numerics` entry points at this repository.
 
 The GSD capability itself declares support for every GSD runtime. Automatic startup installation and role banners come from Claude's `SessionStart` and `SubagentStart` hooks. On any host, including one where those hooks never ran, the gate can use a capability bundle at either of these locations:
 
