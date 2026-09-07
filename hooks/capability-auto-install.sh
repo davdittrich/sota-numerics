@@ -52,6 +52,16 @@ NEW_HASH="$(bundle_hash)"
 # D-02 fast path: unchanged bundle exits silently, never spawns node.
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
+# Fail closed before the guard runs: every question below is asked through git,
+# and a git that cannot answer is not an answer of "safe" (gsd-beads-iy2).
+# `command -v` alone is insufficient -- a git that is on PATH but non-functional
+# makes every probe below exit non-zero, which the guard would read as "not a
+# repo" and proceed. Probing an actual invocation covers both.
+if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
+  echo "capability-auto-install: git is unusable, so $CAP_ID bundle provenance cannot be verified; refusing to install it at global scope" >&2
+  exit 0
+fi
+
 # Installing at global scope publishes to every project on the machine, so only
 # already-published bytes may be installed. When this plugin is developed in a
 # git worktree that sits inside another project, the host loads that worktree as
