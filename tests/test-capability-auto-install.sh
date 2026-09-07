@@ -13,32 +13,35 @@
 # exit codes are exhaustive by construction -- 0, 1, and everything else -- and
 # because each of those three is then split on conditions that are themselves
 # complementary. An earlier version of this header stopped at six rows by
-# reading every non-zero exit code as "untracked", and rows 9 and 10 are the two
-# halves of what that concealed. A later one stopped at nine by reading a
-# `status` that failed as a tree that is clean; row 2 is what that concealed.
+# reading every non-zero exit code as "untracked", and rows 10 and 11 are the
+# two halves of what that concealed. A later one stopped at nine by trusting
+# `status`'s answer without asking whether it had answered at all; rows 2 and 3
+# are what that concealed.
 #
 #   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
 #   ls-files 0 -- a repository tracks the bundle:
-#   2. `status` could not answer at all       -> refuse   (case J1)
-#   3. uncommitted or ignored bytes           -> refuse   (cases B, E)
-#   4. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
-#   5. clean, HEAD not an ancestor of it      -> refuse   (case C)
-#   6. clean, HEAD published                  -> install  (cases D, A2)
+#   2. index told not to check some entries   -> refuse   (cases J2, J3)
+#   3. `status` could not answer at all       -> refuse   (case J1)
+#   4. uncommitted or ignored bytes           -> refuse   (cases B, E, J4)
+#   5. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
+#   6. clean, HEAD not an ancestor of it      -> refuse   (case C)
+#   7. clean, HEAD published                  -> install  (cases D, A2)
 #
 #   ls-files 1 -- a repository answered and does not track the bundle:
-#   7. it has nothing to say about the bytes  -> install  (cases F, G)
+#   8. it has nothing to say about the bytes  -> install  (cases F, G)
 #
 #   ls-files 128 -- git did not answer, which is not the same as "no":
-#   8. no repository on disk                  -> install  (cases A, A3)
-#   9. a repository git will not open         -> refuse   (cases H3, H5)
-#  10. a repository whose index it cannot read-> refuse   (case H4)
+#   9. no repository on disk                  -> install  (cases A, A3)
+#  10. a repository git will not open         -> refuse   (cases H3, H5)
+#  11. a repository whose index it cannot read-> refuse   (case H4)
 #
-# Rows 2, 3 and 6 are complementary because they split on `status`'s exit code
-# first and its output second: a non-zero exit, then non-empty output, then the
-# only remaining state. Rows 9 and 10 are separate because they need different
-# evidence: in row 10 git has already opened the repository, so
-# `rev-parse --git-dir` sees it, while in row 9 discovery itself fails and only
+# Rows 2 to 7 are complementary because they qualify `status`'s answer before
+# reading it: first whether the index has been told to hide entries from it,
+# then whether it exited non-zero, then whether it printed anything, then the
+# only remaining state. Rows 10 and 11 are separate because they need different
+# evidence: in row 11 git has already opened the repository, so
+# `rev-parse --git-dir` sees it, while in row 10 discovery itself fails and only
 # the filesystem can answer.
 #
 # Plus properties that cut across the partition: a refusal must never write the
@@ -383,6 +386,63 @@ run_hook
 err_has "could not report the state" || fail "J1: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "J1: refusal wrote the sidecar, making the miss permanent"
 pass "J1: a status git could not answer is not an answer of clean"
+
+# --- J2: an index entry marked assume-unchanged ---
+# `status` answers from the index, and the index can be told to stop looking.
+# `update-index --assume-unchanged` is the flag a developer sets on a file they
+# are hand-editing locally, so this is an ordinary local tweak rather than an
+# exotic attack, and the bundle's bytes on disk then differ from anything ever
+# published while every git question above still answers "clean, published".
+# `diff --quiet HEAD` does not close this: it honours the same bit.
+new_sandbox j2
+git_init "$ROOT"
+publish "$ROOT"
+git -C "$ROOT" update-index --assume-unchanged .gsd/capabilities/$CAP_ID/scripts/check.py
+printf 'UNPUBLISHED\n' >> "$BUNDLE/scripts/check.py"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
+  fail "J2: precondition -- status should report this edited bundle as clean"
+git -C "$BUNDLE" diff --quiet HEAD -- . 2>/dev/null ||
+  fail "J2: precondition -- diff HEAD should also miss it, so it cannot be the fix"
+run_hook
+[ "$(installs)" = 0 ] || fail "J2: an assume-unchanged bundle edit was installed"
+err_has "will not report edits" || fail "J2: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J2: refusal wrote the sidecar, making the miss permanent"
+pass "J2: assume-unchanged entries refuse"
+
+# --- J3: an index entry marked skip-worktree ---
+# The same hole through the other bit, and not reachable by J2's test: with -v
+# assume-unchanged lowercases the tag while skip-worktree keeps an upper-case
+# S, so a check written for lower-case letters alone passes this case.
+new_sandbox j3
+git_init "$ROOT"
+publish "$ROOT"
+git -C "$ROOT" update-index --skip-worktree .gsd/capabilities/$CAP_ID/scripts/check.py
+printf 'UNPUBLISHED\n' >> "$BUNDLE/scripts/check.py"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
+  fail "J3: precondition -- status should report this edited bundle as clean"
+[ "$(git -C "$BUNDLE" ls-files -v -- . | cut -c1 | sort -u | tr -d '\n')" = "HS" ] ||
+  fail "J3: precondition -- skip-worktree should tag S, not a lower-case letter"
+run_hook
+[ "$(installs)" = 0 ] || fail "J3: a skip-worktree bundle edit was installed"
+err_has "will not report edits" || fail "J3: wrong refusal (err: $(cat "$SB/err"))"
+pass "J3: skip-worktree entries refuse"
+
+# --- J4: status configured not to mention untracked or ignored files ---
+# Third way to make `status` answer "clean" about bytes that are there.
+# `status.showUntrackedFiles=no` is a speed setting on large repositories, and
+# it suppresses the --ignored output too -- which is the whole mechanism case E
+# depends on. The command line has to override the config rather than trust it.
+new_sandbox j4
+git_init "$ROOT"
+publish "$ROOT"
+printf 'UNPUBLISHED\n' > "$BUNDLE/scripts/extra.py"
+git -C "$ROOT" config status.showUntrackedFiles no
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
+  fail "J4: precondition -- the configured status should report this bundle clean"
+run_hook
+[ "$(installs)" = 0 ] || fail "J4: an untracked file hidden by status config was installed"
+err_has "uncommitted or ignored" || fail "J4: wrong refusal (err: $(cat "$SB/err"))"
+pass "J4: status configured to hide untracked bytes does not hide them from the guard"
 
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1

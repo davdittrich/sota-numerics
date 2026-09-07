@@ -134,6 +134,23 @@ unverifiable_repo() {
 TRACKED=0
 git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1 || TRACKED=$?
 if [ "$TRACKED" -eq 0 ]; then
+  # `status` answers out of the index, and the index can be told to stop
+  # looking. `update-index --assume-unchanged` -- the flag a developer sets on a
+  # file they are hand-editing, not an exotic attack -- and `--skip-worktree`
+  # both make an edited tracked file report clean, and the sidecar then makes
+  # that miss permanent. `-v` tags a plain cached entry H, lower-cases the tag
+  # for assume-unchanged and uses S for skip-worktree, so anything that is not H
+  # is an entry git has been told not to check. `diff --quiet HEAD` is not an
+  # alternative here: it honours the same bit and reports no difference.
+  if git -C "$BUNDLE_DIR" ls-files -v -- . 2>/dev/null | grep -q '^[^H]'; then
+    echo "capability-auto-install: the index marks $CAP_ID bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope" >&2
+    exit 0
+  fi
+  # --untracked-files=all, because `status.showUntrackedFiles=no` -- a speed
+  # setting on large repositories -- suppresses untracked *and* ignored output,
+  # which is the whole mechanism the line below depends on. The command line has
+  # to state what it needs rather than inherit whatever the repository configured.
+  #
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
   # machine-wide, and plain `status --porcelain` reports it as clean
@@ -147,7 +164,7 @@ if [ "$TRACKED" -eq 0 ]; then
   # alone and `merge-base` still proves HEAD published from the commit objects
   # alone -- every check that could see the worktree bytes has failed, and only
   # this one knows it.
-  if ! DIRTY="$(git -C "$BUNDLE_DIR" status --porcelain --ignored -- . 2>/dev/null)"; then
+  if ! DIRTY="$(git -C "$BUNDLE_DIR" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)"; then
     echo "capability-auto-install: git could not report the state of the $CAP_ID bundle, so its contents cannot be verified; refusing to install it at global scope" >&2
     exit 0
   fi
