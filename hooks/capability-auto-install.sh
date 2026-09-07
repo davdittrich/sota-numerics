@@ -33,13 +33,21 @@ else
   exit 0
 fi
 
-# Whole-bundle-directory hash (D-03). Directories contribute their path, so an
-# added empty directory is caught (Assumption A1); files contribute their own
-# digest, which binds content to path. Concatenating raw contents instead, as
-# this did, is ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"}
-# produce the same path list and the same byte stream.
+# Whole-bundle-directory hash (D-03). `capability install` copies the directory,
+# so every entry in it becomes bytes the global mirror serves and every entry
+# must therefore reach the hash: files contribute their own digest, which binds
+# content to path; symlinks contribute their target, so adding or retargeting
+# one is drift; everything else -- directories, and any FIFO or socket that
+# should not be there -- contributes its path, so an added empty directory is
+# caught (Assumption A1). Concatenating raw contents instead, as this did, is
+# ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"} produce the
+# same path list and the same byte stream. `-exec sh -c` rather than GNU
+# `find -printf`, which BSD find does not have.
 bundle_hash() {
-  find "$BUNDLE_DIR" -type d -print -o -type f -exec "${HASH_CMD[@]}" {} + |
+  find "$BUNDLE_DIR" \
+       -type l -exec sh -c 'for p in "$@"; do printf "%s -> %s\n" "$p" "$(readlink "$p")"; done' _ {} + \
+    -o -type f -exec "${HASH_CMD[@]}" {} + \
+    -o -print |
     LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 

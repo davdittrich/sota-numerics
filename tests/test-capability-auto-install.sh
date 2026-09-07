@@ -266,6 +266,22 @@ run_hook "$ROOT" .
   fail "I3: a relative CLAUDE_PLUGIN_ROOT made the hash root-independent ($(installs) installs in 3 runs)"
 pass "I3: a relative CLAUDE_PLUGIN_ROOT still separates two roots"
 
+# --- I4: a symlink added or retargeted inside the bundle is drift ---
+# `capability install` copies the directory, so a symlink is bytes the mirror
+# will carry. If it does not reach the hash, the fast path at the top of the
+# hook skips the publication guard and the install itself, and the mirror keeps
+# serving a link whose target has since moved.
+new_sandbox i4
+run_hook
+[ "$(installs)" = 1 ] || fail "I4: precondition -- first run should install"
+ln -s ../capability.json "$BUNDLE/scripts/link"
+run_hook
+[ "$(installs)" = 2 ] || fail "I4: an added symlink did not change the bundle hash"
+ln -sfn ../scripts/check.py "$BUNDLE/scripts/link"
+run_hook
+[ "$(installs)" = 3 ] || fail "I4: a retargeted symlink did not change the bundle hash"
+pass "I4: symlink drift inside the bundle defeats the fast path"
+
 # --- I0: no case above touched the developer's real global GSD state ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
