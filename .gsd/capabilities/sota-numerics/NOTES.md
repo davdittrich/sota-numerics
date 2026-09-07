@@ -36,53 +36,38 @@ falls back to `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/`, so a global
 install resolves too. `README.md` states the full resolution order and its precedence rule;
 this note records only why the project root is found the way it is.
 
-The gate command carries a `test -f` guard (REVIEWS finding 3). This fails closed
+The gate command carries a `test -f` guard. This fails closed
 deliberately — removing the guard, or softening it to exit 0, would let an uninstalled
 capability silently stop gating every plan in every phase.
 
-## 4. D-08's route: mechanical heuristics only, LLM layer deferred
+## 4. No `into: "checker"` contribution — it would install and never render
 
-D-08 asked for a layered check: a structural predicate for presence/well-formedness, plus
-`gsd-plan-checker` getting a contribution fragment to spot-check citation plausibility before
-the gate passes. RESEARCH verified that no workflow call site renders `into: "checker"`
-contributions anywhere in the installed gsd-core — a fragment declared for that channel today
-would be schema-valid, installed, and silently inert, the same failure mode `beads`'s own
-`plan:post` step already exhibits in this repo. Two routes existed: patch
-`~/.claude/gsd-core/workflows/plan-phase.md` step 10 to add that render call (a machine-local
-edit, RESEARCH's own N2-constraint-override category), or defer the LLM-mediated layer and
-let the deterministic heuristics already in `check-alternatives.py` stand in for it.
-
-**Decided at this plan's Task 1 checkpoint: mechanical.** Rationale given: ship Phase 11
-patch-free with zero core-repo risk and no new machine-local maintenance surface, consistent
-with this repo's own ladder discipline (reach for a deterministic check before an
-LLM-mediated one) and matching RESEARCH's own first-move recommendation (Pattern 2). This
-satisfies D-08's *intent* — a plausibility spot-check runs before the gate can pass — through
-a different mechanism than the literal wording ("gets a contribution fragment"): the
-deterministic layer (`entry_placeholder_violation` in `check-alternatives.py`) already rejects
-example.com-class placeholder hosts and bare TODO/TBD citations, D-08's own mechanical half,
-shipped in Plan 01. No fragment, no fifth `contributions[]` entry, and no
-`GSD-CORE-PATCH.md` exist in this capability as a result — their absence is the route, not an
+The obvious extension to this capability is a fifth `contributions[]` entry with
+`into: "checker"`, so the plan checker spot-checks citation plausibility before the gate
+passes. It would be schema-valid and install cleanly, and it would never run: the only
+role-targeted contribution injection in gsd-core's `plan-phase.md` filters on
+`into == "planner"`, and the `gsd-plan-checker` prompt that workflow builds carries no
+contribution block at all. The absence of a fifth contribution is the choice, not an
 oversight.
 
-**Dogfood signal that would trigger revisiting (D-04):** a plan passes this gate on a
-citation that a human later discovers was hallucinated — a syntactically well-formed URL or
-date that the deterministic regex cannot distinguish from a real one. If that happens during
-this repo's own future phase planning, escalate to the patch route (Pattern 2(a) in
-RESEARCH.md) rather than tightening the regex further; a well-formed hallucination is exactly
-what regex cannot catch and genuine LLM judgment can.
+Citation quality is therefore enforced mechanically and stops there:
+`entry_placeholder_violation` in `check-alternatives.py` rejects example.com-class hosts
+and bare TODO/TBD references.
+
+**What would justify revisiting:** a plan passes this gate on a citation a human later finds
+was hallucinated — a well-formed URL or year the regex cannot tell from a real one.
+Tightening the regex cannot catch that; only a judgment layer can, and that needs the render
+call site to exist first.
 
 ## 5. The recency rule is at-least-one-in-window, never none-outside-window
 
 `check-alternatives.py`'s recency check accepts an alternative if AT LEAST ONE cited year
-falls within the last 6 years — not if every cited year does. This is deliberate (REVIEWS
-finding 2): an alternative citing Kahan summation, IEEE 754, or a classic BLAS paper alongside
-a current doc or benchmark passes, because only one in-window year is required and the
-canonical year is simply ignored when computing whether an in-window date exists. It is never
-rejected on its own merits — it only fails to count toward the in-window requirement by
-itself.
+falls within the last 6 years — not if every cited year does. This is deliberate: an
+alternative citing Kahan summation, IEEE 754, or a classic BLAS paper alongside a current doc
+or benchmark passes, because only one in-window year is required.
 
 **Warning:** "tightening" this to reject any out-of-window year — the obvious-looking reading
-of D-07 ("citations require a recency marker") — would make every foundational citation fail
+of "citations require a recency marker" — would make every foundational citation fail
 the gate. Two things guard against it. `tests/test_check_alternatives.py` in the plugin
 repository carries a `TestFoundationalCitationPairing` class that fails on exactly that
 regression — it lives outside this bundle, so a reader of an installed copy will not find it
