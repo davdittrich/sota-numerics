@@ -10,8 +10,8 @@ Make GSD compare mechanisms before execution, then keep numerical precision and 
 | --- | --- | --- |
 | `plan:pre` | planner | Research current mechanisms, compare real alternatives, cite them, and rank the decision by performance, simplicity/LOC, ecosystem support, then maintenance cost. |
 | `plan:post` | gate | Block when an eligible plan lacks the required `Alternatives Considered` structure. |
-| `execute:wave:pre` | executor | Derive numeric parameters from the problem, avoid cancellation and silent error growth, name the ceiling of any precision tradeoff, and keep code the agent runs directly quiet — a compact result or nothing on success, one line naming the problem and one naming the fix on failure. |
-| `execute:wave:post` | verifier | Flag drift from the chosen mechanism, dropped edge cases, unstable substitutions, unexplained constants, unsupported performance claims, and agent-invoked code that is not quiet. |
+| `execute:wave:pre` | executor | Derive numeric parameters from the problem, avoid cancellation and silent error growth, name the ceiling of any precision tradeoff, keep code the agent runs directly quiet — a compact result or nothing on success, one line naming the problem and one naming the fix on failure — and keep agent-facing prose legible — one meaning per place, instructions phrased as target behavior, and a checkable bound on every completion criterion. |
+| `execute:wave:post` | verifier | Flag drift from the chosen mechanism, dropped edge cases, unstable substitutions, unexplained constants, unsupported performance claims, agent-invoked code that is not quiet, and prose that is not legible. |
 | `ship:pre` | orchestrator | Check that precision, efficiency, and quiet-output claims have measurements or sources and that accepted simplifications state where they break. |
 
 The four prompts are advice. A rendering failure skips that prompt and does not stop the workflow. The `plan:post` check is different: it is blocking, and a missing interpreter, missing script, crash, or 30-second timeout halts planning.

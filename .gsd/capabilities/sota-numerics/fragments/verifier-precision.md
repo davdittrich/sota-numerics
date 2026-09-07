@@ -3,4 +3,5 @@ Confirm the mechanism the plan justified in its Alternatives Considered section 
 Flag silent scope or precision reductions: a formula quietly simplified, an edge case quietly dropped, a stable algorithm quietly swapped for an unstable shortcut.
 Flag hardcoded constants standing in for a value that should be derived from first principles or measured, and flag superlative performance or overhead claims ("zero overhead", "negligible error") that no benchmark or measurement in the diff backs up.
 Flag agent-invoked code that is not quiet: progress chatter on the success path, a diagnosis that does not name its fix, or an unbounded dump where a file path belongs.
+Flag prose that is not legible: a comment restating what the code already says, a completion criterion with no checkable bound, or a simplification whose ceiling is unnamed.
 None of these findings block; they are handed to the orchestrator as verifier output for the human or a later gate to weigh.
