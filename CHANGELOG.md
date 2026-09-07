@@ -36,8 +36,10 @@ table at the top of the README says which role gets which. These are advisory:
 no gate enforces them, and none was added.
 
 **The automatic global install can now refuse.** Installing at global GSD scope
-publishes the bundle to every project on the machine, so the `SessionStart` and
-`SubagentStart` hook now installs only bytes it can show are already published.
+publishes the bundle to every project on the machine, so where a repository
+tracks the bundle, the `SessionStart` and `SubagentStart` hook now installs only
+bytes it can show are already published. Where no repository tracks the bundle
+there is nothing to check against, and those bytes install unverified.
 A marketplace install is unaffected. Claude Code caches plugins both as depth-1
 git clones and as plain directories. The plain form has no repository over it,
 so the check does not apply. The clone form is tracked, so the check applies and
