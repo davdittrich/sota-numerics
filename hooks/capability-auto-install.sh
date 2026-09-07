@@ -123,8 +123,7 @@ gsd_tools() {
 }
 
 # Absolute spec (Pattern 2): a relative one would resolve against the end user's
-# cwd, not the plugin. Prose "user scope" (D-01) is the CLI's --scope global
-# (Pitfall 1).
+# cwd, not the plugin.
 gsd_tools capability install "$BUNDLE_DIR" --scope global --yes >/dev/null 2>&1
 INSTALL_STATUS=$?
 

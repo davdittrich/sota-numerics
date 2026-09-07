@@ -275,9 +275,7 @@ def check_alternatives(phase_dir_arg):
     """
     phase_dir_path = Path(phase_dir_arg)
     # Called for its raise, not its result: it rejects a phase_dir sitting
-    # outside any GSD project. Its return value used to feed a containment
-    # check that could never fail -- the root it returns is derived from this
-    # same resolved path, so the path is always under it.
+    # outside any GSD project.
     find_project_root(phase_dir_path)
     resolved_phase_dir = phase_dir_path.resolve()
     violations = []
