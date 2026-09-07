@@ -171,5 +171,39 @@ rc=0
 rm -rf "$H"
 pass "case4: an unresolvable or ambiguous current_phase blocks (exit 2), never passes"
 
+# --- Case 5: the project copy wins, in every project shape ---
+# The chain used `git rev-parse --show-toplevel` FIRST, so a non-Git project
+# resolved to "/.gsd/..." and silently fell through to the global copy, and a
+# project nested inside a monorepo got the monorepo root rather than its own
+# bundle. Both violate the documented project-before-global precedence. Nothing
+# caught it because no fixture here was ever a Git repo or carried a project
+# copy -- the whole first clause was dead under test.
+CHAIN="${GATE_CMD%%test -f*}"
+resolve_in() {  # $1=cwd  $2=fake HOME
+  ( cd "$1" && HOME="$2" env -u GSD_HOME bash -c "$CHAIN"' printf "%s\n" "$SOTA_SCRIPT"' )
+}
+REL=".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+P4="$(mktemp -d)"
+mkdir -p "$P4/home/$(dirname "$REL")"; : > "$P4/home/$REL"
+mkdir -p "$P4/mono/project/$(dirname "$REL")"; : > "$P4/mono/project/$REL"
+git init -q "$P4/mono" 2>/dev/null
+mkdir -p "$P4/plain/$(dirname "$REL")"; : > "$P4/plain/$REL"
+mkdir -p "$P4/none"
+
+case "$(resolve_in "$P4/mono/project" "$P4/home")" in
+  ./"$REL") : ;;
+  *) rm -rf "$P4"; fail "case5: a project nested in a monorepo did not use its own bundle" ;;
+esac
+case "$(resolve_in "$P4/plain" "$P4/home")" in
+  ./"$REL") : ;;
+  *) rm -rf "$P4"; fail "case5: a non-Git project did not use its own bundle" ;;
+esac
+case "$(resolve_in "$P4/none" "$P4/home")" in
+  "$P4/home/$REL") : ;;
+  *) rm -rf "$P4"; fail "case5: a project with no copy did not fall back to global scope" ;;
+esac
+rm -rf "$P4"
+pass "case5: project copy precedes global scope in monorepo, non-Git, and absent-copy shapes"
+
 echo "ALL PASS"
 exit 0

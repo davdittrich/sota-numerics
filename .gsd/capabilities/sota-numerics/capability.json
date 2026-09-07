@@ -22,7 +22,7 @@
     "sota-numerics.enabled": {
       "type": "boolean",
       "default": true,
-      "description": "Master toggle for both the advisory steering fragments and the blocking plan:post Alternatives Considered gate — the only config key this capability declares."
+      "description": "Master toggle for both the advisory steering fragments and the blocking plan:post Alternatives Considered gate \u2014 the only config key this capability declares."
     }
   },
   "steps": [],
@@ -78,14 +78,14 @@
       "check": {
         "predicate": {
           "kind": "command-exit-zero",
-          "command": "SOTA_SCRIPT=\"$(git rev-parse --show-toplevel 2>/dev/null)/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py\"; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install sota-numerics' (or reopen the session to let the SessionStart auto-install run)\" >&2; exit 1; }; python3 \"$SOTA_SCRIPT\"",
+          "command": "_SN=.gsd/capabilities/sota-numerics/scripts/check-alternatives.py; SOTA_SCRIPT=\"./$_SN\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"$(git rev-parse --show-toplevel 2>/dev/null)/$_SN\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"${GSD_HOME:-$HOME}/$_SN\"; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install sota-numerics' (or reopen the session to let the SessionStart auto-install run)\" >&2; exit 1; }; python3 \"$SOTA_SCRIPT\"",
           "timeout": 30
         }
       },
       "when": "sota-numerics.enabled",
       "blocking": true,
       "onError": "halt",
-      "description": "onError is deliberately \"halt\": it routes a malformed predicate declaration or an unknown predicate kind — the only outcomes gsd-core's predicate evaluator throws on. Every runtime outcome of the check command itself is mapped to a block verdict instead: a missing python3 exits 127, a crash exits 1, and the 30s timeout all produce block, and only exit 0 does not. A blocking gate that silently skips when its own manifest is malformed defeats its purpose. Do not \"fix\" this back to \"skip\"."
+      "description": "onError is deliberately \"halt\": it routes a malformed predicate declaration or an unknown predicate kind \u2014 the only outcomes gsd-core's predicate evaluator throws on. Every runtime outcome of the check command itself is mapped to a block verdict instead: a missing python3 exits 127, a crash exits 1, and the 30s timeout all produce block, and only exit 0 does not. A blocking gate that silently skips when its own manifest is malformed defeats its purpose. Do not \"fix\" this back to \"skip\"."
     }
   ]
 }
