@@ -83,8 +83,8 @@ itself.
 
 **Warning:** "tightening" this to reject any out-of-window year — the obvious-looking reading
 of D-07 ("citations require a recency marker") — would make every foundational citation fail
-the gate, which is exactly the false-positive REVIEWS finding 2 flagged. `check-alternatives.py`'s
-own `TestFoundationalCitationPairing` test class and `planner-sota.md` (the fragment that
-teaches this pairing rule to the planner) both exist to catch and prevent that regression. If
-either is edited, update the other — they teach and enforce the same rule from two different
-seats in the pipeline.
+the gate. Two things guard against it. `tests/test_check_alternatives.py` in the plugin
+repository carries a `TestFoundationalCitationPairing` class that fails on exactly that
+regression — it lives outside this bundle, so a reader of an installed copy will not find it
+here. `planner-sota.md`, which does ship here, teaches the planner the same pairing rule. If
+either is edited, update the other — they teach and enforce one rule from two seats.
