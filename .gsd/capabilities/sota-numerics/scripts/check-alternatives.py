@@ -340,6 +340,40 @@ def fence_close(text, opener):
     return len(text)
 
 
+# A plan's own leading YAML frontmatter block, distinct from
+# STATE_FRONTMATTER_RE above: closes on either `---` or the YAML `...`
+# document-end marker, matching how PyYAML and gsd-core's own frontmatter
+# reader both terminate a document. Requires a closing delimiter to match
+# at all -- an opening `---` with nothing that closes it is a thematic
+# break or a setext H2 underline, not frontmatter, and must be left
+# unmasked rather than blanked to EOF (D-01).
+PLAN_FRONTMATTER_RE = re.compile(
+    r"\A---[ \t]*\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*\r?\n", re.DOTALL
+)
+
+
+def mask_leading_frontmatter(text):
+    """Blank a plan's leading YAML frontmatter block, preserving offsets.
+
+    A `## Alternatives Considered` heading declared only inside frontmatter
+    -- alongside `phase:`, `plan:`, `must_haves:` and the like -- is
+    CommonMark-invisible on the rendered page, exactly like a fence or an
+    indented code block, but SECTION_HEADING_RE matched it anyway: a plan
+    that never wrote a real body section still passed the gate (D-01,
+    REVIEW-AGY-FINAL blocking item 2).
+
+    Run first, before fence/comment/indented-code masking: frontmatter is
+    a document-level construct bounded by literal `---`/`...` lines, not
+    by CommonMark block syntax, so a fenced example or an indented block
+    nested inside it must not be allowed to move or hide that boundary.
+    """
+    m = PLAN_FRONTMATTER_RE.match(text)
+    if not m:
+        return text
+    start, end = m.span()
+    return NON_NEWLINE_RE.sub(" ", text[start:end]) + text[end:]
+
+
 def mask_fenced_regions(text):
     """Blank fenced code blocks and HTML comments, preserving offsets.
 
@@ -374,7 +408,12 @@ def mask_fenced_regions(text):
     masked per line instead, by `mask_indented_code_blocks` below, run last
     so a fenced or commented interior -- already blank -- cannot forge the
     blank-line-before or list-marker state that scan reads.
+
+    Leading YAML frontmatter is masked first of all, by
+    `mask_leading_frontmatter`, since it is a document-level boundary that
+    fence/comment/indented-code syntax must not be able to move or hide.
     """
+    text = mask_leading_frontmatter(text)
     spans = []
     pos = 0
     while True:
