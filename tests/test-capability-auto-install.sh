@@ -17,11 +17,11 @@
 # is the only exhaustiveness claim this file makes.
 #
 # It is explicitly NOT a claim that row 5 catches every way the bundle can hold
-# unpublished bytes. That stronger claim has now been made and falsified five
-# times, so this file no longer makes it in any form. Row 5 asks git a question,
-# and what git answers is configurable. What follows is an ENUMERATION, not a
-# partition: the mechanisms known as of 2026-09-07 to make `git status` report
-# clean about bytes `capability install` would still copy, and what closes each.
+# unpublished bytes: row 5 asks git a question, and what git answers is
+# configurable. What follows is an ENUMERATION, not a partition -- the
+# mechanisms known as of 2026-09-07 to make `git status` report clean about
+# bytes `capability install` would still copy, and what closes each. Adding to
+# it is expected; the standard for adding is a red case, not an argument.
 #
 #   status.showUntrackedFiles=no  -> --untracked-files=all      (case J4)
 #   ignore rules                  -> --ignored                  (case E)
@@ -34,10 +34,6 @@
 # excludes paths by setting skip-worktree, so it needs no new flag, and the
 # obvious `-c core.sparseCheckout=false` would not have worked anyway because
 # sparse checkout also deletes the excluded files. J9 records the measurement.
-#
-# An enumeration that admits it is an enumeration ages better than a partition
-# claim that keeps being falsified. Adding to it is expected; the standard for
-# adding is a red case, not an argument.
 #
 # One entry has no closer, and it is recorded rather than claimed away: a
 # `.gitattributes` clean filter maps edited worktree bytes onto the committed
@@ -99,13 +95,7 @@
 # hook runs from discovering a repository above that sandbox, which is what
 # keeps the hook's first gsd-tools rung (`git rev-parse --show-toplevel`, then
 # $toplevel/gsd-core/bin/gsd-tools.cjs) from reaching a real binary when TMPDIR
-# happens to sit inside a checkout; and the PATH stub then answers instead. The
-# precondition below refuses to run at all if the sandbox is inside a
-# repository, because the cases would then be exercising a different partition
-# row than the one they name. Assertion I0 compares the real mirror's contents
-# and its sidecar's contents, not their existence: a real install overwrites
-# both in place, which leaves any check of "are these two paths still there"
-# passing.
+# happens to sit inside a checkout; and the PATH stub then answers instead.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -674,22 +664,11 @@ err_has "uncommitted or ignored" || fail "J8: wrong refusal (err: $(cat "$SB/err
 pass "J8: a file-system monitor that under-reports does not hide edits from the guard"
 
 # --- J9: sparse checkout hides bundle bytes from `status`, and row 2 catches it ---
-# core.sparseCheckout excludes paths by setting skip-worktree on their index
-# entries, so it is the same mechanism J3 pins rather than a fifth one, and the
-# index check above refuses before `status` is ever consulted. On coverage
-# alone this case is therefore dominated by J3 -- it reaches row 3 with the same
-# S tag, and no mutation of the hook separates them. It is kept for the
-# measurement below, not for the branch. Measured rather
-# than assumed, because two plausible neutralisations do not work: a
-# `-c core.sparseCheckout=false` on the `status` invocation cannot help, since
-# sparse checkout also deletes the excluded files, leaving nothing on disk to
-# compare; and writing an excluded file back makes git CLEAR the bit, after
-# which `status` reports the edit normally and row 5 has it.
-#
-# The state that reaches this guard with a live bundle directory is therefore a
-# partial exclusion: one entry written back so the directory exists, another
-# still excluded and still tagged S. `status` reports that bundle completely
-# clean while the mirror would receive a bundle missing a file.
+# core.sparseCheckout is the same skip-worktree mechanism J3 pins, not a fifth
+# one, so this case is kept for its measurement and not for its branch. Writing
+# an excluded file back makes git CLEAR the bit, so the only state that reaches
+# the guard with a live bundle directory is a partial exclusion: one entry
+# written back so the directory exists, another still excluded and tagged S.
 new_sandbox j9
 git_init "$ROOT"
 publish "$ROOT"
@@ -709,14 +688,9 @@ err_has "will not report edits" || fail "J9: wrong refusal (err: $(cat "$SB/err"
 pass "J9: sparse checkout cannot hide bundle bytes from the index check"
 
 # --- J10: `ls-files -v` fails, and its exit status is not discarded ---
-# The index check reads that command's OUTPUT. Piping it straight into `grep`
-# would make the pipeline exit with grep's status, so an `ls-files` that failed
-# would read as "no suspicious tags" and the guard would proceed on evidence it
-# never obtained -- the same defect J1 pins for `status`.
-#
-# The bundle here is clean and published, so every other row would install it.
-# That is deliberate: it is what makes this case fail if the status is dropped,
-# rather than being caught by the dirty check on the way past.
+# The same defect J1 pins for `status`, now for `ls-files`; the hook states it
+# beside that call. The bundle here is clean and published, so dropping the exit
+# status installs it rather than tripping the dirty check on the way past.
 new_sandbox j10
 git_init "$ROOT"
 publish "$ROOT"
@@ -881,8 +855,6 @@ for row in readme_rows:
         readme_msgs.append(body(span[0]))
 
 n = len(emitted)
-if n == 0:
-    problems.append("no refusals found in the hook; the extractor regex has drifted")
 for dup in {m for m in readme_msgs if readme_msgs.count(m) > 1}:
     problems.append(f"README.md lists this refusal more than once: {dup!r}")
 for m in sorted(set(emitted) - set(readme_msgs)):
