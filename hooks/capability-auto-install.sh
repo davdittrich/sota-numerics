@@ -82,8 +82,12 @@ fi
 # tracked by a monorepo that vendors this plugin is still guarded, which is the
 # direction an unverifiable case must err in.
 if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
-  if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain -- . 2>/dev/null)" ]; then
-    echo "capability-auto-install: $CAP_ID bundle has uncommitted changes; refusing to install it at global scope" >&2
+  # --ignored, because `capability install` copies the directory, not the index:
+  # an ignored file inside the bundle is unpublished byte that would be mirrored
+  # machine-wide, and plain `status --porcelain` reports it as clean
+  # (gsd-beads-ju2 -- running the test suite leaves __pycache__/ in the bundle).
+  if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain --ignored -- . 2>/dev/null)" ]; then
+    echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
   fi
   PUBLISHED_REF=""
