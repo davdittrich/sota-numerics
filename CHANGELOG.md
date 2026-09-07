@@ -2,14 +2,24 @@
 
 ## 0.2.0
 
-**The gate changed in four narrow ways.** `capability.json` still declares
-exactly one gate, and the rules about what a plan must contain are unchanged --
-with one exception, the fenced-code-block fix below, which changes verdicts.
-Running this release's full 78-test suite against the 0.1.3 checker, 59 pass
-unchanged and 19 fail: 7 phase-resolution cases, 9 section-boundary cases
-(fenced regions, HTML comments, and the ATX, indented and setext heading
-boundaries), the two empty-argument cases, and one error-message case. Those 19
-are the behaviour this release changes; every other test passes against both.
+**The gate's rules for what a plan must contain are unchanged; how it finds and
+reads that plan changed a good deal.** `capability.json` still declares exactly
+one gate, and no check, threshold or regex about plan CONTENT was added or
+relaxed. What changed is where the section is considered to start and stop
+(fenced regions, HTML comments, and ATX, indented and setext headings), which
+phase gets inspected at all, which files count as plans, and what the failure
+messages say. Those do change verdicts, and the sections below give each one.
+Measured at `253bbdc`: running this release's 94-test suite against the 0.1.3
+checker, 62 pass unchanged and 32 fail. Those 32 are the behaviour this release
+changes -- 12 phase-resolution cases (`current_phase`, the two-witness
+agreement, and the apostrophe path), 9 section-boundary cases (fenced regions
+and the ATX, indented and setext heading boundaries), 4 HTML-comment cases, 4
+rejected-plan-name cases, the 2 empty-argument cases, and 1 error-message case.
+Every other test passes against both.
+
+Counts here name the commit they were measured at, because every earlier
+revision of this paragraph went stale within hours of being written and one
+shipped a fix that did not exist.
 
 An empty phase-directory argument now prints a reason and exits `2`, which
 blocks. Under 0.1.3 the same call read the process working directory instead:
