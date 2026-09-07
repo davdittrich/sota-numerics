@@ -16,7 +16,11 @@ CAP_ID="${1:-}"
 # path construction.
 [[ "$CAP_ID" =~ ^[a-z][a-z0-9-]*$ ]] || exit 0
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Absolute, whatever the host supplied: the bundle hash below is what keeps two
+# plugin roots serving one capability id from sharing a fast path, and it can
+# only do that if the paths it covers are rooted. A relative CLAUDE_PLUGIN_ROOT
+# would make the hash identical for every root.
+PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd)" || exit 0
 BUNDLE_DIR="$PLUGIN_ROOT/.gsd/capabilities/$CAP_ID"
 [ -d "$BUNDLE_DIR" ] || exit 0
 

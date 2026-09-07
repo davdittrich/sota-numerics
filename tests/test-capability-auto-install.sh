@@ -68,13 +68,15 @@ STUB
   : > "$SB/installs"
 }
 
-# run_hook [plugin_root]
+# run_hook [cwd] [CLAUDE_PLUGIN_ROOT value]
+# The two are separate because the host sets CLAUDE_PLUGIN_ROOT and the hook
+# must not depend on it being absolute (case I3).
 run_hook() {
   local _root="${1:-$ROOT}"
   ( cd "$_root" &&
     PATH="${PATH_OVERRIDE:-$SB/bin:$PATH}" \
     HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
-    CLAUDE_PLUGIN_ROOT="$_root" \
+    CLAUDE_PLUGIN_ROOT="${2:-$_root}" \
     bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err"
 }
 
@@ -247,6 +249,22 @@ run_hook "$ROOT"
 [ "$(installs)" = 3 ] ||
   fail "I2: alternating plugin roots took a false fast path ($(installs) installs in 3 runs)"
 pass "I2: a different plugin root for the same id reinstalls the mirror"
+
+# --- I3: I2 must hold for a relative CLAUDE_PLUGIN_ROOT too ---
+# I2's property is that the absolute paths inside NEW_HASH separate two roots
+# serving one id. That is only true if BUNDLE_DIR is absolute. The host supplies
+# CLAUDE_PLUGIN_ROOT and nothing in the protocol says it is absolute, so pin the
+# relative case rather than inheriting it.
+new_sandbox i3
+ROOT_B="$SB/root-b"
+mkdir -p "$(dirname "$ROOT_B")"
+cp -r "$ROOT" "$ROOT_B"
+run_hook "$ROOT" .
+run_hook "$ROOT_B" .
+run_hook "$ROOT" .
+[ "$(installs)" = 3 ] ||
+  fail "I3: a relative CLAUDE_PLUGIN_ROOT made the hash root-independent ($(installs) installs in 3 runs)"
+pass "I3: a relative CLAUDE_PLUGIN_ROOT still separates two roots"
 
 # --- I0: no case above touched the developer's real global GSD state ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
