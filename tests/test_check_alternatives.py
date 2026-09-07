@@ -1462,6 +1462,90 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("11-01-PLAN.md", result.stderr)
 
+    # The frontmatter parse used to take the FIRST of possibly several
+    # `current_phase:` matches while the body parse already demanded exactly
+    # one (D-04, REVIEW-CRITICAL-FINAL shape 2, gsd-beads-25vc.7). A duplicated
+    # frontmatter key let an author -- or a half-applied merge -- steer this
+    # blocking gate at whichever phase happened to match first, silently.
+
+    def test_duplicate_current_phase_in_frontmatter_blocks_naming_the_count(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "11-plain").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\ncurrent_phase: 11\n"
+                "current_phase: 12\nstatus: planning\n---\n"
+                "\n# Project State\n\n## Current Position\n\n"
+                "Phase: 11 (Name) — READY TO EXECUTE\n",
+                encoding="utf-8",
+            )
+            write_plan(root / ".planning" / "phases" / "11-plain",
+                       fixture_text("plan-compliant.md"), name="11-01-PLAN.md")
+            result = self.run_no_arg(root)
+        # Exit 2, naming the frontmatter and the count found -- never a
+        # compliance verdict on either candidate phase.
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("current_phase", result.stderr)
+        self.assertIn("2", result.stderr)
+        self.assertNotIn("11-01-PLAN.md", result.stderr)
+
+    def test_a_single_frontmatter_current_phase_still_resolves(self):
+        # Regression pin: the exactly-one case, unaffected by the fix.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11", fixture_text("plan-compliant.md"))
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_three_duplicate_current_phase_fields_names_the_exact_count(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "11-plain").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\ncurrent_phase: 11\n"
+                "current_phase: 12\ncurrent_phase: 13\nstatus: planning\n---\n"
+                "\n# Project State\n\n## Current Position\n\n"
+                "Phase: 11 (Name) — READY TO EXECUTE\n",
+                encoding="utf-8",
+            )
+            write_plan(root / ".planning" / "phases" / "11-plain",
+                       fixture_text("plan-compliant.md"), name="11-01-PLAN.md")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("3", result.stderr)
+
+    def test_frontmatter_and_body_ambiguity_reasons_are_distinguishable(self):
+        # T-24-12 / D-04 internal alternative: the two branches' reason
+        # strings are kept parallel in shape (both name a count and "need
+        # exactly one") but distinguishable in text, so a halt names which
+        # parse spoke.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "11-plain").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\ncurrent_phase: 11\n"
+                "current_phase: 12\nstatus: planning\n---\n"
+                "\n# Project State\n\n## Current Position\n\n"
+                "Phase: 11 (Name) — READY TO EXECUTE\n",
+                encoding="utf-8",
+            )
+            write_plan(root / ".planning" / "phases" / "11-plain",
+                       fixture_text("plan-compliant.md"), name="11-01-PLAN.md")
+            frontmatter_result = self.run_no_arg(root)
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, "11-plain", "11",
+                               fixture_text("plan-compliant.md"),
+                               position="Phase: {phase} (One)\nPhase: 99 (Two)")
+            body_result = self.run_no_arg(root)
+        self.assertEqual(frontmatter_result.returncode, 2, frontmatter_result.stdout)
+        self.assertEqual(body_result.returncode, 2, body_result.stdout)
+        self.assertNotEqual(frontmatter_result.stderr, body_result.stderr)
+        self.assertIn("need exactly one", frontmatter_result.stderr)
+        self.assertIn("need exactly one", body_result.stderr)
+        self.assertIn("current_phase", frontmatter_result.stderr)
+        self.assertIn("`Phase:", body_result.stderr)
+
 
 class TestMultiPlanCoverage(unittest.TestCase):
     """Every plan in the directory is checked, not just
