@@ -74,13 +74,17 @@ capability-auto-install: the index marks sota-numerics bundle entries assume-unc
 `could not be read in full` means the walk over the bundle hit a directory it
 could not enter; make the bundle readable and searchable to the user that runs
 the session. `git is unusable` means no working `git` on `PATH`; install one.
-`cannot read the repository` means git found one and declined to open it — most
-often a root- or service-installed plugin, a shared checkout, or a container UID
-remap, where git rejects the checkout for dubious ownership; add a
-`safe.directory` entry, or re-install the plugin as the user that runs the
-session. `could not report the state` means `git status` failed outright, so the
-worktree bytes are unknown; repair the repository with `git fsck` or re-clone
-it. `the index marks` means the index was told to stop watching bundle files;
+`cannot read the repository` covers two faults with one message: git would not
+open the repository — most often a root- or service-installed plugin, a shared
+checkout, or a container UID remap, where git rejects the checkout for dubious
+ownership — or git opened the repository and could not read its index.
+`git -C <bundle> rev-parse --git-dir` tells them apart: it fails for the first
+and prints a path for the second. Add a `safe.directory` entry, or re-install
+the plugin as the user that runs the session, for the first; `safe.directory`
+does nothing for the second, which needs a readable `.git/index`, a `git fsck`,
+or a re-clone. `could not report the state` means `git status` failed outright,
+so the worktree bytes are unknown; repair the repository with `git fsck` or
+re-clone it. `the index marks` means the index was told to stop watching bundle files;
 `git update-index --no-assume-unchanged` (or `--no-skip-worktree`) on the
 flagged paths clears it. Of the eight, only `could not be read in full`,
 `git is unusable` and `cannot read the repository` can reach an install no
