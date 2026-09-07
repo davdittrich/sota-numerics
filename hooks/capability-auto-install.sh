@@ -35,13 +35,18 @@ else
   exit 0
 fi
 
-# Whole-bundle-directory hash. `capability install` copies the directory,
-# so every entry in it becomes bytes the global mirror serves and every entry
-# must therefore reach the hash: files contribute their own digest, which binds
-# content to path; symlinks contribute their target, so adding or retargeting
-# one is drift; everything else -- directories, and any FIFO or socket that
-# should not be there -- contributes its path, so an added empty directory is
-# caught. Concatenating raw contents instead, as this did, is
+# Whole-bundle-directory hash. `capability install` copies the directory, so
+# what this has to detect is a change in what that copy would carry. Three
+# properties of each entry reach the hash and one does not. Content: a file
+# contributes its own digest, bound to its path. Link target: a symlink
+# contributes what it points at, so adding or retargeting one is drift. Path:
+# everything else -- directories, and any FIFO or socket that should not be
+# there -- contributes its path, so an added empty directory is caught. Mode
+# does not: `chmod 755` on a bundle file leaves this digest identical while the
+# directory copy carries the bit. That miss is stale, not unsafe -- an unmirrored
+# local chmod is drift the mirror does not receive, and the mirror keeps the
+# mode it was installed with -- but it is a miss, and calling it a rule that
+# "every entry reaches the hash" would hide it. Concatenating raw contents instead, as this did, is
 # ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"} produce the
 # same path list and the same byte stream. `-exec sh -c` rather than GNU
 # `find -printf`, which BSD find does not have.

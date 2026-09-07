@@ -777,7 +777,7 @@ class TestEmptyDirectory(unittest.TestCase):
 
 
 class TestEmptyPhaseDir(unittest.TestCase):
-    """R-10: an empty ${PHASE_DIR} must block, not silently pass.
+    """An empty ${PHASE_DIR} must block, not silently pass.
 
     gsd-core interpolates an omitted --phase-dir to the empty string
     (check-command-router.cts:1240 -> gate-predicate-evaluator.cts:45), so the
@@ -849,7 +849,7 @@ class TestPathSafety(unittest.TestCase):
         self.assertIn("could not locate a .planning/ ancestor", result.stderr)
 
     def test_dotdot_path_matches_its_resolved_form(self):
-        # R-11: the deleted confined() was unreachable, so removing it changed
+        # The deleted confined() was unreachable, so removing it changed
         # nothing observable. find_project_root() walks up from the RESOLVED
         # phase_dir, so the root it derives is always an ancestor of that path
         # and relative_to() could never raise -- a `..`-laden argument simply

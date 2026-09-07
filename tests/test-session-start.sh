@@ -109,14 +109,16 @@ run_and_cleanup() {
   cd "$REPO_ROOT" || { echo "FAIL: cd back to repo root failed"; exit 1; }
 }
 
-# --- Case 1: no .planning/config.json present at all -> banner printed, exit 0 (D-10 default-true) ---
+# --- Case 1: no .planning/config.json present at all -> banner printed, exit 0 ---
+# Absent configuration means enabled: a capability nobody has switched off is on,
+# so a first run in a project that has never been configured still gets steered.
 mk_scratch ""
 OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT")"
 STATUS=$?
 run_and_cleanup
 echo "$OUT" | grep -q 'SOTA-NUMERICS' || fail "case1: banner missing with no config present"
 [ "$STATUS" -eq 0 ] || fail "case1: exited non-zero with no config present"
-pass "case1: no-config default-true banner (D-10)"
+pass "case1: no config present defaults to enabled"
 
 # --- Case 2: sota-numerics.enabled=false -> empty stdout, exit 0 ---
 mk_scratch '{"sota-numerics": {"enabled": false}}'
