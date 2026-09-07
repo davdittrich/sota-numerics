@@ -112,9 +112,14 @@ INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
-BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
+# Leading indentation bounded to CommonMark's own zero-to-three-space top-level
+# range (D-03, REVIEW-CRITICAL-FINAL P1-1(b), gsd-beads-25vc.6). Unbounded
+# `[ \t]*` let a four-space-or-deeper indented sub-bullet or sub-table-row --
+# nested under an organizational top-level bullet that names no mechanism of
+# its own -- be read as a top-level "at least two named alternatives" entry.
+BULLET_RE = re.compile(r"^[ \t]{0,3}[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
-    r"^[ \t]*\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
+    r"^[ \t]{0,3}\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
 )
 TABLE_SEPARATOR_RE = re.compile(
     r"[ \t]*\|?[ \t]*:?-{3,}:?(?:[ \t]*\|[ \t]*:?-{3,}:?)*[ \t]*\|?[ \t]*"
