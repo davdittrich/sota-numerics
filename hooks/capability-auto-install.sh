@@ -57,35 +57,25 @@ NEW_HASH="$(bundle_hash)"
 # D-02 fast path: unchanged bundle exits silently, never spawns node.
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
-# Fail closed before the guard runs: every question below is asked through git,
-# and a git that cannot answer is not an answer of "safe" (gsd-beads-iy2).
-# `command -v` alone is insufficient -- a git that is on PATH but non-functional
-# makes every probe below exit non-zero, which the guard would read as "not a
-# repo" and proceed. Probing an actual invocation covers both.
+# Fail closed: every question below is asked through git, and a git that cannot
+# answer is not an answer of "safe" (gsd-beads-iy2). `command -v` alone misses a
+# git that is on PATH but exits non-zero, which reads as "not a repo".
 if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
   echo "capability-auto-install: git is unusable, so $CAP_ID bundle provenance cannot be verified; refusing to install it at global scope" >&2
   exit 0
 fi
 
 # Installing at global scope publishes to every project on the machine, so only
-# already-published bytes may be installed. When this plugin is developed in a
-# git worktree that sits inside another project, the host loads that worktree as
-# a plugin and this hook would otherwise install work in progress machine-wide
-# (gsd-beads-d2b, gsd-beads-28g). Two refusals express that one invariant: the
-# tree must be clean, and HEAD must already be reachable from the published
-# upstream. Neither refusal writes STATE_FILE, so a later session retries once
-# the bundle is published.
+# already-published bytes may be installed: this plugin is developed in a git
+# worktree the host loads as a plugin, and the hook would otherwise mirror work
+# in progress machine-wide (gsd-beads-d2b, gsd-beads-28g). No refusal writes
+# STATE_FILE, so a later session retries once the bundle is published.
 #
-# The predicate is ownership, not enclosure (gsd-beads-70t): the guard applies
-# exactly when the enclosing repository *tracks* this bundle, which is the only
-# repository whose publication state says anything about these bytes. Enclosure
-# was wrong in both directions -- a consumer who versions ~/.claude in git had
-# the bundle reported as untracked ("uncommitted changes", forever) or, if
-# plugins/ was gitignored, had the capability gated on an unrelated repo's
-# origin. Both of those are untracked here, so both skip; a plugin-cache bundle
-# is inside no repository at all, so ls-files fails and it skips too. A bundle
-# tracked by a monorepo that vendors this plugin is still guarded, which is the
-# direction an unverifiable case must err in.
+# Ownership, not enclosure (gsd-beads-70t): only a repository that *tracks* the
+# bundle says anything about these bytes. A plugin cache belongs to no
+# repository, and a consumer who versions ~/.claude does not track the bundle
+# either, so both skip the guard; a monorepo vendoring the plugin does track it
+# and stays guarded, the direction an unverifiable case must err in.
 if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
