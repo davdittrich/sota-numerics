@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Vendored auto-install hook: each plugin ships its own copy of this file
 # rather than sourcing a shared one, so a plugin stays self-contained and one
-# plugin's edit cannot change another's behaviour. The ponytail-everywhere repo carries a sibling copy of this file
-# which has not yet taken the publication guard added in sota-numerics 0.2.0,
-# so the two have diverged and neither may be edited as a copy of the other.
+# plugin's edit cannot change another's behaviour.
 #
 # Detects bundle drift via a whole-directory hash and re-grants the
 # capability at global ("user") scope on every SessionStart. Global scope is
@@ -45,19 +43,11 @@ fi
 # does not: `chmod 755` on a bundle file leaves this digest identical while the
 # directory copy carries the bit. That miss is stale, not unsafe -- an unmirrored
 # local chmod is drift the mirror does not receive, and the mirror keeps the
-# mode it was installed with -- but it is a miss, and calling it a rule that
-# "every entry reaches the hash" would hide it. Concatenating raw contents instead, as this did, is
-# ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"} produce the
-# same path list and the same byte stream. `-exec sh -c` rather than GNU
+# mode it was installed with -- but it is a miss. `-exec sh -c` rather than GNU
 # `find -printf`, which BSD find does not have.
-# A partial walk is not a hash of this bundle: an unreadable subdirectory makes
-# find exit non-zero after listing everything it could reach, and the digest of
-# that truncated listing would go into the sidecar as if it described the whole
-# directory -- while nothing else can see the gap, since git has no entry for
-# bytes it never tracked. So the status is read and the walk is not piped
-# straight into sort, which would discard it. Its stderr is redirected for the
-# same reason it is checked: `find: ...: Permission denied` on a user's terminal
-# at SessionStart is this hook failing to say what it means.
+# A partial walk is not a hash of this bundle, so the status is read rather than
+# piped into sort, and find's stderr is suppressed so the refusal reaches the
+# user instead of `find: Permission denied` (case J5).
 bundle_hash() {
   local _list
   _list="$(find "$BUNDLE_DIR" \
@@ -104,28 +94,18 @@ fi
 # STATE_FILE, so a later session retries once the bundle is published.
 #
 # Ownership, not enclosure: only a repository that *tracks* the bundle says
-# anything about these bytes. A marketplace `source: url` entry installs by
-# cloning, so the plugin cache is a repository and it does track the bundle:
-# this guard runs on every consumer machine, not only in development, and
-# passes there because a fresh clone is clean and its HEAD is the published
-# tip. It refuses only on a checkout somebody has edited. A consumer who
-# versions ~/.claude encloses the bundle without tracking it, so the guard does
-# not apply to that repository's state; a monorepo vendoring the plugin does
-# track it and stays guarded, the direction an unverifiable case must err in.
+# anything about these bytes. A marketplace `source: url` install clones, so the
+# plugin cache does track the bundle and is guarded -- and passes there, being
+# clean at the published tip; it refuses only on a checkout somebody has edited.
+# A consumer who versions ~/.claude encloses the bundle without tracking it and
+# is unaffected; a monorepo vendoring the plugin tracks it and stays guarded,
+# the direction an unverifiable case must err in.
 #
 # `ls-files --error-unmatch` answers with three exit codes and this guard has to
-# keep all three apart:
-#
-#   0   -- tracked. The publication checks below apply.
-#   1   -- a repository answered, and it does not track the bundle. It has
-#          nothing to say about these bytes, so the guard does not apply.
-#   128 -- git did not answer. Either no repository exists, or one exists that
-#          git will not open: another UID's checkout it rejects for dubious
-#          ownership (a root- or service-installed plugin, a shared checkout, a
-#          container UID remap), an unreadable .git, an unreadable or corrupt
-#          index, a repository format it does not know. Only the first is safe,
-#          and git reports every one of them as 128 with the same stderr, so
-#          128 must not be read as "untracked".
+# keep all three apart: 0 tracked, so the publication checks below apply; 1 a
+# repository answered and does not track these bytes, so the guard does not; 128
+# git did not answer, which must not be read as "untracked". The eleven rows
+# those three split into are enumerated in tests/test-capability-auto-install.sh.
 #
 # unverifiable_repo() decides that last case on evidence git cannot supply.
 # `--git-dir` succeeding means git found a repository it can open, so the 128
@@ -164,48 +144,28 @@ if [ "$TRACKED" -eq 0 ]; then
     exit 0
   fi
   # Every option below states what this question needs rather than inheriting
-  # whatever the repository configured, because each of the four is a setting
-  # that redirects `status` away from the worktree bytes the directory copy
-  # would carry:
+  # whatever the repository configured: each is a setting that redirects
+  # `status` away from the worktree bytes the directory copy would carry.
   #
-  # --untracked-files=all, because `status.showUntrackedFiles=no` -- a speed
-  # setting on large repositories -- suppresses untracked *and* ignored output,
-  # which is the whole mechanism the line below depends on.
-  #
+  # --untracked-files=all, because `status.showUntrackedFiles=no` suppresses
+  # untracked *and* ignored output, the whole mechanism the check below needs.
   # --ignored, because `capability install` copies the directory, not the index:
-  # an ignored file inside the bundle is unpublished byte that would be mirrored
-  # machine-wide, and plain `status --porcelain` reports it as clean
-  # (running the test suite leaves __pycache__/ inside the bundle).
-  #
-  # --ignore-submodules=none, because `submodule.<name>.ignore=all` and
-  # `diff.ignoreSubmodules=all` both silence a submodule whose worktree sits
-  # inside the bundle, and that worktree is bytes the copy carries. `ignore` is
-  # equally valid in .gitmodules, which is tracked, so a repository can ship the
-  # setting and every clone reads it -- this is not confined to a developer's
-  # own config. The gitlink keeps an H tag either way, so the index check above
-  # does not see it (cases J6, J7).
-  #
-  # -c core.fsmonitor=, because that setting hands "which paths changed" to an
-  # external command, and a command that answers "none" makes `status` skip the
-  # files it would otherwise stat -- an edited tracked file then reports clean
-  # with no index bit and no ignore setting anywhere (case J8).
+  # an ignored file inside the bundle is unpublished bytes the mirror would
+  # carry, and plain `status --porcelain` reports it clean (e.g. __pycache__/).
+  # --ignore-submodules=none, because `submodule.<name>.ignore` is equally valid
+  # in tracked .gitmodules, so a repository can ship the setting to every clone;
+  # the gitlink keeps an H tag, so the index check above misses it (cases J6, J7).
+  # -c core.fsmonitor=, because that hands "which paths changed" to an external
+  # command, and one answering "none" makes `status` skip the stat entirely --
+  # an edited tracked file reports clean with no index bit anywhere (case J8).
   #
   # What this still cannot see: a `.gitattributes` clean filter maps edited
-  # worktree bytes onto the committed blob, so `status` is honestly clean about
-  # the index while the directory copy carries the edit. No `status` option
-  # reaches it -- closing it needs a byte comparison against the published tree
-  # rather than a status question. The filter driver itself lives in local
-  # config, which no clone carries, so it stops at the machine that set it.
-  # Tracked as gsd-beads-5yy.
+  # worktree bytes onto the committed blob, so `status` is honestly clean while
+  # the copy carries the edit. The filter driver lives in local config, which no
+  # clone carries, so it stops at the machine that set it (gsd-beads-5yy).
   #
-  # The exit status is read before the output, because empty output from a
-  # `status` that failed is indistinguishable from empty output from a clean
-  # tree, and the fail-closed rule above does not stop applying here. This is
-  # not hypothetical: delete the object holding HEAD's tree and `status` exits
-  # 128 having printed nothing, while `ls-files` still answers 0 from the index
-  # alone and `merge-base` still proves HEAD published from the commit objects
-  # alone -- every check that could see the worktree bytes has failed, and only
-  # this one knows it.
+  # The exit status is read before the output: empty output from a `status` that
+  # failed is indistinguishable from empty output from a clean tree (case J1).
   if ! DIRTY="$(git -c core.fsmonitor= -C "$BUNDLE_DIR" status --porcelain --ignored \
                     --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)"; then
     echo "capability-auto-install: git could not report the state of the $CAP_ID bundle, so its contents cannot be verified; refusing to install it at global scope" >&2
@@ -217,10 +177,9 @@ if [ "$TRACKED" -eq 0 ]; then
   fi
   # What the two checks below prove, exactly: origin/HEAD and origin/main are
   # local refs under refs/remotes, so passing means HEAD is an ancestor of the
-  # tip the last fetch recorded -- not that any server holds these bytes now. A
-  # remote that has since force-pushed, a remote that no longer exists, and a
-  # ref written by hand all read alike here. Closing that gap needs a round trip
-  # to the remote on every SessionStart, which would put the capability behind
+  # tip the last fetch recorded -- not that any server holds these bytes now.
+  # Closing that gap needs a round trip to the remote on every SessionStart,
+  # which would put the capability behind
   # the network and behind credentials; this guard exists for the accident of
   # running a plugin out of a development worktree, and against that accident a
   # local ref is the right evidence and the only affordable one. Case K1 pins
@@ -245,14 +204,11 @@ fi
 
 # gsd_tools() resolver, sourced from the copy this plugin ships beside this
 # file, exactly as hooks/session-start.sh does -- and session-start.sh is this
-# script's only caller, so the file is present whenever the hook runs. It used
-# to be an eighteen-line inline copy, byte-identical to the file next door,
-# justified by a comment about a different repository. Sourced after the guard
-# above, not before, so nothing here can run before the decision to install.
-#
-# If it is missing the plugin root is broken, and `gsd_tools` then stays
-# undefined and the exit-127 branch below reports that and writes no sidecar, so
-# a repaired install retries (case L2).
+# script's only caller, so the file is present whenever the hook runs. Sourced
+# after the guard above, not before, so nothing here can run before the decision
+# to install. If it is missing, `gsd_tools` stays undefined and the exit-127
+# branch below reports it and writes no sidecar, so a repaired install retries
+# (case L2).
 [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ] && . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
 
 # Absolute spec: a relative one would resolve against the end user's
@@ -267,8 +223,8 @@ if [ "$INSTALL_STATUS" -eq 0 ]; then
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   # Deliberate divergence from this repo's usual silent `|| true`
   # fail-open convention -- this path is unattended, so silence would leave
-  # a capability permanently inactive with nobody the wiser. Do not "fix"
-  # this back to silent. Do NOT write STATE_FILE, so the next session retries.
+  # a capability permanently inactive with nobody the wiser.
+  # Do NOT write STATE_FILE, so the next session retries.
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
 else
   # Same rationale as above -- the install command ran and failed.
