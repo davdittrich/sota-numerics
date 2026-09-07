@@ -169,9 +169,12 @@ Handled outcomes use these exit codes:
 
 - `0`: all matching plans pass, or no matching plans exist;
 - `1`: one or more plans violate the gate;
-- `2`: the phase path argument is empty, is not an existing directory, or has no `.planning` ancestor within ten levels.
+- `2`: the phase path argument is empty, is not an existing directory, has no `.planning`
+  ancestor within ten levels, or a matching plan file is not valid UTF-8. The decode
+  error reports a byte offset rather than a path; `file .planning/phases/<phase>/*-PLAN.md`
+  finds the file.
 
-Unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name can take this path.
+Other unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name takes this path, as does a plan file the process cannot read.
 
 You can run the checker directly:
 
