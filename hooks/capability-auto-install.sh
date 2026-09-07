@@ -68,10 +68,20 @@ fi
 # a plugin and this hook would otherwise install work in progress machine-wide
 # (gsd-beads-d2b, gsd-beads-28g). Two refusals express that one invariant: the
 # tree must be clean, and HEAD must already be reachable from the published
-# upstream. A bundle outside any git work tree -- the normal plugin-cache
-# install -- skips both. Neither refusal writes STATE_FILE, so a later session
-# retries once the bundle is published.
-if git -C "$BUNDLE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+# upstream. Neither refusal writes STATE_FILE, so a later session retries once
+# the bundle is published.
+#
+# The predicate is ownership, not enclosure (gsd-beads-70t): the guard applies
+# exactly when the enclosing repository *tracks* this bundle, which is the only
+# repository whose publication state says anything about these bytes. Enclosure
+# was wrong in both directions -- a consumer who versions ~/.claude in git had
+# the bundle reported as untracked ("uncommitted changes", forever) or, if
+# plugins/ was gitignored, had the capability gated on an unrelated repo's
+# origin. Both of those are untracked here, so both skip; a plugin-cache bundle
+# is inside no repository at all, so ls-files fails and it skips too. A bundle
+# tracked by a monorepo that vendors this plugin is still guarded, which is the
+# direction an unverifiable case must err in.
+if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
   if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain -- . 2>/dev/null)" ]; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted changes; refusing to install it at global scope" >&2
     exit 0
