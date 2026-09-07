@@ -10,8 +10,9 @@ are excluded from the count and evidence validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
-`remediation: ...` line. Exit 2 = usage/IO error (missing/non-directory
-phase_dir, or a phase_dir that resolves outside the project root).
+`remediation: ...` line. Exit 2 = usage/IO error (empty, missing or
+non-directory phase_dir, or a phase_dir that resolves outside the project
+root).
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
 text is authored by a different principal (the planner agent), so it is
@@ -301,6 +302,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="check-alternatives.py")
     parser.add_argument("phase_dir")
     args = parser.parse_args(argv)
+
+    if not args.phase_dir:
+        # `Path("")` is `Path(".")`, so an empty argument would otherwise make
+        # the checker inspect its own cwd and report every plan there as
+        # passing. The gate's `${PHASE_DIR}` renders to "" whenever the caller
+        # omits the phase dir, so this is the fail-closed edge of that seam.
+        print(
+            "check-alternatives.py: empty phase_dir argument"
+            " (the gate's ${PHASE_DIR} interpolated to nothing)",
+            file=sys.stderr,
+        )
+        return 2
 
     phase_dir_arg = Path(args.phase_dir)
     if not phase_dir_arg.is_dir():

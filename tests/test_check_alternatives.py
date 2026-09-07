@@ -42,12 +42,16 @@ def scratch_dir():
     return tempfile.TemporaryDirectory(dir=PLAN_TMPDIR)
 
 
-def run_check(phase_dir):
+def run_check(phase_dir, cwd=None):
+    """Run the gate script on `phase_dir`. `cwd` matters only for the empty
+    argument: `Path("")` is `Path(".")`, so an unguarded empty phase_dir
+    would inspect the process working directory instead."""
     return subprocess.run(
         [sys.executable, str(SCRIPT), str(phase_dir)],
         capture_output=True,
         text=True,
         timeout=15,
+        cwd=cwd,
         env={**os.environ, "TMPDIR": str(PLAN_TMPDIR)},
     )
 
@@ -770,6 +774,35 @@ class TestEmptyDirectory(unittest.TestCase):
         with scratch_dir() as tmp:
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0)
+
+
+class TestEmptyPhaseDir(unittest.TestCase):
+    """R-10: an empty ${PHASE_DIR} must block, not silently pass.
+
+    gsd-core interpolates an omitted --phase-dir to the empty string
+    (check-command-router.cts:1240 -> gate-predicate-evaluator.cts:45), so the
+    gate can run `check-alternatives.py ""`. Python reads `Path("")` as
+    `Path(".")`, which is a directory, so before the guard the checker scanned
+    its own cwd -- the project root, holding no NN-NN-PLAN.md children -- and
+    exited 0. A blocking, fail-closed gate passed without reading one plan.
+    """
+
+    def test_empty_arg_exits_2_instead_of_scanning_cwd(self):
+        with scratch_dir() as tmp:
+            # tmp holds no plan files, so the pre-guard code path exits 0.
+            result = run_check("", cwd=tmp)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("empty phase_dir argument", result.stderr)
+
+    def test_empty_arg_rejects_before_reading_cwd_at_all(self):
+        # A violating plan in cwd would have produced exit 1 -- a block, but
+        # from the wrong directory. The guard sits at the argument, before
+        # discovery, so cwd contents cannot reach the verdict either way.
+        with scratch_dir() as tmp:
+            write_plan(tmp, "# plan with no Alternatives Considered section\n")
+            result = run_check("", cwd=tmp)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("PLAN.md", result.stderr)
 
 
 class TestPathSafety(unittest.TestCase):
