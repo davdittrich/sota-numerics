@@ -257,36 +257,50 @@ def resolve_current_phase_dir(start):
             f"{state_path} has no YAML frontmatter block to read"
             " `current_phase` from; pass the phase directory explicitly"
         )
-    m = STATE_CURRENT_PHASE_RE.search(fm.group(1))
-    if not m:
+    # `findall`, not `search`: a duplicated `current_phase:` key is invalid
+    # YAML (a later key silently shadows an earlier one in most parsers, but
+    # this file is read with a regex, not a YAML loader), and `search` took
+    # only the FIRST match -- silently steering the gate at whichever phase
+    # happened to match first instead of blocking on the ambiguity (D-04,
+    # REVIEW-CRITICAL-FINAL shape 2). The body witness below already demanded
+    # exactly one `Phase:` line; this makes the frontmatter witness parallel.
+    fm_phases = STATE_CURRENT_PHASE_RE.findall(fm.group(1))
+    if len(fm_phases) == 0:
         raise ValueError(
             f"{state_path} has no `current_phase: <number>` field;"
             " pass the phase directory explicitly"
         )
+    if len(fm_phases) != 1:
+        raise ValueError(
+            f"{state_path} frontmatter carries {len(fm_phases)}"
+            f" `current_phase: <number>` fields (need exactly one); pass"
+            " the phase directory explicitly"
+        )
+    current_phase = fm_phases[0]
     # Second witness. See STATE_POSITION_SECTION_RE for why `Current Phase:`
     # is not an accepted label and why disagreement means block, not pick-one.
     section = STATE_POSITION_SECTION_RE.search(state_text[fm.end():])
     if not section:
         raise ValueError(
             f"{state_path} has no `## Current Position` section to corroborate"
-            f" `current_phase: {m.group(1)}`; pass the phase directory explicitly"
+            f" `current_phase: {current_phase}`; pass the phase directory explicitly"
         )
     body_phases = STATE_BODY_PHASE_RE.findall(section.group(1))
     if len(body_phases) != 1:
         raise ValueError(
             f"{state_path} `## Current Position` carries {len(body_phases)}"
             f" `Phase: <number>` lines to corroborate `current_phase:"
-            f" {m.group(1)}` (need exactly one); pass the phase directory"
+            f" {current_phase}` (need exactly one); pass the phase directory"
             " explicitly"
         )
-    if normalize_phase(body_phases[0]) != normalize_phase(m.group(1)):
+    if normalize_phase(body_phases[0]) != normalize_phase(current_phase):
         raise ValueError(
             f"{state_path} disagrees with itself: frontmatter `current_phase:"
-            f" {m.group(1)}` but `## Current Position` says `Phase:"
+            f" {current_phase}` but `## Current Position` says `Phase:"
             f" {body_phases[0]}`; re-run /gsd-plan-phase for the phase you mean,"
             " or pass the phase directory explicitly"
         )
-    wanted = normalize_phase(m.group(1))
+    wanted = normalize_phase(current_phase)
     phases_root = root / ".planning" / "phases"
     matches = []
     if phases_root.is_dir():
@@ -296,7 +310,7 @@ def resolve_current_phase_dir(start):
                 matches.append(entry)
     if len(matches) != 1:
         raise ValueError(
-            f"current_phase {m.group(1)} matches {len(matches)} directories"
+            f"current_phase {current_phase} matches {len(matches)} directories"
             f" under {phases_root} (expected exactly 1)"
         )
     return matches[0]
