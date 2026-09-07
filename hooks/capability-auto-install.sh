@@ -163,15 +163,40 @@ if [ "$TRACKED" -eq 0 ]; then
     echo "capability-auto-install: the index marks $CAP_ID bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope" >&2
     exit 0
   fi
+  # Every option below states what this question needs rather than inheriting
+  # whatever the repository configured, because each of the four is a setting
+  # that redirects `status` away from the worktree bytes the directory copy
+  # would carry:
+  #
   # --untracked-files=all, because `status.showUntrackedFiles=no` -- a speed
   # setting on large repositories -- suppresses untracked *and* ignored output,
-  # which is the whole mechanism the line below depends on. The command line has
-  # to state what it needs rather than inherit whatever the repository configured.
+  # which is the whole mechanism the line below depends on.
   #
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
   # machine-wide, and plain `status --porcelain` reports it as clean
   # (running the test suite leaves __pycache__/ inside the bundle).
+  #
+  # --ignore-submodules=none, because `submodule.<name>.ignore=all` and
+  # `diff.ignoreSubmodules=all` both silence a submodule whose worktree sits
+  # inside the bundle, and that worktree is bytes the copy carries. `ignore` is
+  # equally valid in .gitmodules, which is tracked, so a repository can ship the
+  # setting and every clone reads it -- this is not confined to a developer's
+  # own config. The gitlink keeps an H tag either way, so the index check above
+  # does not see it (cases J6, J7).
+  #
+  # -c core.fsmonitor=, because that setting hands "which paths changed" to an
+  # external command, and a command that answers "none" makes `status` skip the
+  # files it would otherwise stat -- an edited tracked file then reports clean
+  # with no index bit and no ignore setting anywhere (case J8).
+  #
+  # What this still cannot see: a `.gitattributes` clean filter maps edited
+  # worktree bytes onto the committed blob, so `status` is honestly clean about
+  # the index while the directory copy carries the edit. No `status` option
+  # reaches it -- closing it needs a byte comparison against the published tree
+  # rather than a status question. The filter driver itself lives in local
+  # config, which no clone carries, so it stops at the machine that set it.
+  # Tracked as gsd-beads-5yy.
   #
   # The exit status is read before the output, because empty output from a
   # `status` that failed is indistinguishable from empty output from a clean
@@ -181,7 +206,8 @@ if [ "$TRACKED" -eq 0 ]; then
   # alone and `merge-base` still proves HEAD published from the commit objects
   # alone -- every check that could see the worktree bytes has failed, and only
   # this one knows it.
-  if ! DIRTY="$(git -C "$BUNDLE_DIR" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)"; then
+  if ! DIRTY="$(git -c core.fsmonitor= -C "$BUNDLE_DIR" status --porcelain --ignored \
+                    --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)"; then
     echo "capability-auto-install: git could not report the state of the $CAP_ID bundle, so its contents cannot be verified; refusing to install it at global scope" >&2
     exit 0
   fi

@@ -10,22 +10,44 @@
 # -- three defects survived manual verification of
 # "four cases" precisely because that was a sample, not a partition.
 #
-# The partition, in the order the hook evaluates it. It is a partition and not
-# a list because it branches on `git ls-files --error-unmatch`, whose three
-# exit codes are exhaustive by construction -- 0, 1, and everything else -- and
-# because each of those three is then split on conditions that are themselves
-# complementary. An earlier version of this header stopped at six rows by
-# reading every non-zero exit code as "untracked", and rows 10 and 11 are the
-# two halves of what that concealed. A later one stopped at nine by trusting
-# `status`'s answer without asking whether it had answered at all; rows 2 and 3
-# are what that concealed.
+# The rows below, in the order the hook evaluates them, are exhaustive over the
+# hook's OWN control flow and nothing more. They branch on
+# `git ls-files --error-unmatch`, whose three exit codes are exhaustive by
+# construction -- 0, 1, and everything else -- and each of those three is then
+# split on conditions that are complementary, so every execution of the hook
+# lands in exactly one row. That claim is provable by reading the script, and it
+# is the only exhaustiveness claim this file makes.
+#
+# It is NOT a claim that row 4 catches every way the bundle can hold unpublished
+# bytes, and three revisions of this header said otherwise and were wrong three
+# times: one stopped at six rows by reading every non-zero exit code as
+# "untracked" (rows 10 and 11 are what that concealed), one stopped at nine by
+# trusting `status`'s answer without asking whether it had answered at all (rows
+# 2 and 3), and one stopped at eleven by trusting `status` to be talking about
+# the worktree at all (cases J6, J7, J8). Row 4 asks git a question, and what
+# git answers is configurable. The four settings that redirect it are named on
+# the hook's `status` invocation and pinned here -- showUntrackedFiles (J4),
+# ignore rules (E), submodule ignore (J6, J7), fsmonitor (J8) -- and the two
+# index bits that make git stop looking are caught a row earlier (J2, J3).
+#
+# One known way remains, and it is recorded rather than claimed away: a
+# `.gitattributes` clean filter maps edited worktree bytes onto the committed
+# blob, so `status` is honestly clean about the index while the directory copy
+# carries the edit. No `status` option reaches that; a byte comparison against
+# the published tree would. The filter driver lives in local config, which no
+# clone carries, so unlike J7 it cannot follow the bundle to a consumer.
+# Tracked as gsd-beads-5yy. The honest predicate for row 4 is therefore "git,
+# asked without inheriting the repository's configuration, reports the worktree
+# clean" -- not "the bundle's bytes are the published bytes", which is stronger
+# than what this hook measures.
 #
 #   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
 #   ls-files 0 -- a repository tracks the bundle:
 #   2. index told not to check some entries   -> refuse   (cases J2, J3)
 #   3. `status` could not answer at all       -> refuse   (case J1)
-#   4. uncommitted or ignored bytes           -> refuse   (cases B, E, J4)
+#   4. uncommitted or ignored bytes           -> refuse   (cases B, E, J4, J6,
+#                                                          J7, J8)
 #   5. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
 #   6. clean, HEAD not an ancestor of it      -> refuse   (case C)
 #   7. clean, HEAD an ancestor of that ref    -> install  (cases D, A2, K1)
@@ -41,8 +63,11 @@
 # Rows 2 to 7 are complementary because they qualify `status`'s answer before
 # reading it: first whether the index has been told to hide entries from it,
 # then whether it exited non-zero, then whether it printed anything, then the
-# only remaining state. Rows 10 and 11 are separate because they need different
-# evidence: in row 11 git has already opened the repository, so
+# only remaining state. That ordering is why the settings in J4, J6, J7 and J8
+# all land in row 4 rather than in rows of their own: none of them changes which
+# branch runs, only what `status` reports inside it, so each is a case that must
+# make row 4 fire rather than a twelfth row. Rows 10 and 11 are separate because
+# they need different evidence: in row 11 git has already opened the repository, so
 # `rev-parse --git-dir` sees it, while in row 10 discovery itself fails and only
 # the filesystem can answer.
 #
@@ -161,8 +186,30 @@ err_has()  { grep -qF "$1" "$SB/err"; }
 git_init() {
   local _dir="$1"; shift
   git -C "$_dir" init -q 2>/dev/null
-  if [ $# -eq 0 ]; then git -C "$_dir" add -A; else git -C "$_dir" add -- "$@"; fi
+  # advice.addEmbeddedRepo off: J6/J7 add a gitlink on purpose, and the hint git
+  # prints for it is nine lines of CI noise about a case under test.
+  if [ $# -eq 0 ]; then git -c advice.addEmbeddedRepo=false -C "$_dir" add -A
+  else git -C "$_dir" add -- "$@"; fi
   git "${GIT_ID[@]}" -C "$_dir" commit -qm "initial"
+}
+
+# vendor_submodule -- put a gitlink inside the bundle, plus a .gitmodules entry
+# naming it. Written by hand rather than by `git submodule add`, which needs
+# protocol.file.allow for a file:// source; the gitlink and the .gitmodules
+# section are all `status` consults to decide whether a submodule.<name>.ignore
+# setting applies, so the hand-built shape is the shape under test. Call before
+# git_init. $1 is extra .gitmodules body, so a caller can commit `ignore = all`.
+vendor_submodule() {
+  mkdir -p "$BUNDLE/vendor"
+  printf 'v1\n' > "$BUNDLE/vendor/lib.py"
+  git -C "$BUNDLE/vendor" init -q
+  git -C "$BUNDLE/vendor" add -A
+  git "${GIT_ID[@]}" -C "$BUNDLE/vendor" commit -qm "vendor"
+  SUBMODULE_NAME=".gsd/capabilities/$CAP_ID/vendor"
+  {
+    printf '[submodule "%s"]\n\tpath = %s\n\turl = ./vendor\n' "$SUBMODULE_NAME" "$SUBMODULE_NAME"
+    [ $# -gt 0 ] && printf '\t%s\n' "$1"
+  } > "$ROOT/.gitmodules"
 }
 
 # publish <dir> -- give <dir> an origin whose main holds its current HEAD
@@ -525,6 +572,81 @@ err_has "could not be read in full" || fail "J5: wrong refusal (err: $(cat "$SB/
 grep -q "Permission denied" "$SB/err" &&
   fail "J5: find's own error reached the user's stderr instead of a refusal"
 pass "J5: a bundle that cannot be read in full refuses"
+
+# --- J6: a submodule inside the bundle, told to report itself clean ---
+# `status` walks into a submodule and reports its worktree as dirty, unless it
+# has been told not to. `submodule.<name>.ignore=all` -- and `diff.ignoreSubmodules`,
+# which reaches `status` through the same option -- silences that, and the
+# gitlink then keeps an H tag in `ls-files -v`, so neither J2/J3's index check
+# nor J4's --untracked-files=all sees it. The submodule's worktree is inside the
+# bundle directory, so `capability install`'s directory copy carries whatever it
+# holds. Only naming --ignore-submodules on the command line, for the same
+# reason --untracked-files is named there, reaches it.
+new_sandbox j6
+vendor_submodule
+git_init "$ROOT"
+publish "$ROOT"
+printf 'UNPUBLISHED\n' > "$BUNDLE/vendor/lib.py"
+git -C "$ROOT" config "submodule.$SUBMODULE_NAME.ignore" all
+[ "$(git -C "$ROOT" ls-files -s -- "$SUBMODULE_NAME" | cut -c1-6)" = "160000" ] ||
+  fail "J6: precondition -- the bundle should hold a gitlink, not a directory of files"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)" ] ||
+  fail "J6: precondition -- the configured status should report this bundle clean"
+[ "$(git -C "$BUNDLE" ls-files -v -- . | cut -c1 | sort -u | tr -d '\n')" = "H" ] ||
+  fail "J6: precondition -- the index check should see nothing to complain about"
+run_hook
+[ "$(installs)" = 0 ] || fail "J6: a submodule told to hide its dirt was installed"
+err_has "uncommitted or ignored" || fail "J6: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J6: refusal wrote the sidecar, making the miss permanent"
+pass "J6: a submodule configured to report itself clean does not hide from the guard"
+
+# --- J7: the same setting, committed in .gitmodules, so it follows a clone ---
+# J6 is a local `.git/config` edit and stops at the developer's machine. `ignore`
+# is equally valid in `.gitmodules`, which is a tracked file: a repository can
+# ship it, and every consumer clone -- the marketplace shape of case A2 -- then
+# reads it. That is what makes this a defect in the guard rather than a
+# development-worktree curiosity, and it is why the case is pinned separately.
+new_sandbox j7
+vendor_submodule "ignore = all"
+git_init "$ROOT"
+publish "$ROOT"
+printf 'UNPUBLISHED\n' > "$BUNDLE/vendor/lib.py"
+[ -n "$(git -C "$ROOT" ls-files -- .gitmodules)" ] ||
+  fail "J7: precondition -- .gitmodules must be tracked, or this is just J6 again"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)" ] ||
+  fail "J7: precondition -- the shipped setting should report this bundle clean"
+run_hook
+[ "$(installs)" = 0 ] || fail "J7: a submodule hidden by committed .gitmodules was installed"
+err_has "uncommitted or ignored" || fail "J7: wrong refusal (err: $(cat "$SB/err"))"
+pass "J7: a submodule hidden by a committed .gitmodules does not hide from the guard"
+
+# --- J8: status delegated to a file-system monitor that under-reports ---
+# The last of the four ways config redirects `status` away from the worktree.
+# `core.fsmonitor` names a command git trusts for which paths changed; a
+# command that answers "none" makes `status` skip the files it would otherwise
+# stat, and an edited tracked file reports clean with an H tag and no ignore
+# setting anywhere. Overriding it on the command line costs one token and is
+# the same move as --untracked-files and --ignore-submodules.
+new_sandbox j8
+git_init "$ROOT"
+publish "$ROOT"
+cat > "$SB/bin/fsmonitor-stub" <<'FSM'
+#!/usr/bin/env bash
+printf 'token'
+FSM
+chmod +x "$SB/bin/fsmonitor-stub"
+git -C "$ROOT" config core.fsmonitor "$SB/bin/fsmonitor-stub"
+git -C "$BUNDLE" status --porcelain -- . >/dev/null 2>&1   # prime the index extension
+printf 'UNPUBLISHED\n' >> "$BUNDLE/scripts/check.py"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)" ] ||
+  fail "J8: precondition -- the monitored status should report this edited bundle clean"
+[ "$(git -C "$BUNDLE" ls-files -v -- . | cut -c1 | sort -u | tr -d '\n')" = "H" ] ||
+  fail "J8: precondition -- no index bit is set, so J2/J3's check cannot catch this"
+run_hook
+[ "$(installs)" = 0 ] || fail "J8: an edit hidden by core.fsmonitor was installed"
+err_has "uncommitted or ignored" || fail "J8: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J8: refusal wrote the sidecar, making the miss permanent"
+pass "J8: a file-system monitor that under-reports does not hide edits from the guard"
 
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1
