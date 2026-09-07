@@ -171,8 +171,8 @@ Handled outcomes use these exit codes:
 - `1`: one or more plans violate the gate;
 - `2`: the phase path argument is empty, is not an existing directory, has no `.planning`
   ancestor within ten levels, or a matching plan file is not valid UTF-8. The decode
-  error reports a byte offset rather than a path; `file .planning/phases/<phase>/*-PLAN.md`
-  finds the file.
+  failure names the offending plan, the decode reason, the byte offset, and the remedy:
+  `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as UTF-8`.
 
 Other unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name takes this path, as does a plan file the process cannot read.
 

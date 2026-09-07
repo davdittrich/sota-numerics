@@ -10,9 +10,9 @@ are excluded from the count and evidence validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
-`remediation: ...` line. Exit 2 = usage/IO error (empty, missing or
-non-directory phase_dir, or a phase_dir with no `.planning/` ancestor within
-10 levels).
+`remediation: ...` line. Exit 2 = usage/IO error: an empty, missing or
+non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
+10 levels, or a discovered plan file that is not valid UTF-8.
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
 text is authored by a different principal (the planner agent), so it is
