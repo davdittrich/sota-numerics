@@ -969,6 +969,42 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("current_phase", result.stderr)
 
+    def test_current_phase_in_prose_does_not_redirect_the_gate(self):
+        # Phase identity must come from the frontmatter, never from document
+        # content. Scanning the whole file let a `current_phase:` line in prose
+        # point the blocking gate at a DIFFERENT, compliant phase while the
+        # real one went uninspected -- a bypass in the very path that replaced
+        # the ${PHASE_DIR} splice.
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "11-real").mkdir(parents=True)
+            (root / ".planning" / "phases" / "99-decoy").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
+                "\nprose that merely mentions:\n\ncurrent_phase: 99\n",
+                encoding="utf-8")
+            write_plan(root / ".planning" / "phases" / "11-real",
+                       fixture_text("plan-missing-section.md"), name="11-01-PLAN.md")
+            write_plan(root / ".planning" / "phases" / "99-decoy",
+                       fixture_text("plan-compliant.md"), name="99-01-PLAN.md")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("99-decoy", result.stderr)
+
+    def test_current_phase_inside_a_fenced_example_does_not_redirect(self):
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases" / "99-decoy").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
+                "\n```yaml\ncurrent_phase: 99\n```\n",
+                encoding="utf-8")
+            write_plan(root / ".planning" / "phases" / "99-decoy",
+                       fixture_text("plan-compliant.md"), name="99-01-PLAN.md")
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("99-decoy", result.stderr)
+
     def test_ambiguous_current_phase_blocks(self):
         with scratch_dir() as tmp:
             root = Path(tmp)

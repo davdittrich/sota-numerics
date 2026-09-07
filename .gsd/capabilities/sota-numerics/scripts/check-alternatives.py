@@ -85,6 +85,10 @@ PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
 # `current_phase` in STATE.md's YAML frontmatter. Constrained to a phase number
 # at the point of reading, so nothing else can become a directory lookup.
+# The leading YAML frontmatter block, and nothing after it. `current_phase` is
+# read from here only.
+STATE_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
+
 STATE_CURRENT_PHASE_RE = re.compile(
     r"^current_phase:[ \t]*[\"']?(\d+(?:\.\d+)?)[\"']?[ \t]*$", re.MULTILINE
 )
@@ -138,7 +142,19 @@ def resolve_current_phase_dir(start):
         raise ValueError(
             f"cannot read {state_path} to resolve the current phase ({exc.strerror})"
         ) from exc
-    m = STATE_CURRENT_PHASE_RE.search(state_text)
+    # Search ONLY the YAML frontmatter, which is what the comment on
+    # STATE_CURRENT_PHASE_RE always claimed. Scanning the whole file let any
+    # `current_phase: <n>` line in prose -- or inside a fenced example --
+    # redirect phase identity, so a non-compliant phase could be waved through
+    # by pointing the gate at a compliant one. Document content must not decide
+    # which phase a blocking gate inspects.
+    fm = STATE_FRONTMATTER_RE.match(state_text)
+    if not fm:
+        raise ValueError(
+            f"{state_path} has no YAML frontmatter block to read"
+            " `current_phase` from; pass the phase directory explicitly"
+        )
+    m = STATE_CURRENT_PHASE_RE.search(fm.group(1))
     if not m:
         raise ValueError(
             f"{state_path} has no `current_phase: <number>` field;"
