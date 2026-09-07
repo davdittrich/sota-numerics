@@ -138,7 +138,20 @@ if [ "$TRACKED" -eq 0 ]; then
   # an ignored file inside the bundle is unpublished byte that would be mirrored
   # machine-wide, and plain `status --porcelain` reports it as clean
   # (running the test suite leaves __pycache__/ inside the bundle).
-  if [ -n "$(git -C "$BUNDLE_DIR" status --porcelain --ignored -- . 2>/dev/null)" ]; then
+  #
+  # The exit status is read before the output, because empty output from a
+  # `status` that failed is indistinguishable from empty output from a clean
+  # tree, and the fail-closed rule above does not stop applying here. This is
+  # not hypothetical: delete the object holding HEAD's tree and `status` exits
+  # 128 having printed nothing, while `ls-files` still answers 0 from the index
+  # alone and `merge-base` still proves HEAD published from the commit objects
+  # alone -- every check that could see the worktree bytes has failed, and only
+  # this one knows it.
+  if ! DIRTY="$(git -C "$BUNDLE_DIR" status --porcelain --ignored -- . 2>/dev/null)"; then
+    echo "capability-auto-install: git could not report the state of the $CAP_ID bundle, so its contents cannot be verified; refusing to install it at global scope" >&2
+    exit 0
+  fi
+  if [ -n "$DIRTY" ]; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
   fi

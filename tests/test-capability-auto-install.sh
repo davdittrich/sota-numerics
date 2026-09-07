@@ -13,28 +13,33 @@
 # exit codes are exhaustive by construction -- 0, 1, and everything else -- and
 # because each of those three is then split on conditions that are themselves
 # complementary. An earlier version of this header stopped at six rows by
-# reading every non-zero exit code as "untracked", and rows 8 and 9 are the two
-# halves of what that concealed.
+# reading every non-zero exit code as "untracked", and rows 9 and 10 are the two
+# halves of what that concealed. A later one stopped at nine by reading a
+# `status` that failed as a tree that is clean; row 2 is what that concealed.
 #
 #   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
 #   ls-files 0 -- a repository tracks the bundle:
-#   2. uncommitted or ignored bytes           -> refuse   (cases B, E)
-#   3. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
-#   4. clean, HEAD not an ancestor of it      -> refuse   (case C)
-#   5. clean, HEAD published                  -> install  (cases D, A2)
+#   2. `status` could not answer at all       -> refuse   (case J1)
+#   3. uncommitted or ignored bytes           -> refuse   (cases B, E)
+#   4. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
+#   5. clean, HEAD not an ancestor of it      -> refuse   (case C)
+#   6. clean, HEAD published                  -> install  (cases D, A2)
 #
 #   ls-files 1 -- a repository answered and does not track the bundle:
-#   6. it has nothing to say about the bytes  -> install  (cases F, G)
+#   7. it has nothing to say about the bytes  -> install  (cases F, G)
 #
 #   ls-files 128 -- git did not answer, which is not the same as "no":
-#   7. no repository on disk                  -> install  (cases A, A3)
-#   8. a repository git will not open         -> refuse   (cases H3, H5)
-#   9. a repository whose index it cannot read-> refuse   (case H4)
+#   8. no repository on disk                  -> install  (cases A, A3)
+#   9. a repository git will not open         -> refuse   (cases H3, H5)
+#  10. a repository whose index it cannot read-> refuse   (case H4)
 #
-# Rows 8 and 9 are separate because they need different evidence: in row 9 git
-# has already opened the repository, so `rev-parse --git-dir` sees it, while in
-# row 8 discovery itself fails and only the filesystem can answer.
+# Rows 2, 3 and 6 are complementary because they split on `status`'s exit code
+# first and its output second: a non-zero exit, then non-empty output, then the
+# only remaining state. Rows 9 and 10 are separate because they need different
+# evidence: in row 10 git has already opened the repository, so
+# `rev-parse --git-dir` sees it, while in row 9 discovery itself fails and only
+# the filesystem can answer.
 #
 # Plus properties that cut across the partition: a refusal must never write the
 # hash sidecar (so a later session retries), and the sidecar must never serve a
@@ -345,6 +350,34 @@ mkdir -p "$SB/.git"
 run_hook
 [ "$(installs)" = 1 ] || fail "A3: an empty .git above the bundle blocked the install (err: $(cat "$SB/err"))"
 pass "A3: a .git holding no repository is walked past"
+
+# --- J1: git tracks the bundle but cannot report its state ---
+# The third state hiding between rows 2 and 3-5: `status` printing nothing
+# because it failed is not `status` printing nothing because the tree is clean.
+# A missing HEAD tree object produces exactly that -- ls-files still answers 0
+# from the index alone, and merge-base still proves HEAD published from the
+# commit objects alone, so every other check says "safe" while the one check
+# that reads the worktree never ran. The bundle here carries uncommitted bytes
+# that only `status` could have revealed.
+new_sandbox j1
+git_init "$ROOT"
+publish "$ROOT"
+printf 'work in progress\n' >> "$BUNDLE/scripts/check.py"
+TREE="$(git -C "$ROOT" rev-parse 'HEAD^{tree}')"
+rm -f "$ROOT/.git/objects/${TREE:0:2}/${TREE:2}"
+git -C "$BUNDLE" ls-files --error-unmatch . >/dev/null 2>&1 ||
+  fail "J1: precondition -- the bundle should still read as tracked"
+git -C "$BUNDLE" status --porcelain --ignored -- . >/dev/null 2>&1 &&
+  fail "J1: precondition -- status should fail on a missing HEAD tree"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
+  fail "J1: precondition -- the failed status should print nothing, which is what makes it look clean"
+git -C "$BUNDLE" merge-base --is-ancestor HEAD origin/main 2>/dev/null ||
+  fail "J1: precondition -- HEAD should still prove published"
+run_hook
+[ "$(installs)" = 0 ] || fail "J1: a bundle whose state git could not report was installed"
+err_has "could not report the state" || fail "J1: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J1: refusal wrote the sidecar, making the miss permanent"
+pass "J1: a status git could not answer is not an answer of clean"
 
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1
