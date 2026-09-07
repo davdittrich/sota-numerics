@@ -2,10 +2,10 @@
 
 ## 0.2.0
 
-**The gate changed in two narrow ways.** No rule about plan content moved: same
-checks, same literals, and `capability.json` still declares exactly one gate.
-Running this release's 55-test suite against the 0.1.3 checker, 53 pass
-unchanged and the only two failures are the empty-argument cases below.
+**The gate changed in three narrow ways.** No rule about plan content moved:
+same checks, same literals, and `capability.json` still declares exactly one
+gate. Running this release's 55-test suite against the 0.1.3 checker, 52 pass
+unchanged and 3 fail: the two empty-argument cases below, and one message.
 
 An empty `${PHASE_DIR}` now prints a reason and exits `2`, which blocks. Under
 0.1.3 the same call read the process working directory instead: run from a
@@ -18,6 +18,12 @@ under 0.1.3 a phase directory named with `$(...)` or a backtick ran that text
 as a command; it no longer does. The trade is that a name containing `'` now
 breaks the command as a shell syntax error and blocks, where 0.1.3 accepted
 it. `NOTES.md` §6 records the measurements and why this is the better failure.
+
+A plan file that is not valid UTF-8 still exits `2`, but the message changed.
+0.1.3 printed the codec's own text — a byte offset and no path — so a phase
+holding twenty plans named none of them. It now reads
+`<plan_path>: not valid UTF-8 (<reason> at byte <n>); re-save the plan as UTF-8`.
+No verdict changes; only the message.
 
 Any plan the gate read under 0.1.3 it still judges the same way. Only a caller
 that named no phase directory, or named one carrying shell metacharacters,
