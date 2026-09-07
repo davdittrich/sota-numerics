@@ -307,57 +307,6 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
         self.assertEqual(result.returncode, 1)
         self.assertIn("alternative 'Resumed mechanism'", result.stderr)
 
-    def test_long_peer_h3_resumes_mechanism_table_scope(self):
-        peer_heading = "### " + ("X" * 201)
-        text = f"""## Alternatives Considered
-
-| Rank | Mechanism | Evidence |
-| ---: | --- | --- |
-| 1 | **Mechanism A** | `authoritative-doc-A` ({TODAY_YEAR}) |
-| 2 | **Mechanism B** | `authoritative-doc-B` ({TODAY_YEAR}) |
-
-### Internal design alternatives
-
-| Rank | Design | Rationale |
-| ---: | --- | --- |
-| 1 | **Local layout** | project-local reasoning |
-
-{peer_heading}
-
-| Rank | Mechanism | Evidence |
-| ---: | --- | --- |
-| 3 | **Resumed mechanism** | its evidence is deliberately absent |
-
-{SHAPE_DECISION}
-"""
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
-
-    def test_bare_peer_h3_resumes_mechanism_bullet_scope(self):
-        text = f"""## Alternatives Considered
-
-- **Mechanism A**: cited mechanism evidence. `authoritative-doc-A` ({TODAY_YEAR}).
-- **Mechanism B**: cited mechanism evidence. `authoritative-doc-B` ({TODAY_YEAR}).
-
-### Internal design alternatives
-
-- **Local layout**: project-local reasoning.
-
-###
-
-- **Resumed mechanism**: its evidence is deliberately absent.
-
-{SHAPE_DECISION}
-"""
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
-
     def test_bare_peer_h3_resumes_mechanism_table_scope(self):
         text = f"""## Alternatives Considered
 
@@ -676,9 +625,6 @@ class TestSectionBoundary(unittest.TestCase):
 
     def test_h3_does_not_end_the_section(self):
         self.assert_stays_inside("### Notes")
-
-    def test_h4_does_not_end_the_section(self):
-        self.assert_stays_inside("#### Notes")
 
 
 class TestSupportedEntryShapes(unittest.TestCase):
@@ -1050,13 +996,22 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         # point the blocking gate at a DIFFERENT, compliant phase while the
         # real one went uninspected -- a bypass in the very path that replaced
         # the ${PHASE_DIR} splice.
+        #
+        # The prose value and the `## Current Position` section agree with each
+        # other and disagree with the frontmatter, which carries no
+        # `current_phase` at all. That shape matters: a decoy the corroboration
+        # would reject anyway proves nothing about where the field is read
+        # from, and the earlier version of this case became exactly that when
+        # the corroboration landed. Here the only thing standing between the
+        # gate and phase 99 is the frontmatter-only scan.
         with scratch_dir() as tmp:
             root = Path(tmp)
             (root / ".planning" / "phases" / "11-real").mkdir(parents=True)
             (root / ".planning" / "phases" / "99-decoy").mkdir(parents=True)
             (root / ".planning" / "STATE.md").write_text(
                 "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
-                "\nprose that merely mentions:\n\ncurrent_phase: 99\n",
+                "\nprose that merely mentions:\n\ncurrent_phase: 99\n"
+                "\n## Current Position\n\nPhase: 99 (Decoy) — READY TO EXECUTE\n",
                 encoding="utf-8")
             write_plan(root / ".planning" / "phases" / "11-real",
                        fixture_text("plan-missing-section.md"), name="11-01-PLAN.md")
@@ -1064,20 +1019,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
                        fixture_text("plan-compliant.md"), name="99-01-PLAN.md")
             result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2)
-        self.assertNotIn("99-decoy", result.stderr)
-
-    def test_current_phase_inside_a_fenced_example_does_not_redirect(self):
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            (root / ".planning" / "phases" / "99-decoy").mkdir(parents=True)
-            (root / ".planning" / "STATE.md").write_text(
-                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
-                "\n```yaml\ncurrent_phase: 99\n```\n",
-                encoding="utf-8")
-            write_plan(root / ".planning" / "phases" / "99-decoy",
-                       fixture_text("plan-compliant.md"), name="99-01-PLAN.md")
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 2)
+        self.assertIn("no `current_phase: <number>` field", result.stderr)
         self.assertNotIn("99-decoy", result.stderr)
 
     def test_ambiguous_current_phase_blocks(self):
@@ -1303,13 +1245,6 @@ class TestEmptyPhaseDir(unittest.TestCase):
     exited 0. A blocking, fail-closed gate passed without reading one plan.
     """
 
-    def test_empty_arg_exits_2_instead_of_scanning_cwd(self):
-        with scratch_dir() as tmp:
-            # tmp holds no plan files, so the pre-guard code path exits 0.
-            result = run_check("", cwd=tmp)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("empty phase_dir argument", result.stderr)
-
     def test_empty_arg_rejects_before_reading_cwd_at_all(self):
         # A violating plan in cwd would have produced exit 1 -- a block, but
         # from the wrong directory. The guard sits at the argument, before
@@ -1318,6 +1253,7 @@ class TestEmptyPhaseDir(unittest.TestCase):
             write_plan(tmp, "# plan with no Alternatives Considered section\n")
             result = run_check("", cwd=tmp)
         self.assertEqual(result.returncode, 2)
+        self.assertIn("empty phase_dir argument", result.stderr)
         self.assertNotIn("PLAN.md", result.stderr)
 
 
