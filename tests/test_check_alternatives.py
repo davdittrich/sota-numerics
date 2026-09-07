@@ -1028,6 +1028,67 @@ class TestIndentedCodeBlocks(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestFrontmatterMasking(unittest.TestCase):
+    """Leading YAML frontmatter is CommonMark-invisible on the rendered
+    page the same way a fence or an indented code block is, but neither
+    mask covers it: a `## Alternatives Considered` heading declared only
+    inside the frontmatter block was still credited by the section scan
+    (D-01, REVIEW-AGY-FINAL blocking item 2).
+    """
+
+    def test_a_section_declared_only_in_frontmatter_is_a_missing_section(self):
+        plan = (
+            "---\n"
+            "## Alternatives Considered\n\n"
+            f"- **NumPy**: mature. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"- **SciPy**: alternative. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance.\n"
+            "---\n\n"
+            "Real body text with no section of its own.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_frontmatter_beside_a_real_body_section_still_passes(self):
+        text, _ = bullet_plan()
+        plan = (
+            "---\n"
+            "phase: 24\n"
+            "plan: 01\n"
+            "must_haves:\n"
+            "  - a real requirement\n"
+            "  - another real requirement\n"
+            "---\n\n"
+        ) + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_document_without_frontmatter_is_unaffected(self):
+        text, _ = bullet_plan()
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_unclosed_leading_dashes_line_is_not_treated_as_frontmatter(self):
+        # First line is exactly `---`, but nothing that follows closes it
+        # with a line that is exactly `---` or `...` -- this is a
+        # thematic break (or a setext H2 underline for an empty
+        # preceding paragraph), not a frontmatter opener, and must be
+        # scanned exactly as it was before this task's change.
+        text, _ = bullet_plan()
+        plan = "---\n\n" + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestHtmlComments(unittest.TestCase):
     """An `## Alternatives Considered` inside an HTML comment renders nothing,
     so it records nothing (gsd-beads-a54).
