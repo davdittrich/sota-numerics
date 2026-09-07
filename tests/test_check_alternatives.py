@@ -949,6 +949,85 @@ class TestFencedRegions(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestIndentedCodeBlocks(unittest.TestCase):
+    """A four-space indented code block is CommonMark's other invisible-on-
+    the-rendered-page construct (D-02, REVIEW-CRITICAL-FINAL P1-1a). Fences
+    are already masked by `TestFencedRegions` above; this class pins the
+    indented form, reproducing the exact shape that review confirmed passes
+    at exit 0 on the shipped script.
+    """
+
+    def test_indented_alternatives_are_not_counted_as_prose(self):
+        # REVIEW-CRITICAL-FINAL P1-1a's reproduction: a real, column-0
+        # heading is found correctly, but its entries and Decided-by line
+        # sit four spaces in. CommonMark renders that as inert code, not
+        # list items -- BULLET_RE's unbounded indentation (D-03, out of
+        # scope here) still counts them today, so this exits 0 before the
+        # fix and must exit 1 after it.
+        plan = (
+            "## Alternatives Considered\n\n"
+            "Example of the required shape:\n\n"
+            f"    - **Householder QR**: stable. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"    - **Pivoted LU**: baseline. `https://docs.scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "    Decided by: performance -- QR is the stable first choice.\n\n"
+            "That is all; this plan makes no real comparison.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "section found but no alternatives parsed", result.stderr
+        )
+
+    def test_a_wholly_indented_heading_and_body_is_still_a_missing_section(self):
+        # Not a masking case: SECTION_HEADING_RE is anchored `^##` at
+        # column 0, so a heading indented four spaces was already
+        # invisible to it before this task's fix. Pinned so a future
+        # change to that anchor cannot silently start crediting it.
+        plan = (
+            "Some intro paragraph, not a list.\n\n"
+            "    ## Alternatives Considered\n\n"
+            f"    - **NumPy**: mature. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            f"    - **SciPy**: alternative. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
+            "    Decided by: performance.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_a_bullet_continuation_paragraph_is_not_treated_as_code(self):
+        # D-05's negative case: an ordinary continuation paragraph under a
+        # top-level bullet, indented four spaces because that is still
+        # inside the list item, is prose -- not an indented code block --
+        # and must never be masked.
+        text, _ = bullet_plan()
+        plan = text.replace(
+            SHAPE_DECISION,
+            "    A continuation paragraph for the entry above, indented\n"
+            "    four spaces because it is still inside the list item.\n\n"
+            + SHAPE_DECISION,
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_unrelated_indented_code_block_does_not_affect_a_compliant_section(self):
+        text, _ = bullet_plan()
+        plan = (
+            "Setup note.\n\n"
+            "    $ pip install numpy scipy\n"
+            "    $ python solve.py\n\n"
+        ) + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestHtmlComments(unittest.TestCase):
     """An `## Alternatives Considered` inside an HTML comment renders nothing,
     so it records nothing (gsd-beads-a54).
