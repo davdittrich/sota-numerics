@@ -22,6 +22,22 @@ PY
 )"
 [ -n "$GATE_CMD" ] || fail "could not extract gate command from capability.json"
 
+# gsd-core substitutes ${PHASE_DIR} TEXTUALLY into the command string and only
+# then hands the result to `sh -c` (gate-predicate-evaluator.cjs:41 builds the
+# literal /\$\{(PHASE_NUMBER|PHASE_DIR|PHASE_REQ_IDS)\}/g and replaces against
+# it; :47 supplies the PHASE_DIR value). The shell therefore never expands the
+# placeholder, which is why the command quotes it in single quotes -- a
+# consumer-supplied path must reach argv as data, not as shell source.
+#
+# Emulate that splice here. Exporting PHASE_DIR and letting `bash -c` expand it
+# tests a substitution that never happens in production: it passed only while
+# the command double-quoted the placeholder, and went red the moment the
+# quoting was hardened, reporting a defect in the fix rather than in itself.
+gate_cmd_for() {
+  local phase_dir="$1"
+  printf '%s' "${GATE_CMD//\$\{PHASE_DIR\}/$phase_dir}"
+}
+
 trap '[ -n "${SCRATCH:-}" ] && rm -rf "$SCRATCH" 2>/dev/null; [ -n "${FAKE_HOME:-}" ] && rm -rf "$FAKE_HOME" 2>/dev/null' EXIT
 
 # --- Case 1: global-scope-only install (no project-scope copy) -> gate finds
@@ -34,14 +50,14 @@ mkdir -p "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts"
 cp "$REPO_ROOT/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py" \
   "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
 
-( cd "$SCRATCH" && PHASE_DIR="$SCRATCH/phase" GSD_HOME="$FAKE_HOME" bash -c "$GATE_CMD" )
+( cd "$SCRATCH" && GSD_HOME="$FAKE_HOME" bash -c "$(gate_cmd_for "$SCRATCH/phase")" )
 STATUS=$?
 [ "$STATUS" -eq 0 ] || fail "case1: global-scope-only install did not resolve the gate script (exit $STATUS)"
 pass "case1: global-scope-only install resolves SOTA_SCRIPT via GSD_HOME fallback"
 
 # --- Case 2: neither scope has the script -> exit 1 with a clear message on stderr. ---
 EMPTY_HOME="$(mktemp -d)"
-ERR="$(cd "$SCRATCH" && PHASE_DIR="$SCRATCH/phase" GSD_HOME="$EMPTY_HOME" bash -c "$GATE_CMD" 2>&1 >/dev/null)"
+ERR="$(cd "$SCRATCH" && GSD_HOME="$EMPTY_HOME" bash -c "$(gate_cmd_for "$SCRATCH/phase")" 2>&1 >/dev/null)"
 STATUS=$?
 rm -rf "$EMPTY_HOME"
 [ "$STATUS" -eq 1 ] || fail "case2: missing-everywhere install did not exit 1 (exit $STATUS)"
