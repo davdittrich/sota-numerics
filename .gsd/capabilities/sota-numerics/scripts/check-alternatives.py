@@ -50,7 +50,15 @@ SECTION_HEADING_RE = re.compile(
 # in-section construct, so bounding on H3 would cut the body short and drop
 # the `Decided by:` line that follows it. Bounding earlier only ever shrinks
 # the body, which is the fail-closed direction.
-NEXT_HEADING_RE = re.compile(r"^[ \t]{0,3}#{1,2}[ \t]+", re.MULTILINE)
+# A setext H1 underline (`===`) ends the section too: the heading TEXT line
+# above it is harmless (it is not an entry), but bullets below it would
+# otherwise be donated into the section the way an ATX H1 once was.
+# `-` underlines are deliberately NOT a boundary: `---` is equally a
+# thematic break and a frontmatter fence, so treating it as one would
+# false-BLOCK a plan that puts a horizontal rule inside the section. `=`
+# has no such second meaning. Bounding earlier only shrinks the body, so
+# every case this moves, it moves fail-closed.
+NEXT_HEADING_RE = re.compile(r"^[ \t]{0,3}(?:#{1,2}[ \t]+|=+[ \t]*$)", re.MULTILINE)
 H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE

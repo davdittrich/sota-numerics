@@ -661,6 +661,19 @@ class TestSectionBoundary(unittest.TestCase):
     def test_indented_h1_ends_the_section(self):
         self.assert_does_not_donate("   # Later Section")
 
+    def test_setext_h1_ends_the_section(self):
+        # A setext H1 is an H1; only its spelling differs. The ATX fix left this
+        # member of the same class live, and it was found by enumerating the
+        # boundary axis rather than by another report.
+        self.assert_does_not_donate("Later Section\n=============")
+
+    def test_thematic_break_does_not_end_the_section(self):
+        # `---` is a setext H2 underline AND a thematic break AND a frontmatter
+        # fence. Treating it as a boundary would false-BLOCK a plan that puts a
+        # horizontal rule between its alternatives, so `=` is a boundary and `-`
+        # deliberately is not. This pins that asymmetry as intended.
+        self.assert_stays_inside("---")
+
     def test_h3_does_not_end_the_section(self):
         self.assert_stays_inside("### Notes")
 
