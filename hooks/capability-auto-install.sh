@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Vendored auto-install hook (D-05: vendored copy per plugin, not shared at
-# runtime). The ponytail-everywhere repo carries a sibling copy of this file
+# Vendored auto-install hook: each plugin ships its own copy of this file
+# rather than sourcing a shared one, so a plugin stays self-contained and one
+# plugin's edit cannot change another's behaviour. The ponytail-everywhere repo carries a sibling copy of this file
 # which has not yet taken the publication guard added in sota-numerics 0.2.0,
 # so the two have diverged and neither may be edited as a copy of the other.
 #
 # Detects bundle drift via a whole-directory hash and re-grants the
-# capability at global ("user") scope on every SessionStart (D-01..D-03).
+# capability at global ("user") scope on every SessionStart. Global scope is
+# what the CLI calls --scope global and what the prose calls "user scope".
 # Never aborts the session: no `set -e`.
 set -u
 
@@ -24,7 +26,7 @@ PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd
 BUNDLE_DIR="$PLUGIN_ROOT/.gsd/capabilities/$CAP_ID"
 [ -d "$BUNDLE_DIR" ] || exit 0
 
-# Portable hash tool selection (Assumption A3: macOS ships no sha256sum).
+# Portable hash tool selection: macOS ships shasum, not sha256sum.
 if command -v sha256sum >/dev/null 2>&1; then
   HASH_CMD=(sha256sum)
 elif command -v shasum >/dev/null 2>&1; then
@@ -33,13 +35,13 @@ else
   exit 0
 fi
 
-# Whole-bundle-directory hash (D-03). `capability install` copies the directory,
+# Whole-bundle-directory hash. `capability install` copies the directory,
 # so every entry in it becomes bytes the global mirror serves and every entry
 # must therefore reach the hash: files contribute their own digest, which binds
 # content to path; symlinks contribute their target, so adding or retargeting
 # one is drift; everything else -- directories, and any FIFO or socket that
 # should not be there -- contributes its path, so an added empty directory is
-# caught (Assumption A1). Concatenating raw contents instead, as this did, is
+# caught. Concatenating raw contents instead, as this did, is
 # ambiguous at file boundaries: {a:"xy", b:""} and {a:"x", b:"y"} produce the
 # same path list and the same byte stream. `-exec sh -c` rather than GNU
 # `find -printf`, which BSD find does not have.
@@ -51,7 +53,7 @@ bundle_hash() {
     LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
-# One sidecar file per capability id (Pitfall 4), matching the single global
+# One sidecar file per capability id, matching the single global
 # mirror that id owns: the file records which bytes that mirror currently holds.
 # Two plugin roots exporting the same id do share this file, and that is
 # correct, not a race -- they share the mirror it describes. NEW_HASH covers the
@@ -66,7 +68,8 @@ OLD_HASH=""
 [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
 NEW_HASH="$(bundle_hash)"
 
-# D-02 fast path: unchanged bundle exits silently, never spawns node.
+# Fast path: an unchanged bundle exits silently and never spawns node, which
+# is what keeps this affordable on every SessionStart.
 [ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
 
 # Fail closed: every question below is asked through git, and a git that cannot
@@ -159,7 +162,7 @@ fi
 # gsd_tools() resolver, inlined verbatim from
 # hooks/gsd-tools.sh in the ponytail-everywhere repo rather than sourced -- the
 # root plugin ships no gsd-tools.sh, and an inline copy keeps this script
-# dependency-free within its own plugin (D-05).
+# dependency-free within its own plugin.
 gsd_tools() {
   if [ -z "${_GSD_TOOLS_ARGS_SET+x}" ]; then
     _GSD_TOOLS_ARGS_SET=1
@@ -179,7 +182,7 @@ gsd_tools() {
   "${_GSD_TOOLS_ARGS[@]}" "$@"
 }
 
-# Absolute spec (Pattern 2): a relative one would resolve against the end user's
+# Absolute spec: a relative one would resolve against the end user's
 # cwd, not the plugin.
 gsd_tools capability install "$BUNDLE_DIR" --scope global --yes >/dev/null 2>&1
 INSTALL_STATUS=$?
@@ -189,13 +192,13 @@ if [ "$INSTALL_STATUS" -eq 0 ]; then
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
-  # D-04: deliberate divergence from this repo's usual silent `|| true`
+  # Deliberate divergence from this repo's usual silent `|| true`
   # fail-open convention -- this path is unattended, so silence would leave
   # a capability permanently inactive with nobody the wiser. Do not "fix"
   # this back to silent. Do NOT write STATE_FILE, so the next session retries.
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
 else
-  # D-04, same rationale as above -- install command ran and failed.
+  # Same rationale as above -- the install command ran and failed.
   echo "capability-auto-install: capability install failed for $CAP_ID (exit $INSTALL_STATUS)" >&2
 fi
 
