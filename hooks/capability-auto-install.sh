@@ -39,10 +39,16 @@ bundle_hash() {
   } | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
-# One sidecar file per capability id (Pitfall 4) so vendored copies in
-# different plugins cannot race or stomp each other's cached hash. Never
-# gsd-core's own .gsd-capabilities.json / ~/.gsd/consent.json -- those are
-# gsd-core-owned schemas this script must not write into.
+# One sidecar file per capability id (Pitfall 4), matching the single global
+# mirror that id owns: the file records which bytes that mirror currently holds.
+# Two plugin roots exporting the same id do share this file, and that is
+# correct, not a race -- they share the mirror it describes. NEW_HASH covers the
+# bundle's absolute paths as well as its contents (bundle_hash below), so a
+# switch between roots is a hash mismatch and reinstalls, rather than a fast
+# path that would leave the mirror holding the other root's bytes
+# (gsd-beads-9ap). Never gsd-core's own .gsd-capabilities.json /
+# ~/.gsd/consent.json -- those are gsd-core-owned schemas this script must not
+# write into.
 STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
 
 OLD_HASH=""
