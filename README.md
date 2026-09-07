@@ -169,7 +169,7 @@ Handled outcomes use these exit codes:
 - `1`: one or more plans violate the gate;
 - `2`: the phase path is not an existing directory, or has no `.planning` ancestor within ten levels.
 
-Unexpected filesystem errors are not converted to `2`; they escape as Python errors and the blocking gate halts. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name can take this path.
+Unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name can take this path.
 
 You can run the checker directly:
 
