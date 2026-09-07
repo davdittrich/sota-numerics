@@ -1219,6 +1219,79 @@ class TestEmptyDirectory(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+class TestMisnamedPlans(unittest.TestCase):
+    """A plan-shaped file PLAN_FILE_RE rejects is reported, never skipped
+    (gsd-beads-8d5).
+
+    Discovery answered two different questions with the same silence: "this
+    phase has no plans" and "this phase has a plan I refused to read". The
+    second is the dangerous one -- a phase directory holding only `23-PLAN.md`
+    exited 0 with no output, byte-identical to a compliant phase, while the
+    plan inside it had no `## Alternatives Considered` section at all.
+
+    The first still exits 0. That is a phase with nothing to check, and
+    blocking it would make the gate fire on every phase before its plans are
+    written.
+    """
+
+    def write(self, tmp, name, text=None):
+        (Path(tmp) / name).write_text(
+            text if text is not None else fixture_text("plan-missing-section.md"),
+            encoding="utf-8")
+
+    def test_plan_missing_its_index_is_reported_not_skipped(self):
+        # The measured shape: `23-PLAN.md` instead of `23-01-PLAN.md`.
+        with scratch_dir() as tmp:
+            self.write(tmp, "23-PLAN.md")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("23-PLAN.md", result.stderr)
+        self.assertIn("named like a plan but not", result.stderr)
+
+    def test_bare_plan_md_is_reported(self):
+        with scratch_dir() as tmp:
+            self.write(tmp, "PLAN.md")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("named like a plan but not", result.stderr)
+
+    def test_a_compliant_misnamed_plan_is_still_reported(self):
+        # The report is about reachability, not content: a file no reader
+        # opens cannot be evidence of anything, however good it looks.
+        with scratch_dir() as tmp:
+            self.write(tmp, "23-PLAN.md", fixture_text("plan-compliant.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("named like a plan but not", result.stderr)
+
+    def test_sibling_phase_artifacts_are_not_plan_shaped(self):
+        # The bound in the other direction, and it is not decoration: the
+        # first pattern tried here carried re.IGNORECASE and blocked the phase
+        # on `notes-on-the-plan.md`. `PLAN` in capitals is GSD's artifact
+        # token; a lowercase `plan` is ordinary English in a filename.
+        with scratch_dir() as tmp:
+            for name in ("23-SUMMARY.md", "23-CONTEXT.md", "23-RESEARCH.md",
+                         "23-REVIEW-PONYTAIL.md", "23-BEADS-RECALL.md",
+                         "23-VALIDATION.md", "README.md", "PLANNING.md",
+                         "MYPLAN.md", "notes-on-the-plan.md"):
+                self.write(tmp, name, "irrelevant\n")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_valid_plan_beside_a_misnamed_one_reports_both(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-missing-section.md"),
+                       name="23-01-PLAN.md")
+            self.write(tmp, "23-PLAN.md", fixture_text("plan-compliant.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("23-01-PLAN.md: missing '## Alternatives Considered'",
+                      result.stderr)
+        self.assertIn("named like a plan but not", result.stderr)
+        # Still exactly one remediation line, however many violations.
+        self.assertEqual(result.stderr.count("remediation:"), 1)
+
+
 class TestEmptyPhaseDir(unittest.TestCase):
     """An empty ${PHASE_DIR} must block, not silently pass.
 

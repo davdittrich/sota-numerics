@@ -10,7 +10,9 @@ are excluded from the count and evidence validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
-`remediation: ...` line. Exit 2 = usage/IO error: an empty, missing or
+`remediation: ...` line; a plan-shaped file whose name no plan reader
+matches is itself such a violation, because skipping it silently is
+indistinguishable from a clean pass. Exit 2 = usage/IO error: an empty, missing or
 non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
 10 levels, a discovered plan file that is not valid UTF-8, or -- when no
 phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
@@ -36,6 +38,38 @@ MIN_ALTERNATIVES = 2
 # sub-numbered phase directory matches: both `11-01-PLAN.md` and
 # `10.1-02-PLAN.md` are plan files.
 PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
+
+# A file a human reader would call a plan: the last hyphen-separated token of
+# the `.md` name is `PLAN`. The bound is chosen in both directions.
+#
+# Narrower than "any markdown file", because a phase directory also holds
+# SUMMARY, CONTEXT, RESEARCH, PATTERNS, REVIEW, BEADS and VALIDATION
+# artifacts; a gate that blocked a phase on a stray note would be a gate
+# authors route around. Measured on this project's own corpus: 76 entries
+# across its phase directories, 10 plan-shaped, 0 of them misnamed.
+#
+# Case-sensitive, and that is the load-bearing half of the bound. `PLAN` in
+# capitals is GSD's artifact token, the same convention as SUMMARY and
+# RESEARCH; a lowercase `plan` is ordinary English inside a filename. The
+# first draft of this regex carried re.IGNORECASE and blocked a phase on
+# `notes-on-the-plan.md` -- a stray note, exactly the false positive that
+# would teach authors to route around the gate. The residual is a lowercase
+# `23-01-plan.md`, which gsd-core's `*-PLAN.md` glob would read on a
+# case-insensitive filesystem and this gate would not; nothing in this
+# repository or the reviews has produced one, and blocking every note that
+# ends in the word "plan" is the more expensive of the two errors.
+#
+# Wider than PLAN_FILE_RE, which additionally demands the `<phase>-<NN>-`
+# prefix. Everything between the two is a file that reads as a plan to a human
+# and is invisible to every plan reader, this gate included -- and silence is
+# the one answer a blocking gate must not give about it. A phase holding only
+# `23-PLAN.md` used to exit 0 with no output, byte-identical to a compliant
+# phase, because the name missed the plan index by one field.
+PLAN_SHAPED_RE = re.compile(r"(?:^|-)PLAN\.md$")
+MISNAMED_PLAN_REASON = (
+    "named like a plan but not `<phase>-<NN>-PLAN.md`, so no plan reader --"
+    " this gate included -- will ever open it; rename it or remove it"
+)
 
 # Anchored single-line scans with no nested quantifiers, so no crafted
 # PLAN.md body can trigger catastrophic regex backtracking (ReDoS). The H3
@@ -238,16 +272,26 @@ def resolve_current_phase_dir(start):
 
 
 def discover_plan_files(phase_dir):
-    """Every `*-PLAN.md` directly inside phase_dir, sorted for determinism.
+    """Plan files directly inside phase_dir, sorted for determinism.
 
-    Collects every match rather than stopping at the first, so a phase
-    directory holding multiple plan files gets every one validated.
+    Returns `(plans, misnamed)`: the `*-PLAN.md` files this gate validates, and
+    the plan-shaped files PLAN_FILE_RE rejects. Both lists collect every match
+    rather than stopping at the first, so a phase directory holding multiple
+    plan files gets every one accounted for.
+
+    Reporting the rejects rather than dropping them is the point. Silently
+    skipping them made a phase whose only plan was misnamed indistinguishable
+    from a phase whose plans all passed. A directory with no plan-shaped file
+    at all is a different thing and still exits 0: that is a phase with
+    nothing to check, not a phase whose plan went unread.
     """
-    return sorted(
-        candidate
-        for candidate in Path(phase_dir).iterdir()
-        if PLAN_FILE_RE.match(candidate.name)
-    )
+    plans, misnamed = [], []
+    for candidate in sorted(Path(phase_dir).iterdir()):
+        if PLAN_FILE_RE.match(candidate.name):
+            plans.append(candidate)
+        elif PLAN_SHAPED_RE.search(candidate.name):
+            misnamed.append(candidate)
+    return plans, misnamed
 
 
 def next_fence_opener(text, pos):
@@ -520,10 +564,12 @@ def check_alternatives(phase_dir_arg):
     find_project_root(phase_dir_path)
     resolved_phase_dir = phase_dir_path.resolve()
     violations = []
-    for plan_path in discover_plan_files(resolved_phase_dir):
+    plans, misnamed = discover_plan_files(resolved_phase_dir)
+    for plan_path in plans:
         reason = validate_plan(plan_path)
         if reason is not None:
             violations.append((plan_path, reason))
+    violations.extend((path, MISNAMED_PLAN_REASON) for path in misnamed)
     return violations
 
 
