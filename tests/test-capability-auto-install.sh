@@ -580,6 +580,39 @@ run_hook
 [ "$(installs)" = 3 ] || fail "I4: a retargeted symlink did not change the bundle hash"
 pass "I4: symlink drift inside the bundle defeats the fast path"
 
+# --- D0: every refusal the hook can emit is documented, and nothing else is ---
+# The refusal list went stale three times in one session: the hook grew from
+# five refusals to eight while README and CHANGELOG were being written against
+# it, and one doc commit shipped "seven" against a hook emitting eight. Each
+# drift was caught only because a human re-measured. Assert the set equality
+# instead, so adding a refusal without documenting it fails here.
+#
+# Compared on the message PREFIX, up to "; refusing to install it at global
+# scope" -- that tail is identical across all eight and the docs deliberately
+# omit it. $CAP_ID is substituted because the docs name the capability.
+REPO_ROOT_D0="$(cd "$(dirname "$0")/.." && pwd)"
+doc_parity="$(python3 - "$REPO_ROOT_D0" <<'PYEOF'
+import re, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+hook = (root / "hooks" / "capability-auto-install.sh").read_text()
+readme = (root / "README.md").read_text()
+changelog = (root / "CHANGELOG.md").read_text()
+emitted = [m for m in re.findall(r'echo "capability-auto-install: ([^"]+)" >&2', hook)
+           if "refusing to install" in m]
+def key(m):
+    body = m.split("; refusing to install")[0]
+    body = body.replace("$CAP_ID", "sota-numerics").replace("${CAP_ID}", "sota-numerics")
+    return re.sub(r"\s*\$\{?\w+\}?\s*\)?$", "", body).strip()
+missing = [key(m) for m in emitted if key(m) not in readme or key(m) not in changelog]
+print(len(emitted), len(missing), "|".join(missing))
+PYEOF
+)"
+set -- $doc_parity
+D0_TOTAL="$1"; D0_MISSING="$2"
+[ "$D0_TOTAL" -ge 8 ] || fail "D0: found only $D0_TOTAL refusals in the hook; the extractor regex has drifted"
+[ "$D0_MISSING" -eq 0 ] || fail "D0: $D0_MISSING refusal(s) undocumented in README.md or CHANGELOG.md: ${doc_parity#* * }"
+pass "D0: all $D0_TOTAL refusals documented verbatim in README.md and CHANGELOG.md"
+
 # --- I0: no case above touched the developer's real global GSD state ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
