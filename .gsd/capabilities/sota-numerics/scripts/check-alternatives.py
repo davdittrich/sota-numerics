@@ -121,6 +121,11 @@ STATE_BODY_PHASE_RE = re.compile(
 # or more backticks or tildes, then an optional info string. Anchored per line,
 # no nested quantifiers -- same ReDoS discipline as the scans above.
 FENCE_LINE_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
+# The other construct CommonMark keeps out of the rendered page. Plain string
+# search, not a regex: the delimiters are literals, so `str.find` is both
+# faster and immune to the backtracking the scans above are shaped to avoid.
+HTML_COMMENT_OPEN = "<!--"
+HTML_COMMENT_CLOSE = "-->"
 NON_NEWLINE_RE = re.compile(r"[^\n]")
 
 
@@ -245,37 +250,68 @@ def discover_plan_files(phase_dir):
     )
 
 
+def next_fence_opener(text, pos):
+    """The first line at or after `pos` that opens a fenced code block."""
+    for m in FENCE_LINE_RE.finditer(text, pos):
+        # A backtick fence's info string may not itself contain a backtick.
+        if m.group(1)[0] == "`" and "`" in m.group(2):
+            continue
+        return m
+    return None
+
+
+def fence_close(text, opener):
+    """The offset just past `opener`'s closing fence, or EOF if unterminated."""
+    marker = opener.group(1)
+    for m in FENCE_LINE_RE.finditer(text, opener.end()):
+        close, info = m.group(1), m.group(2)
+        if close[0] == marker[0] and len(close) >= len(marker) and not info.strip():
+            return m.end()
+    return len(text)
+
+
 def mask_fenced_regions(text):
-    """Blank every fenced code block, preserving offsets and line structure.
+    """Blank fenced code blocks and HTML comments, preserving offsets.
 
     Without this, the first `## Alternatives Considered` anywhere in the file
     won -- including one inside a ```markdown fence. README ships four fenced
     examples for authors to copy, so a plan that pasted an example (an `N/A --
     no mechanism choice` exemption, say) without writing a real section
-    satisfied the blocking gate on the example's text. Bullets and table rows
-    inside a fence were counted as real entries for the same reason.
+    satisfied the blocking gate on the example's own text. Bullets and table
+    rows inside a fence counted as real entries for the same reason.
+
+    HTML comments are the same defect in the other syntax CommonMark hides
+    from the rendered page, and the more reachable one: an author who drops
+    two candidates late tends to comment them out "to keep the history"
+    rather than delete them. Measured against the unmasked checker, a real
+    heading whose only entries were commented out exited 0, and a section
+    written entirely inside a comment exited 1 for the wrong reason --
+    counting a commented bullet as an alternative. What the rendered plan
+    does not say, the gate must not read.
 
     Replacing fenced bytes with spaces rather than deleting them keeps every
     offset intact, so the scans below stay one pass and slices still line up.
-    An unterminated fence blanks to EOF: the section then reads as missing and
-    the gate blocks, which is the fail-closed direction.
+    An unterminated fence or comment blanks to EOF: it reads as a missing
+    section and the gate blocks, the fail-closed direction.
+
+    Openers are consumed left to right and whichever opens first wins, so a
+    `<!--` inside a fence is code and a fence inside a comment is comment --
+    matching CommonMark, where neither construct nests inside the other.
     """
     spans = []
-    open_marker = None
-    start = 0
-    for m in FENCE_LINE_RE.finditer(text):
-        marker, info = m.group(1), m.group(2)
-        if open_marker is None:
-            # A backtick fence's info string may not itself contain a backtick.
-            if marker[0] == "`" and "`" in info:
-                continue
-            open_marker = marker
-            start = m.start()
-        elif marker[0] == open_marker[0] and len(marker) >= len(open_marker) and not info.strip():
-            spans.append((start, m.end()))
-            open_marker = None
-    if open_marker is not None:
-        spans.append((start, len(text)))
+    pos = 0
+    while True:
+        fence = next_fence_opener(text, pos)
+        comment = text.find(HTML_COMMENT_OPEN, pos)
+        if fence is None and comment < 0:
+            break
+        if comment >= 0 and (fence is None or comment < fence.start()):
+            close = text.find(HTML_COMMENT_CLOSE, comment + len(HTML_COMMENT_OPEN))
+            pos = len(text) if close < 0 else close + len(HTML_COMMENT_CLOSE)
+            spans.append((comment, pos))
+        else:
+            pos = fence_close(text, fence)
+            spans.append((fence.start(), pos))
     if not spans:
         return text
     out = []

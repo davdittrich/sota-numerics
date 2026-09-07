@@ -905,6 +905,77 @@ class TestFencedRegions(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestHtmlComments(unittest.TestCase):
+    """An `## Alternatives Considered` inside an HTML comment renders nothing,
+    so it records nothing (gsd-beads-a54).
+
+    The same defect as the fenced one in the other syntax CommonMark keeps off
+    the page, and the more reachable of the two: the author who drops two
+    candidates late comments them out "to keep the history" rather than
+    deleting them. Every case asserts the REASON, because two of the three
+    already exited non-zero before the fix -- for the wrong reason, having
+    counted commented text as a decision record.
+    """
+
+    def test_commented_only_heading_does_not_satisfy_the_gate(self):
+        # Was exit 1 "fewer than 2 named alternatives (found 1)": the gate read
+        # the commented heading AND counted a commented bullet under it.
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-commented-only.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_commented_entries_do_not_count_toward_the_minimum(self):
+        # The fail-open the release notes already claimed was closed: a real
+        # heading whose only entries were commented out exited 0.
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-commented-entries.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no alternatives parsed", result.stderr)
+
+    def test_commented_example_before_a_real_section_still_passes(self):
+        # Was exit 1 "found 1": the scan stopped at the commented heading and
+        # never reached the genuine section below it.
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-commented-then-real.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unterminated_comment_fails_closed(self):
+        plan = (
+            "## Approach\n\n<!--\n## Alternatives Considered\n\n"
+            "N/A — no mechanism choice is made by this plan.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_a_comment_opener_inside_a_fence_is_code_not_a_comment(self):
+        # Whichever construct opens first owns the span, as in CommonMark:
+        # a lone `<!--` quoted inside a fence must not swallow the real
+        # section that follows the fence.
+        text, _ = bullet_plan()
+        plan = "## Approach\n\n```markdown\n<!--\n```\n\n" + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_fence_opener_inside_a_comment_does_not_open_a_fence(self):
+        # The mirror image: a ``` inside a comment must not leave a fence open
+        # across the real section and blank it to EOF.
+        text, _ = bullet_plan()
+        plan = "## Approach\n\n<!--\n```\n-->\n\n" + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestCurrentPhaseResolution(unittest.TestCase):
     """With no argument, the checker resolves its phase from the project's own
     STATE.md (gsd-beads-cqt).
