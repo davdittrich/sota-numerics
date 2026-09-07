@@ -16,8 +16,12 @@ no gate enforces them, and none was added.
 **The automatic global install can now refuse.** Installing at global GSD scope
 publishes the bundle to every project on the machine, so the `SessionStart` and
 `SubagentStart` hook now installs only bytes it can show are already published.
-This costs you nothing when you install from the marketplace: that bundle
-belongs to no repository, so the check does not apply to it.
+Whether this reaches a marketplace install depends on your host. Claude Code
+has cached plugins both as depth-1 git clones and as plain directories. Only
+the clone form is tracked, and only a tracked bundle is checked; on that form
+the check refuses, because the plugin host's own `.in_use/` and `.orphaned_at`
+bookkeeping sits inside the bundle uncommitted. README's "What the Claude
+hooks do" gives the manual install that gets past it.
 
 It applies when you run this plugin from a git checkout that tracks the bundle —
 a development clone or worktree. Expect one of these on stderr each session
