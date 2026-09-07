@@ -260,6 +260,72 @@ run_hook
 err_has "git is unusable" || fail "H2: wrong refusal (err: $(cat "$SB/err"))"
 pass "H2: absent git fails closed"
 
+# --- H3: git runs, but will not open the repository that tracks the bundle ---
+# `ls-files --error-unmatch` answers 128 both for "no repository" and for "a
+# repository I refuse to read", and the second must not be read as the first.
+# chmod 000 stands in for the field cases: another UID's checkout git rejects
+# for dubious ownership (a root- or service-installed plugin, a shared checkout,
+# a container UID remap) and a partially readable .git. The bundle here is both
+# dirty and unpublished, so reading 128 as "untracked" installs bytes that two
+# separate refusals exist to stop.
+new_sandbox h3
+git_init "$ROOT"
+printf 'work in progress\n' >> "$BUNDLE/scripts/check.py"
+chmod 000 "$ROOT/.git"
+run_hook
+chmod 755 "$ROOT/.git"
+[ "$(installs)" = 0 ] || fail "H3: an unreadable repository let a dirty, unpublished bundle install"
+err_has "git cannot read the repository" || fail "H3: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "H3: refusal wrote the sidecar, making the miss permanent"
+pass "H3: a repository git refuses to open fails closed"
+
+# --- H4: git opens the repository but cannot read its index ---
+# Distinct from H3 and not reachable by testing `rev-parse --show-toplevel`:
+# discovery succeeds here, so a --show-toplevel gate routes this case into the
+# tracked branch, where ls-files then fails and every refusal is skipped. Only
+# discriminating ls-files' own exit codes closes it. Precondition asserted
+# below so the distinction cannot be refactored away by accident.
+new_sandbox h4
+git_init "$ROOT"
+printf 'work in progress\n' >> "$BUNDLE/scripts/check.py"
+chmod 000 "$ROOT/.git/index"
+git -C "$BUNDLE" rev-parse --show-toplevel >/dev/null 2>&1 ||
+  fail "H4: precondition -- git should still discover this repository"
+git -C "$BUNDLE" ls-files --error-unmatch . >/dev/null 2>&1 &&
+  fail "H4: precondition -- ls-files should fail on an unreadable index"
+run_hook
+chmod 644 "$ROOT/.git/index"
+[ "$(installs)" = 0 ] || fail "H4: an unreadable index let a dirty, unpublished bundle install"
+err_has "git cannot read the repository" || fail "H4: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "H4: refusal wrote the sidecar, making the miss permanent"
+pass "H4: a repository whose index git cannot read fails closed"
+
+# --- H5: a readable .git that git still refuses to open ---
+# The dubious-ownership shape -- .git is perfectly readable, git just declines
+# -- which cannot be built here without a second uid. An unknown repository
+# format reaches the guard through the same branch: discovery fails, yet an
+# ancestor .git holds a HEAD, so a repository is there and git did not answer.
+new_sandbox h5
+git_init "$ROOT"
+printf 'work in progress\n' >> "$BUNDLE/scripts/check.py"
+git -C "$ROOT" config core.repositoryformatversion 99
+[ -r "$ROOT/.git/HEAD" ] || fail "H5: precondition -- .git should stay readable"
+run_hook
+[ "$(installs)" = 0 ] || fail "H5: a repository git declined let a dirty, unpublished bundle install"
+err_has "git cannot read the repository" || fail "H5: wrong refusal (err: $(cat "$SB/err"))"
+pass "H5: a readable repository git declines fails closed"
+
+# --- A3: a .git that is not a repository must not block the install ---
+# The other side of H3/H5. Refusing on the mere existence of a name is a false
+# positive that disables the capability: a stray empty /tmp/.git would then
+# refuse every bundle unpacked under /tmp, this suite included. The evidence
+# that separates them is a HEAD, not a name.
+new_sandbox a3
+mkdir -p "$SB/.git"
+run_hook
+[ "$(installs)" = 1 ] || fail "A3: an empty .git above the bundle blocked the install (err: $(cat "$SB/err"))"
+pass "A3: a .git holding no repository is walked past"
+
 # --- I1: unchanged bundle takes the fast path on the next session ---
 new_sandbox i1
 run_hook

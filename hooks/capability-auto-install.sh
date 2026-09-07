@@ -92,7 +92,45 @@ fi
 # versions ~/.claude encloses the bundle without tracking it, so the guard does
 # not apply to that repository's state; a monorepo vendoring the plugin does
 # track it and stays guarded, the direction an unverifiable case must err in.
-if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
+#
+# `ls-files --error-unmatch` answers with three exit codes and this guard has to
+# keep all three apart:
+#
+#   0   -- tracked. The publication checks below apply.
+#   1   -- a repository answered, and it does not track the bundle. It has
+#          nothing to say about these bytes, so the guard does not apply.
+#   128 -- git did not answer. Either no repository exists, or one exists that
+#          git will not open: another UID's checkout it rejects for dubious
+#          ownership (a root- or service-installed plugin, a shared checkout, a
+#          container UID remap), an unreadable .git, an unreadable or corrupt
+#          index, a repository format it does not know. Only the first is safe,
+#          and git reports every one of them as 128 with the same stderr, so
+#          128 must not be read as "untracked".
+#
+# unverifiable_repo() decides that last case on evidence git cannot supply.
+# `--git-dir` succeeding means git found a repository it can open, so the 128
+# came from the index alone -- there is a repository and it did not answer.
+# Otherwise walk the ancestors: a .git we cannot inspect might be a repository
+# and must be assumed to be one, and a .git holding a HEAD is a repository git
+# declined for ownership or format. A .git that is inspectable and holds no
+# HEAD -- a stray empty directory -- is not a repository and is walked past.
+unverifiable_repo() {
+  git -C "$BUNDLE_DIR" rev-parse --git-dir >/dev/null 2>&1 && return 0
+  local _d="$BUNDLE_DIR" _g
+  while :; do
+    _g="$_d/.git"
+    if [ -e "$_g" ] &&
+       ! { [ -d "$_g" ] && [ -r "$_g" ] && [ -x "$_g" ] && [ ! -e "$_g/HEAD" ]; }; then
+      return 0
+    fi
+    [ "$_d" = "/" ] && return 1
+    _d="$(dirname "$_d")"
+  done
+}
+
+TRACKED=0
+git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1 || TRACKED=$?
+if [ "$TRACKED" -eq 0 ]; then
   # --ignored, because `capability install` copies the directory, not the index:
   # an ignored file inside the bundle is unpublished byte that would be mirrored
   # machine-wide, and plain `status --porcelain` reports it as clean
@@ -113,6 +151,9 @@ if git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1; then
     echo "capability-auto-install: $CAP_ID bundle HEAD is not published (not an ancestor of $PUBLISHED); refusing to install it at global scope" >&2
     exit 0
   fi
+elif [ "$TRACKED" -ne 1 ] && unverifiable_repo; then
+  echo "capability-auto-install: git cannot read the repository holding the $CAP_ID bundle, so its provenance cannot be verified; refusing to install it at global scope" >&2
+  exit 0
 fi
 
 # gsd_tools() resolver, inlined verbatim from
