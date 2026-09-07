@@ -2,8 +2,10 @@
 # Stdlib-only coverage for hooks/capability-auto-install.sh.
 #
 # The hook enforces one invariant: `capability install --scope global` publishes
-# to every project on the machine, so it may only install bytes that are already
-# published in the bundle's own upstream. This file enumerates the decision the
+# to every project on the machine, so it may only install bytes it can still see
+# in the bundle's own upstream -- concretely, in the last upstream tip this
+# checkout fetched, which is as far as a hook that must not touch the network
+# can see (case K1). This file enumerates the decision the
 # hook makes rather than the handful of situations anyone happened to think of
 # -- three defects survived manual verification of
 # "four cases" precisely because that was a sample, not a partition.
@@ -26,7 +28,7 @@
 #   4. uncommitted or ignored bytes           -> refuse   (cases B, E, J4)
 #   5. clean, no origin/HEAD or origin/main   -> refuse   (cases C2, F2)
 #   6. clean, HEAD not an ancestor of it      -> refuse   (case C)
-#   7. clean, HEAD published                  -> install  (cases D, A2)
+#   7. clean, HEAD an ancestor of that ref    -> install  (cases D, A2, K1)
 #
 #   ls-files 1 -- a repository answered and does not track the bundle:
 #   8. it has nothing to say about the bytes  -> install  (cases F, G)
@@ -251,6 +253,26 @@ run_hook
 [ "$(installs)" = 1 ] || fail "D: published bundle did not install (err: $(cat "$SB/err"))"
 [ -f "$(sidecar)" ] || fail "D: successful install did not write the hash sidecar"
 pass "D: tracked, clean, published bundle installs"
+
+# --- K1: publication is proved against a local ref, never against the remote ---
+# The limit of row 7, written where it can be executed rather than trusted.
+# origin/main is a ref under refs/remotes that some earlier fetch wrote, so the
+# ancestry test says HEAD is contained in the last tip this checkout recorded --
+# it does not say a server holds those bytes now. Deleting the origin repository
+# outright leaves the answer unchanged. That is deliberate: a SessionStart hook
+# that reached the network would put the capability behind connectivity and
+# credentials. It is also why the prose may not say the bundle is published,
+# only that it matches the last upstream tip fetched.
+new_sandbox k1
+git_init "$ROOT"
+publish "$ROOT"
+rm -rf "$SB/origin"
+git -C "$BUNDLE" ls-remote origin >/dev/null 2>&1 &&
+  fail "K1: precondition -- the origin repository should be unreachable"
+run_hook
+[ "$(installs)" = 1 ] ||
+  fail "K1: the guard contacted the remote, or refused without one (err: $(cat "$SB/err"))"
+pass "K1: ancestry is proved against the last fetched ref, offline"
 
 # --- E: published bundle carrying gitignored bytes ---
 # `capability install` copies the directory, not the index, so these bytes would

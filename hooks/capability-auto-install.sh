@@ -184,8 +184,19 @@ if [ "$TRACKED" -eq 0 ]; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
   fi
-  # Fail closed: an unresolvable upstream means we cannot prove the bytes are
-  # published, and a guard that cannot verify must not answer "safe".
+  # What the two checks below prove, exactly: origin/HEAD and origin/main are
+  # local refs under refs/remotes, so passing means HEAD is an ancestor of the
+  # tip the last fetch recorded -- not that any server holds these bytes now. A
+  # remote that has since force-pushed, a remote that no longer exists, and a
+  # ref written by hand all read alike here. Closing that gap needs a round trip
+  # to the remote on every SessionStart, which would put the capability behind
+  # the network and behind credentials; this guard exists for the accident of
+  # running a plugin out of a development worktree, and against that accident a
+  # local ref is the right evidence and the only affordable one. Case K1 pins
+  # the limit so it stays a decision rather than an assumption.
+  #
+  # Fail closed: an unresolvable upstream means we cannot prove even that much,
+  # and a guard that cannot verify must not answer "safe".
   PUBLISHED="$(git -C "$BUNDLE_DIR" rev-parse --verify --quiet origin/HEAD ||
                git -C "$BUNDLE_DIR" rev-parse --verify --quiet origin/main)"
   if [ -z "$PUBLISHED" ]; then
