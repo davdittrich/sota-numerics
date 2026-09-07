@@ -5,4 +5,3 @@ Flag hardcoded constants standing in for a value that should be derived from fir
 Flag agent-invoked code that is not quiet: progress chatter on the success path, a diagnosis that does not name its fix, or an unbounded dump where a file path belongs.
 Flag prose that is not legible: a comment restating what the code already says, a completion criterion with no checkable bound, or a simplification whose ceiling is unnamed.
 Flag code that does not go with the grain of the project: a new naming scheme where one already exists, an error shape that differs from the module's neighbours, or a test placed outside where this project's tests live.
-None of these findings block; they are handed to the orchestrator as verifier output for the human or a later gate to weigh.
