@@ -94,12 +94,9 @@ fi
 # STATE_FILE, so a later session retries once the bundle is published.
 #
 # Ownership, not enclosure: only a repository that *tracks* the bundle says
-# anything about these bytes. A marketplace `source: url` install clones, so the
-# plugin cache does track the bundle and is guarded -- and passes there, being
-# clean at the published tip; it refuses only on a checkout somebody has edited.
-# A consumer who versions ~/.claude encloses the bundle without tracking it and
-# is unaffected; a monorepo vendoring the plugin tracks it and stays guarded,
-# the direction an unverifiable case must err in.
+# anything about these bytes. Versioning ~/.claude encloses without tracking and
+# is unaffected; a monorepo vendoring the plugin tracks it and stays guarded.
+# README's "What the Claude hooks do" works the marketplace-cache shapes through.
 #
 # `ls-files --error-unmatch` answers with three exit codes and this guard has to
 # keep all three apart: 0 tracked, so the publication checks below apply; 1 a
@@ -123,12 +120,9 @@ unverifiable_repo() {
        ! { [ -d "$_g" ] && [ -r "$_g" ] && [ -x "$_g" ] && [ ! -e "$_g/HEAD" ]; }; then
       return 0
     fi
-    # Stop when dirname stops moving, not at a literal "/". Both terminate for
-    # an absolute path, but only this one terminates for a relative one, where
-    # dirname converges on "." and never equals "/" -- an unattended hang in a
-    # SessionStart hook. BUNDLE_DIR is absolute today, so that state is
-    # unreachable; keying termination on the walk itself means it stays
-    # unreachable without depending on how PLUGIN_ROOT is built.
+    # Stop when dirname stops moving, not at a literal "/": a relative path
+    # converges on "." and would hang here. Keying on the walk, not on how
+    # PLUGIN_ROOT is built, keeps that unreachable.
     _prev="$_d"
     _d="$(dirname "$_d")"
     [ "$_d" = "$_prev" ] && return 1
@@ -223,13 +217,10 @@ elif [ "$TRACKED" -ne 1 ] && unverifiable_repo; then
   exit 0
 fi
 
-# gsd_tools() resolver, sourced from the copy this plugin ships beside this
-# file, exactly as hooks/session-start.sh does -- and session-start.sh is this
-# script's only caller, so the file is present whenever the hook runs. Sourced
-# after the guard above, not before, so nothing here can run before the decision
-# to install. If it is missing, `gsd_tools` stays undefined and the exit-127
-# branch below reports it and writes no sidecar, so a repaired install retries
-# (case L2).
+# gsd_tools() resolver. Sourced after the guard above, not before, so nothing
+# here can run before the decision to install. If it is missing, `gsd_tools`
+# stays undefined and the exit-127 branch below reports it and writes no
+# sidecar, so a repaired install retries (case L2).
 [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ] && . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
 
 # Absolute spec: a relative one would resolve against the end user's
@@ -237,18 +228,16 @@ fi
 gsd_tools capability install "$BUNDLE_DIR" --scope global --yes >/dev/null 2>&1
 INSTALL_STATUS=$?
 
+# Both failure branches below break this repo's silent `|| true` convention and
+# write no STATE_FILE: the path is unattended, so silence would leave a
+# capability permanently inactive, and the next session must retry.
 if [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
-  # Deliberate divergence from this repo's usual silent `|| true`
-  # fail-open convention -- this path is unattended, so silence would leave
-  # a capability permanently inactive with nobody the wiser.
-  # Do NOT write STATE_FILE, so the next session retries.
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
 else
-  # Same rationale as above -- the install command ran and failed.
   echo "capability-auto-install: capability install failed for $CAP_ID (exit $INSTALL_STATUS)" >&2
 fi
 
