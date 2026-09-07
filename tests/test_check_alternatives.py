@@ -806,9 +806,28 @@ class TestEmptyPhaseDir(unittest.TestCase):
 
 
 class TestPathSafety(unittest.TestCase):
-    def test_phase_dir_outside_project_root_exits_2(self):
+    def test_dir_with_no_planning_ancestor_exits_2(self):
+        # Named for what it actually exercises. It never tested containment:
+        # find_project_root() raises here, before any containment check could
+        # run. See test_dotdot_path_matches_its_resolved_form below.
         result = run_check(Path(SCRIPT.anchor))
         self.assertEqual(result.returncode, 2)
+        self.assertIn("could not locate a .planning/ ancestor", result.stderr)
+
+    def test_dotdot_path_matches_its_resolved_form(self):
+        # R-11: the deleted confined() was unreachable, so removing it changed
+        # nothing observable. find_project_root() walks up from the RESOLVED
+        # phase_dir, so the root it derives is always an ancestor of that path
+        # and relative_to() could never raise -- a `..`-laden argument simply
+        # relocates the derived root with it. Pinned so a future containment
+        # check has to state a root the caller supplies independently.
+        with scratch_dir() as tmp:
+            write_plan(tmp, "# plan with no Alternatives Considered section\n")
+            direct = run_check(tmp)
+            traversed = run_check(Path(tmp) / ".." / Path(tmp).name)
+        self.assertEqual(direct.returncode, 1)
+        self.assertEqual(traversed.returncode, direct.returncode)
+        self.assertIn("missing '## Alternatives Considered' section", traversed.stderr)
 
     def test_nonexistent_dir_exits_2(self):
         result = run_check("/nonexistent-check-alternatives-fixture-dir")

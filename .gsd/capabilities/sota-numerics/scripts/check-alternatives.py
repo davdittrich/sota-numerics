@@ -11,8 +11,8 @@ are excluded from the count and evidence validation.
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
 printed to stderr as `<plan_path>: <reason>`, followed by exactly one
 `remediation: ...` line. Exit 2 = usage/IO error (empty, missing or
-non-directory phase_dir, or a phase_dir that resolves outside the project
-root).
+non-directory phase_dir, or a phase_dir with no `.planning/` ancestor within
+10 levels).
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
 text is authored by a different principal (the planner agent), so it is
@@ -78,20 +78,6 @@ def find_project_root(start):
             break
         current = current.parent
     raise ValueError(f"could not locate a .planning/ ancestor above {start}")
-
-
-def confined(root, candidate):
-    """Resolve `candidate` and reject any escape from `root`.
-
-    A `..`-laden phase_dir argument could otherwise resolve to a path
-    outside the project tree; `relative_to()` raises here if that happens.
-    """
-    resolved = candidate.resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError:
-        raise ValueError(f"path escapes project root: {resolved} not under {root}")
-    return resolved
 
 
 def discover_plan_files(phase_dir):
@@ -284,12 +270,16 @@ def check_alternatives(phase_dir_arg):
     """Validate every discovered plan; return the list of violations.
 
     Each violation is a (plan_path, reason) tuple; the list is empty when
-    every discovered plan passes. Raises ValueError when phase_dir resolves
-    outside the project root (caller maps this to exit 2).
+    every discovered plan passes. Raises ValueError when phase_dir has no
+    `.planning/` ancestor (caller maps this to exit 2).
     """
     phase_dir_path = Path(phase_dir_arg)
-    project_root = find_project_root(phase_dir_path)
-    resolved_phase_dir = confined(project_root, phase_dir_path)
+    # Called for its raise, not its result: it rejects a phase_dir sitting
+    # outside any GSD project. Its return value used to feed a containment
+    # check that could never fail -- the root it returns is derived from this
+    # same resolved path, so the path is always under it.
+    find_project_root(phase_dir_path)
+    resolved_phase_dir = phase_dir_path.resolve()
     violations = []
     for plan_path in discover_plan_files(resolved_phase_dir):
         reason = validate_plan(plan_path)
