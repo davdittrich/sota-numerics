@@ -194,10 +194,13 @@ Handled outcomes use these exit codes:
   UTF-8. Identification fails when an explicitly passed path is empty or is not an existing
   directory, when there is no `.planning` ancestor within ten levels, or -- when no path is
   passed and the phase is resolved from `.planning/STATE.md` -- when that file is unreadable,
-  states no `current_phase`, or names a number matching anything other than exactly one
-  directory under `.planning/phases/`. The decode failure names the offending plan, the
-  decode reason, the byte offset, and the remedy:
-  `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as UTF-8`.
+  has no YAML frontmatter, carries zero or more than one `current_phase` field, has no
+  `## Current Position` section or that section carries any count of `Phase:` lines other
+  than exactly one, states a `current_phase` and a `Phase:` value that disagree, or names a
+  number matching anything other than exactly one directory under `.planning/phases/`. The
+  decode failure names the offending plan, the decode reason, the byte offset, and the
+  remedy: `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as
+  UTF-8`.
 
 Other unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name takes this path, as does a plan file the process cannot read.
 
