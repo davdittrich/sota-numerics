@@ -272,15 +272,45 @@ elif [ "$TRACKED" -ne 1 ] && unverifiable_repo; then
   exit 0
 fi
 
-# gsd_tools() resolver. Sourced after the guard above, not before, so nothing
-# here can run before the decision to install. If it is missing, `gsd_tools`
-# stays undefined and the exit-127 branch below reports it and writes no
-# sidecar, so a repaired install retries (case L2).
-[ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ] && . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
+# gsd_tools() resolver. Sourced inside the timed child below, not here, so
+# nothing outside the timeout bound can run before the decision to install.
+# If hooks/gsd-tools.sh is missing, `gsd_tools` stays undefined in the child
+# and the invocation exits 127, which the branch below reports and writes no
+# sidecar, so a repaired install retries (case L2). Sourcing in the child
+# rather than exporting the function from the parent also keeps the
+# resolver's BASH_SOURCE fallback rung pointed at the real sourced file,
+# whether or not the host set CLAUDE_PLUGIN_ROOT.
 
-# Absolute spec: a relative one would resolve against the end user's
-# cwd, not the plugin.
-gsd_tools capability install "$BUNDLE_DIR" --scope global --yes >/dev/null 2>&1
+# The work behind this call is a directory copy and a JSON write behind one
+# `node` start, so seconds is the honest expectation; 60 is roughly an order
+# of magnitude of headroom for a cold start on a loaded or network-mounted
+# home. The point is a bound, not a tight one. Both the invocation and the
+# message below read this constant so the two cannot drift.
+INSTALL_TIMEOUT=60
+
+# `timeout` is coreutils and not POSIX -- macOS ships neither unless the user
+# installed coreutils, in which case it is named `gtimeout`. An empty
+# _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
+# host with neither.
+if command -v timeout >/dev/null 2>&1; then
+  _TIMEOUT=(timeout "$INSTALL_TIMEOUT")
+elif command -v gtimeout >/dev/null 2>&1; then
+  _TIMEOUT=(gtimeout "$INSTALL_TIMEOUT")
+else
+  _TIMEOUT=()
+fi
+
+# gsd_tools is a shell function, so it cannot be the direct argument of
+# `timeout`; run it inside `bash -c` on this program string instead. $1 and
+# $2 are PLUGIN_ROOT and BUNDLE_DIR, passed as positional arguments below
+# rather than interpolated here, so neither has to survive quoting twice.
+_INSTALL_CHILD='[ -f "$1/hooks/gsd-tools.sh" ] && . "$1/hooks/gsd-tools.sh"; gsd_tools capability install "$2" --scope global --yes'
+
+# Absolute spec: a relative one would resolve against the end user's cwd, not
+# the plugin. The "${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" form is deliberate: a
+# bare "${_TIMEOUT[@]}" aborts under `set -u` on bash 3.2, which macOS still
+# ships, when the array is empty.
+"${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" bash -c "$_INSTALL_CHILD" _ "$PLUGIN_ROOT" "$BUNDLE_DIR" >/dev/null 2>&1
 INSTALL_STATUS=$?
 
 # Both failure branches below break this repo's silent `|| true` convention and
@@ -292,6 +322,12 @@ if [ "$INSTALL_STATUS" -eq 0 ]; then
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
+elif [ "$INSTALL_STATUS" -eq 124 ] && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
+  # Guarded on the wrapper actually being in use: an install that genuinely
+  # exits 124 on a host with no `timeout`/`gtimeout` must not be mislabelled
+  # as a kill this hook performed. No refusal tail on this message -- D0
+  # selects on that tail, and a killed install is a failure, not a refusal.
+  echo "capability-auto-install: capability install for $CAP_ID exceeded ${INSTALL_TIMEOUT}s and was killed; not installed" >&2
 else
   echo "capability-auto-install: capability install failed for $CAP_ID (exit $INSTALL_STATUS)" >&2
 fi

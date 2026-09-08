@@ -812,6 +812,49 @@ err_has "gsd-tools not found" || fail "L2: wrong message (err: $(cat "$SB/err"))
 [ ! -f "$(sidecar)" ] || fail "L2: wrote the sidecar, so the next session would not retry"
 pass "L2: a plugin root missing hooks/gsd-tools.sh says so and leaves no sidecar"
 
+# --- L3: the install runs under a timeout, and a kill is reported and leaves
+#         no sidecar ---
+# A stub named `timeout`, first on the sandbox PATH, appends its first
+# argument to a log file whose absolute path is baked into the stub at
+# creation time, then exits 124 immediately. Sleeping is deliberately
+# avoided -- a stub that exits 124 right away tests the same two branches in
+# milliseconds.
+new_sandbox l3
+TIMEOUT_LOG="$SB/timeout-calls"
+: > "$TIMEOUT_LOG"
+cat > "$SB/bin/timeout" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$1" >> "$TIMEOUT_LOG"
+exit 124
+STUB
+chmod +x "$SB/bin/timeout"
+run_hook
+[ "$(wc -l < "$TIMEOUT_LOG" | tr -d ' ')" = 1 ] ||
+  fail "L3: the timeout stub was not called exactly once"
+grep -qE '^[0-9]+$' "$TIMEOUT_LOG" ||
+  fail "L3: timeout was not called with a bare numeric bound (log: $(cat "$TIMEOUT_LOG"))"
+[ "$(installs)" = 0 ] || fail "L3: the real install stub ran despite the timeout kill"
+err_has "exceeded" || fail "L3: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "L3: a killed install wrote the sidecar"
+pass "L3: a killed install is reported on stderr and leaves no sidecar"
+
+# --- L4: a host with no `timeout` (or `gtimeout`) still installs, unbounded ---
+# Restricted PATH built the way H2 builds one, naming only what this path
+# actually needs and no timeout binary. This is the case that fails loudly if
+# the empty-array expansion around _TIMEOUT is written in a form that aborts
+# under `set -u`.
+new_sandbox l4
+mkdir -p "$SB/notimeout"
+for _t in env bash find sort awk sha256sum shasum cat mkdir dirname readlink rm wc git; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/notimeout/$_t"
+done
+ln -sf "$SB/bin/gsd-tools" "$SB/notimeout/gsd-tools"
+PATH_OVERRIDE="$SB/notimeout"
+run_hook
+[ "$(installs)" = 1 ] || fail "L4: a host with no timeout binary did not install ($(installs) installs)"
+[ -f "$(sidecar)" ] || fail "L4: a host with no timeout binary wrote no sidecar"
+pass "L4: a host with no timeout or gtimeout still installs, unbounded"
+
 # --- D0: the refusals the hook emits and the refusals README documents are
 #         the same set ---
 # The refusal list went stale three times in one session: the hook grew from

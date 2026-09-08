@@ -98,6 +98,12 @@ could carry bytes indistinguishable from another entry's line. The first
 session after upgrading therefore sees a hash mismatch against the old-format
 sidecar and reinstalls once; that reinstall is expected, not drift.
 
+The install itself now runs under a 60-second bound (`timeout`, falling back
+to `gtimeout`), rather than inline and unbounded in the `SessionStart` and
+`SubagentStart` hooks. A killed install is reported on stderr and leaves the
+hash state unwritten, so a later session retries; a host with neither binary
+runs the install unbounded, the prior behaviour.
+
 A plan discussing the `<!--` HTML-comment syntax in its own prose (for
 example, inside a backtick-delimited code span) no longer has the rest of the
 plan blanked to EOF. Under the previous scan a single unprotected `<!--`

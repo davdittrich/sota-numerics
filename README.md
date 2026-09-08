@@ -67,6 +67,8 @@ Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the
 
 The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory (D-13) — then a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
 
+The install itself runs under a 60-second bound when `timeout` or `gtimeout` is available. A kill is reported on stderr and leaves the hash state unwritten, so a later session retries; a host with neither runs the install unbounded.
+
 ## Configure
 
 One project setting controls the capability:
