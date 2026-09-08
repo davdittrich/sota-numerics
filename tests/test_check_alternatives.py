@@ -1907,5 +1907,92 @@ class TestDiagnosticBounding(unittest.TestCase):
         self.assertNotIn("...[+", result.stderr)
 
 
+class TestViolationLineShape(unittest.TestCase):
+    """D-08: each violation reports as `<plan_path>:<line>: <reason>` -- the
+    shape the capability already documents for its other usage error (Phase
+    23 D-13 precedent) -- and a run still emits exactly one remediation
+    line no matter how many violations there are or how long any one
+    diagnostic line would otherwise be (T-24-15)."""
+
+    def test_missing_section_names_line_one(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-missing-section.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertRegex(
+            result.stderr,
+            r"01-01-PLAN\.md:1: missing '## Alternatives Considered' section",
+        )
+
+    def test_first_entrys_violation_names_its_own_line(self):
+        # Heading on line 1, blank line 2, first entry on line 3.
+        text = (
+            "## Alternatives Considered\n\n"
+            "- **Option A**: no citation at all here.\n"
+            f"- **Option B**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — a real reason.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertRegex(result.stderr, r"01-01-PLAN\.md:3: alternative 'Option A'")
+
+    def test_second_entrys_violation_names_a_later_line(self):
+        text = (
+            "## Alternatives Considered\n\n"
+            f"- **Option A**: cited current. `https://numpy.org/doc` ({TODAY_YEAR}).\n"
+            "- **Option B**: no citation at all here.\n\n"
+            "Decided by: performance — a real reason.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertRegex(result.stderr, r"01-01-PLAN\.md:4: alternative 'Option B'")
+
+    def test_no_decided_by_names_the_heading_line(self):
+        compliant = fixture_text("plan-compliant.md")
+        stripped_lines = [
+            line for line in compliant.splitlines() if "Decided by:" not in line
+        ]
+        with scratch_dir() as tmp:
+            write_plan(tmp, "\n".join(stripped_lines) + "\n")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertRegex(result.stderr, r"01-01-PLAN\.md:1: no 'Decided by:' line")
+
+    def test_misnamed_plan_names_a_line(self):
+        with scratch_dir() as tmp:
+            (Path(tmp) / "23-PLAN.md").write_text(
+                fixture_text("plan-missing-section.md"), encoding="utf-8")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertRegex(result.stderr, r"23-PLAN\.md:1: named like a plan but not")
+
+    def test_no_stderr_line_exceeds_two_hundred_characters(self):
+        # A pathologically deep phase directory path, so the composed
+        # `<path>:<line>: <reason>` line would otherwise exceed the bound
+        # regardless of how short the reason itself is (D-07).
+        with scratch_dir() as tmp:
+            deep = Path(tmp, "a" * 60, "b" * 60, "c" * 60)
+            deep.mkdir(parents=True)
+            write_plan(deep, fixture_text("plan-missing-section.md"))
+            result = run_check(deep)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for line in result.stderr.splitlines():
+            self.assertLessEqual(len(line), 200, line)
+
+    def test_remediation_line_appears_exactly_once_with_line_numbers(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-missing-section.md"), name="01-01-PLAN.md")
+            write_plan(tmp, fixture_text("plan-uncited.md"), name="01-02-PLAN.md")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr.count("remediation:"), 1)
+        self.assertRegex(result.stderr, r"01-01-PLAN\.md:\d+:")
+        self.assertRegex(result.stderr, r"01-02-PLAN\.md:\d+:")
+
+
 if __name__ == "__main__":
     unittest.main()
