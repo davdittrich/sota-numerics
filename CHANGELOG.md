@@ -9,15 +9,14 @@ relaxed. What changed is where the section is considered to start and stop
 (fenced regions, HTML comments, and ATX, indented and setext headings), which
 phase gets inspected at all, which files count as plans, and what the failure
 messages say. Those do change verdicts, and the sections below give each one.
-Measured at `253bbdc`: running this release's 94-test suite against the 0.1.3
-checker, 62 pass unchanged and 32 fail. Those 32 are the behaviour this release
-changes -- 12 phase-resolution cases (`current_phase`, the two-witness
-agreement, and the apostrophe path), 9 section-boundary cases (fenced regions
-and the ATX, indented and setext heading boundaries), 4 HTML-comment cases, 4
-rejected-plan-name cases, the 2 empty-argument cases, and 1 error-message case.
-Every other test passes against both.
+Measured at `253bbdc` against the 0.1.3 checker: the phase-resolution cases
+(`current_phase`, the two-witness agreement, and the apostrophe path), the
+section-boundary cases (fenced regions and the ATX, indented and setext
+heading boundaries), the HTML-comment cases, the rejected-plan-name cases,
+the empty-argument cases, and the error-message case all change verdict
+between the two checkers. Every other test in the suite passes against both.
 
-Counts here name the commit they were measured at, because every earlier
+The commit is named here, rather than a count, because every earlier
 revision of this paragraph went stale within hours of being written and one
 shipped a fix that did not exist.
 

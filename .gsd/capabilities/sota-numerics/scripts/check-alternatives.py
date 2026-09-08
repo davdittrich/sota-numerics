@@ -65,8 +65,7 @@ PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 # Narrower than "any markdown file", because a phase directory also holds
 # SUMMARY, CONTEXT, RESEARCH, PATTERNS, REVIEW, BEADS and VALIDATION
 # artifacts; a gate that blocked a phase on a stray note would be a gate
-# authors route around. Measured on this project's own corpus: 76 entries
-# across its phase directories, 10 plan-shaped, 0 of them misnamed.
+# authors route around.
 #
 # Case-sensitive, and that is the load-bearing half of the bound. `PLAN` in
 # capitals is GSD's artifact token, the same convention as SUMMARY and
