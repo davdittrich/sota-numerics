@@ -31,7 +31,7 @@ esac
 
 case "$ROLE" in
   planner) FRAMING='Planning: name 2+ current alternatives per non-trivial mechanism choice, each with a dated citation, and state which ranked criterion (performance > simplicity/LOC > ecosystem > maintenance) decided the pick -- pair foundational citations (Kahan, IEEE 754) with a current in-window source. This capability ALSO declares a blocking plan:post gate that mechanically enforces this on every plan -- the advisory framing below is qualified here, not purely advisory.' ;;
-  executor) FRAMING="Executing: derive numeric parameters from first principles or the problem's actual scale, prefer numerically stable formulations, avoid cancellation and silent error propagation, and favor efficiency over simplicity where they conflict." ;;
+  executor) FRAMING="Executing: derive numeric parameters from first principles or the problem's actual scale, prefer numerically stable formulations, avoid cancellation and silent error propagation, and favour efficiency over simplicity where they conflict." ;;
   verifier) FRAMING="Verifying: flag shipped-mechanism drift from the plan's justified pick, silent precision or scope loss, and unmeasured performance claims as findings, not blockers -- this capability's only gate already fired at plan:post, not here." ;;
   *) FRAMING='SOTA/efficiency/numerical-stability steering: prefer mathematically correct, precision-preserving, well-cited mechanism choices.' ;;
 esac
