@@ -29,15 +29,30 @@ pass() { echo "PASS: $1"; }
 # uncommitted bundle over the developer's global copy, which overwrites the
 # mirror's files and rewrites the sidecar without adding or removing either
 # path. The digest is the one 23-01-PLAN.md quotes for this directory.
+#
+# Two walks, not one, because a leaked __pycache__ needs to move this digest
+# and its own content churn must not (gsd-beads-25vc.21.3 item 2). The first
+# walk lists every path -- directories included, names only -- so a new
+# `__pycache__` directory or a new `.pyc` inside an existing one changes the
+# digest. The second is the original content walk, still pruning
+# `__pycache__` from hashing: a `.pyc` embeds its source's mtime, so a mirror
+# merely re-read by python would churn the baseline and turn this containment
+# check flaky-red for a reason that is not a leak. Names in, contents out: a
+# leak that ADDS bytecode is now caught, a leak that rewrites an existing
+# `.pyc` byte-for-byte in place is not, and that residual is recorded here
+# rather than left implied. Every non-bytecode file in the mirror stays
+# covered by content, as before.
 if command -v sha256sum >/dev/null 2>&1; then HASH_CMD=(sha256sum)
 elif command -v shasum >/dev/null 2>&1; then HASH_CMD=(shasum -a 256)
 else echo "FAIL: no sha256 tool, so case5 could not tell whether the real mirror changed"; exit 1
 fi
 REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
 real_gsd_state() {
-  ( cd "$REAL_GSD/capabilities/sota-numerics" 2>/dev/null &&
-    find . -name __pycache__ -prune -o -type f -print |
-      LC_ALL=C sort | xargs "${HASH_CMD[@]}" | "${HASH_CMD[@]}"
+  ( cd "$REAL_GSD/capabilities/sota-numerics" 2>/dev/null && {
+      find . -print | LC_ALL=C sort
+      find . -name __pycache__ -prune -o -type f -print |
+        LC_ALL=C sort | xargs "${HASH_CMD[@]}"
+    } | "${HASH_CMD[@]}"
   ) 2>&1
   cat "$REAL_GSD/capability-auto-install-sota-numerics.hash" 2>&1
 }

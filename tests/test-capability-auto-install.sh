@@ -123,10 +123,25 @@ REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
 # mirror's files and rewrites the sidecar. The digest is the one 23-01-PLAN.md
 # quotes for this directory, so a mismatch can be read against that recorded
 # value rather than only against this run's own baseline.
+#
+# Two walks, not one, because a leaked __pycache__ needs to move this digest
+# and its own content churn must not (gsd-beads-25vc.21.3 item 2). The first
+# walk lists every path -- directories included, names only -- so a new
+# `__pycache__` directory or a new `.pyc` inside an existing one changes the
+# digest. The second is the original content walk, still pruning
+# `__pycache__` from hashing: a `.pyc` embeds its source's mtime, so a mirror
+# merely re-read by python would churn the baseline and turn this containment
+# check flaky-red for a reason that is not a leak. Names in, contents out: a
+# leak that ADDS bytecode is now caught, a leak that rewrites an existing
+# `.pyc` byte-for-byte in place is not, and that residual is recorded here
+# rather than left implied. Every non-bytecode file in the mirror stays
+# covered by content, as before.
 real_gsd_state() {
-  ( cd "$REAL_GSD/capabilities/$CAP_ID" 2>/dev/null &&
-    find . -name __pycache__ -prune -o -type f -print |
-      LC_ALL=C sort | xargs "${HASH_CMD[@]}" | "${HASH_CMD[@]}"
+  ( cd "$REAL_GSD/capabilities/$CAP_ID" 2>/dev/null && {
+      find . -print | LC_ALL=C sort
+      find . -name __pycache__ -prune -o -type f -print |
+        LC_ALL=C sort | xargs "${HASH_CMD[@]}"
+    } | "${HASH_CMD[@]}"
   ) 2>&1
   cat "$REAL_GSD/capability-auto-install-$CAP_ID.hash" 2>&1
 }
