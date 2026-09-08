@@ -6,13 +6,13 @@ Make GSD compare mechanisms before execution, then keep numerical precision and 
 
 ## What it changes
 
-| GSD point | Target | Behavior |
+| GSD point | Target | Behaviour |
 | --- | --- | --- |
-| `plan:pre` | planner | Research current mechanisms, compare real alternatives, cite them, and rank the decision by performance, simplicity/LOC, ecosystem support, then maintenance cost. |
+| `plan:pre` | planner | Research current mechanisms, compare real alternatives, cite them, rank the decision by performance, simplicity/LOC, ecosystem support, then maintenance cost, write code that goes with the grain of the project's existing conventions, and give every task a bound the executor can check. |
 | `plan:post` | gate | Block when an eligible plan lacks the required `Alternatives Considered` structure. |
-| `execute:wave:pre` | executor | Derive numeric parameters from the problem, avoid cancellation and silent error growth, and name the ceiling of any precision tradeoff. |
-| `execute:wave:post` | verifier | Flag drift from the chosen mechanism, dropped edge cases, unstable substitutions, unexplained constants, and unsupported performance claims. |
-| `ship:pre` | orchestrator | Check that precision and efficiency claims have measurements or sources and that accepted simplifications state where they break. |
+| `execute:wave:pre` | executor | Derive numeric parameters from the problem, keep the arithmetic stable, name the ceiling of any precision tradeoff, and hold agent-run code and agent-facing prose to the **quiet** and **legible** bars the executor fragment defines. |
+| `execute:wave:post` | verifier | Flag:<br>- drift from the chosen mechanism;<br>- dropped edge cases;<br>- unstable substitutions;<br>- unexplained constants;<br>- unsupported performance claims;<br>- an unreachable or unwritten branch;<br>- an argument whose accepted values are undocumented at its definition;<br>- agent-invoked code that is not quiet;<br>- prose that is not legible;<br>- code that does not go with the grain of the project's conventions. |
+| `ship:pre` | orchestrator | Check that precision, efficiency, quiet-output, and legibility claims have measurements or sources, that claims of going with the grain of project convention name the convention followed, and that accepted simplifications state where they break. |
 
 The four prompts are advice. A rendering failure skips that prompt and does not stop the workflow. The `plan:post` check is different: it is blocking, and a missing interpreter, missing script, crash, or 30-second timeout halts planning.
 
@@ -32,9 +32,9 @@ codex plugin marketplace add davdittrich/gsd-beads
 codex plugin add sota-numerics@gsd-beads
 ```
 
-The marketplace remains in `davdittrich/gsd-beads`; its entry points to this repository.
+The marketplace is `davdittrich/gsd-beads`; its `sota-numerics` entry points at this repository.
 
-The GSD capability itself declares support for every GSD runtime. Automatic startup installation and role banners come from Claude's `SessionStart` and `SubagentStart` hooks, so other hosts must not assume those hooks ran. On any host, the gate can use a capability bundle at either of these locations:
+The GSD capability itself declares support for every GSD runtime. Automatic startup installation and role banners come from Claude's `SessionStart` and `SubagentStart` hooks. On any host, including one where those hooks never ran, the gate can use a capability bundle at either of these locations:
 
 1. `<project>/.gsd/capabilities/sota-numerics`
 2. `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics`
@@ -43,13 +43,31 @@ The project copy wins when both exist.
 
 ### What the Claude hooks do
 
-At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+At startup, resume, clear, or compaction — and again on every `gsd-planner`, `gsd-executor` and `gsd-verifier` subagent spawn — the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed, so a global install can fire mid-session, not only at session start. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+
+A global install publishes those bytes to every project on the machine, so where a repository tracks the bundle, the hook installs only bytes that repository records as published. Where none tracks it, there is nothing to check against and the bytes install unverified. It reads that from the local `origin/HEAD` or `origin/main` ref; it does not contact the remote, so a session start never waits on the network and never fails offline. Anyone who can write that ref can therefore satisfy the check — the guard is aimed at running a plugin out of a development worktree by accident, not at an adversary with write access to your own repository. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. The bundle walk and `git` itself are checked before anything asks whether a repository tracks the bundle, so a plugin unpacked into a plain directory can hit either.
+
+| It refuses when | stderr says | What clears it |
+| --- | --- | --- |
+| The bundle directory cannot be walked in full, so the bytes a global mirror would receive are unknown. | `the sota-numerics bundle directory could not be read in full, so what the global mirror would receive cannot be verified` | Make the bundle readable and searchable to the user that runs the session. |
+| No working `git` is on `PATH`. | `git is unusable, so sota-numerics bundle provenance cannot be verified` | Install `git`. |
+| Git will not open the repository holding the bundle — a root- or service-installed plugin, a shared checkout, a container UID remap — **or** it opens the repository and cannot read its index. One message covers both. | `git cannot read the repository holding the sota-numerics bundle, so its provenance cannot be verified` | Run `git -C <bundle> rev-parse --git-dir` to tell them apart. If it fails, git will not open the repository: add a `safe.directory` entry for the checkout, or re-install the plugin as the user that runs the session. If it prints a path, the repository opened and the index is the unreadable part: `safe.directory` cannot help — make `.git/index` readable, or `git fsck`, or re-clone. |
+| `git status` itself fails, so nothing can be said about the worktree bytes. A repository missing the object behind `HEAD`'s tree does this: `status` exits non-zero having printed nothing, while `ls-files` and `merge-base` still answer from the index and the commit objects. | `git could not report the state of the sota-numerics bundle, so its contents cannot be verified` | Repair the repository — `git fsck`, or re-clone it. |
+| `git ls-files -v` cannot report the index tags, so whether the index hides edits from `git status` is unknown. | `git could not list the index entries for the sota-numerics bundle, so whether the index hides edits cannot be determined` | Repair the index: `git fsck`, or re-clone. |
+| The index is marked `assume-unchanged` or `skip-worktree` for bundle entries, so git will not report edits to them. | `the index marks sota-numerics bundle entries assume-unchanged or skip-worktree, so git will not report edits to them` | Clear the bit: `git update-index --no-assume-unchanged <paths>`, or `--no-skip-worktree`. |
+| The bundle holds uncommitted or gitignored files. | `sota-numerics bundle has uncommitted or ignored files` | Commit them. Running `python3 -m check-alternatives` instead of running the script directly trips this: `-m` bytecode-caches the module, leaving a `__pycache__/` inside the bundle that the guard's `git status --ignored` reports by name -- that is what makes the guard fire. Delete it. |
+| Neither `origin/HEAD` nor `origin/main` exists to prove publication. | `sota-numerics bundle has no origin/HEAD or origin/main to prove it is published` | Add the remote and fetch it. |
+| The bundle's `HEAD` is not an ancestor of that ref. | `sota-numerics bundle HEAD is not published (not an ancestor of <ref>)` | Push. |
+
+Whether a marketplace install is tracked depends on the host. Claude Code has materialised plugin caches both as depth-1 git clones and as plain directories, and both forms exist side by side in a single cache today. A plain directory has no repository over it, so the check does not apply: those bytes install trusted rather than verified, and the protection a marketplace consumer gets in that form is whatever the host's own cache integrity provides, not this check. A clone is tracked, so the check applies — and it passes: the clone is clean, and its `HEAD` is the published tip it was cloned from. The plugin host's own `.in_use/` and `.orphaned_at` bookkeeping sits at the plugin root, three directories above the bundle, and the uncommitted-or-ignored test is scoped to the bundle, so it never sees them. Either way the capability installs; a marketplace consumer installs nothing by hand.
 
 Planner, executor, and verifier subagents receive role-specific banners. A normal session start uses the generic SOTA/numerics banner; calling the script directly with an unknown role falls back to that same text. Other subagent roles do not trigger this plugin's `SubagentStart` hook.
 
-Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the startup install check.
+Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the install check on any of those triggers.
 
-The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks the current repository's `gsd-core/bin/gsd-tools.cjs`, a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
+The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory (D-13) — then a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
+
+The install itself runs under a 60-second bound when `timeout` or `gtimeout` is available. A kill is reported on stderr and leaves the hash state unwritten, so a later session retries; a host with neither runs the install unbounded.
 
 ## Configure
 
@@ -74,9 +92,9 @@ The checker reads direct child files whose names match these shapes:
 10.1-02-PLAN.md
 ```
 
-Both numeric segments are required; the phase segment may contain one decimal point. Nested plans and names such as `draft-PLAN.md` are ignored. Every matching plan is checked in sorted order. A directory with no matching plans passes.
+Both numeric segments are required; the phase segment may contain one decimal point. Nested plans -- files below a subdirectory of the phase directory -- are not looked at, because the discovery walk does not recurse. A name that reads as a plan but does not match this shape, such as `draft-PLAN.md`, is not ignored: it is collected as misnamed and reported as a violation, so a plan a reader would recognise cannot fail silently. Every matching plan is checked in sorted order. A directory with no matching plans passes.
 
-Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-two heading or at end of file.
+Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-one or level-two heading -- indented up to the three leading spaces CommonMark allows -- or at end of file. Level-three and deeper headings stay inside it, which is what lets the internal-alternatives marker below sit within the section. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
 
 ### Accepted entries
 
@@ -91,7 +109,7 @@ Use at least two bold-named bullets:
 Decided by: performance — QR is the stable first choice.
 ```
 
-`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognized bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
+`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognised bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
 
 A framed Markdown table also works when it has a header, a separator row, and bold-named body rows:
 
@@ -106,7 +124,7 @@ A framed Markdown table also works when it has a header, a separator row, and bo
 Decided by: performance — QR is the stable first choice.
 ```
 
-Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognized mechanism bullets take precedence; internal bullets do not affect this choice. Otherwise the checker tries the table and does not combine the two forms to reach the minimum.
+Table evidence is confined to its row. The header and separator never count as alternatives. Bullets and table rows are fallback formats, not additive: two recognised mechanism bullets take precedence; internal bullets do not affect this choice. Otherwise the checker tries the table and does not combine the two forms to reach the minimum.
 
 ### Internal design alternatives
 
@@ -157,7 +175,14 @@ The checker accepts a hyphen or em dash and stops validating that section once t
 
 ### Failures and recovery
 
-The checker reports one reason per failing plan, but it checks every matching plan in the directory. It then prints one recovery command:
+The checker reports one reason per failing plan, as `<plan_path>:<line>: <reason>` -- the
+line is the heading line for a section-level violation, or the entry's own line for a
+per-entry citation issue. Any document-derived text quoted in a message (an alternative's
+name, or the heading that ended a section) is bounded to 80 characters, and a `found: ...`
+list is bounded to its first 5 distinct values; either carries an explicit `...[truncated]`
+or `...[+N more]` marker when it was cut. No single stderr line exceeds 200 characters,
+whatever the plan document contains. The checker checks every matching plan in the
+directory, then prints one recovery command:
 
 ```text
 remediation: fix the plans above, then re-run /gsd-plan-phase <phase> --force
@@ -167,17 +192,36 @@ Handled outcomes use these exit codes:
 
 - `0`: all matching plans pass, or no matching plans exist;
 - `1`: one or more plans violate the gate;
-- `2`: the phase path is missing, is not a directory, has no `.planning` ancestor within ten levels, or resolves outside that project root.
+- `2`: the phase directory could not be identified, or a matching plan file is not valid
+  UTF-8 or could not be read. Identification fails when an explicitly passed path is empty or
+  is not an existing directory, when there is no `.planning` ancestor within ten levels, or --
+  when no path is passed and the phase is resolved from `.planning/STATE.md` -- when that file
+  is unreadable, has no YAML frontmatter, carries zero or more than one `current_phase` field,
+  has no `## Current Position` section or that section carries any count of `Phase:` lines
+  other than exactly one, states a `current_phase` and a `Phase:` value that disagree, or names
+  a number matching anything other than exactly one directory under `.planning/phases/`. The
+  decode failure names the offending plan, the decode reason, the byte offset, and the remedy:
+  `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as UTF-8`.
+  A plan-shaped path that could not be read at all -- a directory named like a plan (for
+  example `mkdir 01-01-PLAN.md`), or a file the process lacks permission to open -- reports
+  the path and the OS error instead: `<plan_path>: could not be read (Is a directory); a
+  plan-shaped name must be a readable file`.
 
-Unexpected filesystem errors are not converted to `2`; they escape as Python errors and the blocking gate halts. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name can take this path.
+Plan discovery matches names without a separate file-type check, so a directory with a
+plan-shaped name, or a plan file the process cannot read, both take the `read_text` path in
+`validate_plan` and are reported through the same `check-alternatives.py: ` contract above and
+exit `2`, with no raw traceback either way.
 
-You can run the checker directly:
+The phase directory argument is optional. The gate itself passes none: its command is
+constant, and the checker resolves the phase from `.planning/STATE.md`'s `current_phase`, so
+a phase directory name never reaches a shell. You can run the checker either way:
 
 ```bash
+python3 .gsd/capabilities/sota-numerics/scripts/check-alternatives.py
 python3 .gsd/capabilities/sota-numerics/scripts/check-alternatives.py .planning/phases/11-example
 ```
 
-Under the current gsd-core plan workflow, `plan:post` runs after the plan commit. The plan checker should catch a bad section earlier; this gate is the fail-closed backstop. If the gate fires, fix the plans and rerun the phase with `--force` as printed.
+Under the current gsd-core plan workflow, `plan:post` runs after the plan commit. The plan checker should catch a bad section earlier; this gate is the fail-closed backstop.
 
 If the gate script is absent from both project and global scope, the gate exits with a direct installation error instead of silently passing.
 
@@ -186,7 +230,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
 - gsd-core 1.10.0 or newer.
-- Git for project-scope gate lookup. A global-only install still works when Git lookup fails.
+- Git is not needed for the gate or for the hooks' provider resolution: the gate's project copy resolves relative to the project root and a global-only install resolves under `${GSD_HOME:-$HOME}` (D-14), and `gsd-tools.sh` anchors to the plugin root rather than the working directory (D-13). Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
 ## Update or remove
@@ -213,7 +257,7 @@ This gate exists because of how coding agents fail, not how humans do. The plans
 
 Autoregressive decoding commits early. Once a model has written “I'll use X,” every later token conditions on that choice. There is no backtracking without an explicit scaffold that forces it to generate and weigh other candidates first. On SWE-bench Verified, Meta's CWM resolved 58.4 percent of tasks by taking the majority answer across sampled patches and 65.8 percent by selecting among candidates with generated tests: same model, same problems, different selection method (FAIR CodeGen team et al. 2025). DARS likewise improves coding-agent performance by branching from earlier states, generating alternatives, and selecting among them instead of accepting a single trajectory (Aggarwal et al. 2025).
 
-Coding agents also exhibit sycophancy, a documented tendency to follow the prompt's framing instead of pushing back on it; human-feedback training may help produce that behavior (Sharma et al. 2023). Agentic systems turn model outputs into later inputs, so a planner's early choice can become downstream context; this is an inference from the multi-step architecture surveyed by Zhang et al. (2025), not a result established by that survey. A model asked to judge or pick between options can also be swayed by which one it sees first, as Wang et al. (2023) demonstrate in LLM evaluation. Naming and comparing alternatives up front counters both risks. It forces the search that autoregressive generation skips by default and puts competing options in front of the model before it starts defending one.
+Coding agents also exhibit sycophancy, a documented tendency to follow the prompt's framing instead of pushing back on it; human-feedback training may help produce that behaviour (Sharma et al. 2023). Agentic systems turn model outputs into later inputs, so a planner's early choice can become downstream context; this is an inference from the multi-step architecture surveyed by Zhang et al. (2025), not a result established by that survey. A model asked to judge or pick between options can also be swayed by which one it sees first, as Wang et al. (2023) demonstrate in LLM evaluation. Naming and comparing alternatives up front counters both risks. It forces the search that autoregressive generation skips by default and puts competing options in front of the model before it starts defending one.
 
 More candidates do not always win. Sampling solutions without comparing them well can hurt. In one ICLR 2024 study, drawing two initial programs and ten repair candidates for each produced a pass rate below plain sampling at the same budget; diverse initial samples worked better than spending the budget on repeated repair (Olausson et al. 2024). That is the argument for a gate instead of a suggestion. The failure mode is not “the agent did not generate enough options.” It is “the agent generated one option and moved on.” A structural check that a plan names at least two real alternatives and states why one won closes that gap without pretending more sampling is free.
 

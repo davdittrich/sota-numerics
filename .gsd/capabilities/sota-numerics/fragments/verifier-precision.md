@@ -1,5 +1,8 @@
 Numerical-stability and efficiency review for verification is advisory only — this capability declares no gate at execute:wave:post, so everything below is a finding, not a blocker.
 Confirm the mechanism the plan justified in its Alternatives Considered section is the mechanism that actually shipped — flag a divergence even if the code works.
 Flag silent scope or precision reductions: a formula quietly simplified, an edge case quietly dropped, a stable algorithm quietly swapped for an unstable shortcut.
-Flag hardcoded constants standing in for a value that should be derived from first principles or measured, and flag superlative performance or overhead claims ("zero overhead", "negligible error") that no benchmark or measurement in the diff backs up.
-None of these findings block; they are handed to the orchestrator as verifier output for the human or a later gate to weigh.
+Flag hardcoded constants standing in for a value that should be derived from first principles or measured, and superlative performance or overhead claims ("zero overhead", "negligible error") that no benchmark in the diff backs up.
+Flag an unreachable or unwritten branch, and an argument whose accepted values are undocumented at its definition.
+Flag agent-invoked code that is not quiet: progress chatter on the success path, a diagnosis that does not name its fix, or an unbounded dump where a file path belongs.
+Flag prose that is not legible: a comment restating what the code already says, a completion criterion with no checkable bound, or a simplification whose ceiling is unnamed.
+Flag code that does not go with the grain of the project: a new naming scheme where one already exists, an error shape that differs from the module's neighbours, or a test placed outside where this project's tests live.

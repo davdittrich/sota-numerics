@@ -12,7 +12,7 @@ user_setup: []
 ---
 
 <objective>
-Fixture plan: D-03 exemption text, no mechanism choice made by this plan.
+Fixture plan: exemption text, no mechanism choice made by this plan.
 </objective>
 
 ## Alternatives Considered

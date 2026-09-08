@@ -15,7 +15,7 @@ user_setup: []
 Fixture plan (REVIEWS finding 2): each alternative cites a canonical
 foundational work (a year far outside the recency window) paired with a
 current vendor doc/benchmark carrying an in-window year — must PASS, since
-D-07 is an at-least-one-in-window rule, not a none-outside-window rule.
+Recency is an at-least-one-in-window rule, not a none-outside-window rule.
 </objective>
 
 ## Alternatives Considered
