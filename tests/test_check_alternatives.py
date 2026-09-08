@@ -1641,7 +1641,7 @@ class TestMisnamedPlans(unittest.TestCase):
             self.write(tmp, "23-PLAN.md", fixture_text("plan-compliant.md"))
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("23-01-PLAN.md: missing '## Alternatives Considered'",
+        self.assertIn("23-01-PLAN.md:1: missing '## Alternatives Considered'",
                       result.stderr)
         self.assertIn("named like a plan but not", result.stderr)
         # Still exactly one remediation line, however many violations.
@@ -1878,9 +1878,15 @@ class TestDiagnosticBounding(unittest.TestCase):
             write_plan(tmp, split_across_boundary(f"{long_heading}\n" + "=" * 20))
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn(long_heading[:80], result.stderr)
         self.assertNotIn(long_heading, result.stderr)
         self.assertIn("...[truncated]", result.stderr)
+        # A meaningful prefix of the heading survives. Exactly how much
+        # depends on the line-level backstop (D-07), which may cut further
+        # into an already-bounded span when the rest of the message -- the
+        # fixed "fewer than 2 ... the section ended at ..." prose plus the
+        # plan path -- is itself long; the two bounds are independent, and
+        # the coarser one (200 chars, whole line) wins when they conflict.
+        self.assertIn(long_heading[:20], result.stderr)
 
     def test_long_alternative_name_is_truncated_with_a_marker(self):
         long_name = ("Uncited mechanism with an extremely long descriptive name " * 3).strip()[:150]
@@ -1956,11 +1962,17 @@ class TestViolationLineShape(unittest.TestCase):
         stripped_lines = [
             line for line in compliant.splitlines() if "Decided by:" not in line
         ]
+        expected_line = next(
+            i for i, line in enumerate(stripped_lines, 1)
+            if line.startswith("## Alternatives Considered")
+        )
         with scratch_dir() as tmp:
             write_plan(tmp, "\n".join(stripped_lines) + "\n")
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertRegex(result.stderr, r"01-01-PLAN\.md:1: no 'Decided by:' line")
+        self.assertIn(
+            f"01-01-PLAN.md:{expected_line}: no 'Decided by:' line", result.stderr
+        )
 
     def test_misnamed_plan_names_a_line(self):
         with scratch_dir() as tmp:

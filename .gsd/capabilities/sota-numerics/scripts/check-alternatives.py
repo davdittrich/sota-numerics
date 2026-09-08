@@ -9,10 +9,14 @@ exemption line for a plan where no mechanism choice exists. Internal entries
 are excluded from the count and evidence validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
-printed to stderr as `<plan_path>: <reason>`, followed by exactly one
-`remediation: ...` line; a plan-shaped file whose name no plan reader
-matches is itself such a violation, because skipping it silently is
-indistinguishable from a clean pass. Exit 2 = usage/IO error: an empty, missing or
+printed to stderr as `<plan_path>:<line>: <reason>` (D-08), followed by
+exactly one `remediation: ...` line; a plan-shaped file whose name no plan
+reader matches is itself such a violation, reported against line 1 because
+the violation is about its filename, not any line inside it, since skipping
+it silently is indistinguishable from a clean pass. Every document-derived
+span in a diagnostic is bounded and, when truncated, carries an explicit
+`...[truncated]` marker; no printed stderr line exceeds 200 characters,
+whatever the plan document contains (D-07). Exit 2 = usage/IO error: an empty, missing or
 non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
 10 levels, a discovered plan file that is not valid UTF-8, or -- when no
 phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
@@ -232,6 +236,27 @@ def elide_values(values, limit=FOUND_VALUES_LIMIT):
         return ", ".join(str(v) for v in distinct)
     shown = ", ".join(str(v) for v in distinct[:limit])
     return f"{shown}, ...[+{len(distinct) - limit} more]"
+
+
+def elide_line(s, width=STDERR_LINE_WIDTH):
+    """Hard backstop: `s` truncated so the printed result never exceeds
+    `width` characters, whatever the plan document contains (D-07). Unlike
+    `elide_span`, this reserves room for its own marker so the guarantee is
+    exact rather than approximate -- the two span-level bounds above keep
+    an ordinary line well under this ceiling, but a long enough phase
+    directory path is outside what either of them cover.
+    """
+    if len(s) <= width:
+        return s
+    if width <= len(ELISION_MARKER):
+        return ELISION_MARKER[:width]
+    return s[: width - len(ELISION_MARKER)] + ELISION_MARKER
+
+
+def line_number(text, offset):
+    """The 1-indexed line number of `offset` within `text` (D-08: every
+    violation names the line it is about, not only the file)."""
+    return text.count("\n", 0, offset) + 1
 
 
 def find_project_root(start):
@@ -541,30 +566,34 @@ def mask_indented_code_blocks(text):
 
 
 def extract_section_body(text):
-    """The section body, and what ended it.
+    """The section body, its start offset in `text`, and what ended it.
 
-    Returns `(body, boundary)`, or `(None, None)` when the heading is absent.
-    `body` runs from just after the `## Alternatives Considered` line to the
-    next H1/H2 heading or EOF. `boundary` is None when the section reaches EOF,
-    else `(heading_line, tail)` -- the heading that ended it, and everything
-    from that heading onward.
+    Returns `(body, body_start, boundary)`, or `(None, None, None)` when
+    absent. `body` runs from just after the `## Alternatives Considered`
+    line to the next H1/H2 heading or EOF. `body_start` is `body`'s offset
+    within `text`, kept so a caller can turn an offset inside `body` back
+    into a line number in the original document -- every violation names
+    the line it is about, not only the file (D-08). `boundary` is None when
+    the section reaches EOF, else `(heading_line, tail)` -- the heading that
+    ended it, and everything from that heading onward.
 
-    The boundary is returned rather than discarded so a diagnostic can tell
+    The boundary is returned rather than discarded so the diagnostic can tell
     "this is absent" from "this is below the line where the section ended".
-    Both produce the same exit code and ask the author for opposite things,
-    and the second reads as a false accusation when reported as the first: the
-    `Decided by:` line the gate said was missing was visible on screen, three
-    lines down, under a heading the author had not noticed writing.
+    Both produce the same exit code but ask the author to fix opposite things,
+    and the second reads as a false accusation when it is reported as the
+    first: the `Decided by:` line the gate says is missing is visible on
+    screen, three lines down, under a heading the author had not noticed
+    writing.
     """
     m = SECTION_HEADING_RE.search(text)
     if not m:
-        return None, None
+        return None, None, None
     start = m.end()
     next_m = NEXT_HEADING_RE.search(text, start)
     if next_m is None:
-        return text[start:], None
+        return text[start:], start, None
     end = next_m.start()
-    return text[start:end], (text[end:].split("\n", 1)[0].strip(), text[end:])
+    return text[start:end], start, (text[end:].split("\n", 1)[0].strip(), text[end:])
 
 
 def below_the_boundary(boundary, *patterns):
@@ -593,7 +622,12 @@ def is_exempt(body):
 def split_entries(body):
     """Parse bullet or table-row entries, tagging each as internal or a
     mechanism alternative according to which `### Internal design
-    alternatives` H3 section (if any) it falls under."""
+    alternatives` H3 section (if any) it falls under.
+
+    Returns a list of `(name, entry_text, internal, offset)` tuples, where
+    `offset` is the entry's own start position within `body` -- kept so a
+    violation on one entry can name its own line, not just the file (D-08).
+    """
     transitions = []
     internal = False
     for heading in H3_HEADING_RE.finditer(body):
@@ -616,7 +650,7 @@ def split_entries(body):
         if transition_i < len(transitions):
             end = min(end, transitions[transition_i][0])
         bullet_entries.append(
-            (match.group(1).strip(), body[match.start():end], internal)
+            (match.group(1).strip(), body[match.start():end], internal, match.start())
         )
     mechanism_bullets = [entry for entry in bullet_entries if not entry[2]]
     if len(mechanism_bullets) >= MIN_ALTERNATIVES:
@@ -652,7 +686,7 @@ def split_entries(body):
                 ):
                     internal = transitions[transition_i][1]
                     transition_i += 1
-                entries.append((m.group(1).strip(), row, internal))
+                entries.append((m.group(1).strip(), row, internal, line_starts[row_i]))
     return entries or bullet_entries
 
 
@@ -708,7 +742,14 @@ def validate_entry(name, entry_text, today_year):
 
 
 def validate_plan(path):
-    """Return None if `path` is compliant, else a violation reason string."""
+    """Return None if `path` is compliant, else a `(line, reason)` violation.
+
+    `line` is 1-indexed into the plan file: the heading line for a
+    section-level violation (missing section, too few alternatives, no
+    `Decided by:` line), or the entry's own line for a per-entry citation
+    issue (D-08 -- every violation names the line it is about, not only
+    the file).
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
@@ -720,33 +761,40 @@ def validate_plan(path):
             f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start});"
             " re-save the plan as UTF-8"
         ) from exc
-    body, boundary = extract_section_body(mask_fenced_regions(text))
+    masked = mask_fenced_regions(text)
+    body, body_start, boundary = extract_section_body(masked)
     if body is None:
-        return "missing '## Alternatives Considered' section"
+        return (1, "missing '## Alternatives Considered' section")
     if is_exempt(body):
         return None
+    heading_line = line_number(masked, body_start)
     entries = split_entries(body)
     if not entries:
-        return "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows"
+        return (
+            heading_line,
+            "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows",
+        )
     mechanism_entries = [
-        (name, entry_text)
-        for name, entry_text, internal in entries
+        (name, entry_text, offset)
+        for name, entry_text, internal, offset in entries
         if not internal
     ]
     if len(mechanism_entries) < MIN_ALTERNATIVES:
         return (
+            heading_line,
             f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
-            + below_the_boundary(boundary, BULLET_RE, TABLE_ROW_RE)
+            + below_the_boundary(boundary, BULLET_RE, TABLE_ROW_RE),
         )
     today_year = datetime.date.today().year
-    for name, entry_text in mechanism_entries:
+    for name, entry_text, offset in mechanism_entries:
         issues = validate_entry(name, entry_text, today_year)
         if issues:
-            return issues[0]
+            return (line_number(masked, body_start + offset), issues[0])
     if not DECIDED_BY_RE.search(body):
         return (
+            heading_line,
             "no 'Decided by:' line naming a ranked criterion"
-            + below_the_boundary(boundary, DECIDED_BY_RE)
+            + below_the_boundary(boundary, DECIDED_BY_RE),
         )
     return None
 
@@ -762,9 +810,9 @@ def phase_label_from_dirname(phase_dir_arg):
 def check_alternatives(phase_dir_arg):
     """Validate every discovered plan; return the list of violations.
 
-    Each violation is a (plan_path, reason) tuple; the list is empty when
-    every discovered plan passes. Raises ValueError when phase_dir has no
-    `.planning/` ancestor (caller maps this to exit 2).
+    Each violation is a (plan_path, line, reason) tuple; the list is empty
+    when every discovered plan passes. Raises ValueError when phase_dir has
+    no `.planning/` ancestor (caller maps this to exit 2).
     """
     phase_dir_path = Path(phase_dir_arg)
     # Called for its raise, not its result: it rejects a phase_dir sitting
@@ -774,10 +822,13 @@ def check_alternatives(phase_dir_arg):
     violations = []
     plans, misnamed = discover_plan_files(resolved_phase_dir)
     for plan_path in plans:
-        reason = validate_plan(plan_path)
-        if reason is not None:
-            violations.append((plan_path, reason))
-    violations.extend((path, MISNAMED_PLAN_REASON) for path in misnamed)
+        result = validate_plan(plan_path)
+        if result is not None:
+            line, reason = result
+            violations.append((plan_path, line, reason))
+    # A misnamed file's violation is about its filename, not any line inside
+    # it -- line 1 is the only line every file has, misnamed or not.
+    violations.extend((path, 1, MISNAMED_PLAN_REASON) for path in misnamed)
     return violations
 
 
@@ -823,11 +874,18 @@ def main(argv=None):
     if not violations:
         return 0
 
-    for plan_path, reason in violations:
-        print(f"{plan_path}: {reason}", file=sys.stderr)
+    # Only these two shapes interpolate plan-document text, so only these go
+    # through the hard per-line backstop (D-07): every span quoted inside a
+    # violation reason is already bounded at 80 chars (D-08), but the
+    # surrounding fixed prose plus a long phase-directory path can still push
+    # one line past 200 on its own.
+    for plan_path, line, reason in violations:
+        print(elide_line(f"{plan_path}:{line}: {reason}"), file=sys.stderr)
     phase_label = phase_label_from_dirname(phase_dir_arg)
     print(
-        f"remediation: fix the plans above, then re-run /gsd-plan-phase {phase_label} --force",
+        elide_line(
+            f"remediation: fix the plans above, then re-run /gsd-plan-phase {phase_label} --force"
+        ),
         file=sys.stderr,
     )
     return 1
