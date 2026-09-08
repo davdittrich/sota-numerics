@@ -16,10 +16,6 @@ heading boundaries), the HTML-comment cases, the rejected-plan-name cases,
 the empty-argument cases, and the error-message case all change verdict
 between the two checkers. Every other test in the suite passes against both.
 
-The commit is named here, rather than a count, because every earlier
-revision of this paragraph went stale within hours of being written and one
-shipped a fix that did not exist.
-
 An empty phase-directory argument now prints a reason and exits `2`, which
 blocks. Under 0.1.3 the same call read the process working directory instead:
 run from a phase directory holding one passing plan, it exited `0` on a phase
@@ -89,6 +85,8 @@ every one of those until you clear it. README's "What the Claude hooks do"
 tabulates every refusal, the stderr it prints, and what clears it.
 
 The hook then installs nothing and records nothing, so the next session retries.
-The ignored-files case catches contributors by surprise: running the test suite
-leaves `__pycache__/` inside the bundle, which `git status` reports as clean
-while a directory copy would still publish it. Delete it and reopen the session.
+The ignored-files case catches contributors by surprise: running
+`python3 -m check-alternatives` instead of running the script directly leaves
+a bytecode-cached `__pycache__/` inside the bundle, and the guard's
+`git status --ignored` flag is exactly why it catches this. Delete it and
+reopen the session.

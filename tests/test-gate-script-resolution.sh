@@ -83,6 +83,18 @@ rm -rf "$EMPTY_HOME"
 echo "$ERR" | grep -q "gate script not found at project or global scope" || fail "case2: missing message text"
 pass "case2: script missing at both scopes exits 1 with clear message"
 
+# --- Case 2b: HOME and GSD_HOME both unset -> ${GSD_HOME:-$HOME} expands to
+# the empty string, so the third rung becomes the root-anchored
+# /.gsd/capabilities/sota-numerics/scripts/check-alternatives.py
+# (REVIEW-CRITICAL-FINAL P2-3). `sh -c` has no `set -u`, so this is
+# unexercised elsewhere; still fail-closed (exit 1), but pin it so a future
+# rewrite that assumes one of the two is always set stays honest. ---
+ERR2B="$(cd "$SCRATCH" && env -u HOME -u GSD_HOME bash -c "$GATE_CMD" 2>&1 >/dev/null)"
+STATUS2B=$?
+[ "$STATUS2B" -eq 1 ] || fail "case2b: HOME and GSD_HOME both unset did not exit 1 (exit $STATUS2B)"
+echo "$ERR2B" | grep -q "gate script not found at project or global scope" || fail "case2b: missing message text"
+pass "case2b: HOME and GSD_HOME both unset still fails closed with the same message"
+
 # --- Case 6: a checker copy inside a repository enclosing the working
 # directory is never executed (D-14, T-24-18) ---
 # The gate command used to append its script path to `git rev-parse

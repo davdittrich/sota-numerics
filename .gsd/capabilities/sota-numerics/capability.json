@@ -3,7 +3,7 @@
   "role": "feature",
   "version": "0.2.0",
   "title": "SOTA/efficiency/numerical-stability steering",
-  "description": "Advisory steering across gsd's plan/execute/verify/ship lifecycle toward SOTA numerics: internally and project-consistent, unambiguous, complete, efficient, quiet-running, agent-facing code -- plus the single blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase. No new gate covers the added dimensions.",
+  "description": "Advisory steering across gsd's plan/execute/verify/ship lifecycle toward SOTA numerics: internally consistent and project-consistent, unambiguous, complete, efficient, quiet-running, agent-facing code -- plus the single blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase.",
   "tier": "full",
   "requires": [],
   "engines": {
