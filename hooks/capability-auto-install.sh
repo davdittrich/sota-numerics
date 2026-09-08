@@ -33,27 +33,82 @@ else
   exit 0
 fi
 
+# _esc <string> -- fork-free escaper; assigns the result to the global _E
+# rather than printing it, since a command substitution here would fork twice
+# per entry on every SessionStart. Three parameter expansions, in an order
+# that matters: backslash doubled first, so that afterwards no backslash in
+# _E can be anything but an escape introducer, then newline to backslash-n,
+# then space to backslash-s. That order is what makes the encoding injective.
+_esc() {
+  _E="${1//\\/\\\\}"
+  _E="${_E//$'\n'/\\n}"
+  _E="${_E// /\\s}"
+}
+
+# _bundle_records -- reads NUL-delimited paths from stdin (one `find -print0`
+# entry each) and emits one line per entry, tagged by kind so the three shapes
+# below stay disjoint on the stream: `l` a symlink, `f` a regular file, `o`
+# everything else (directories, and any FIFO or socket that should not be
+# there). A symlink is tested with -L before -f, so a symlink to a directory
+# is recorded as a link and not silently followed. Its target is read through
+# `readlink` inside a command substitution that appends a sentinel character
+# and strips it afterward: without the sentinel, a target ending in a newline
+# would be silently truncated by the substitution's own trailing-newline
+# stripping, and that truncation would itself be a collision. A regular file
+# is hashed by redirecting it into the hash tool on stdin rather than passing
+# its path as an argument, so the tool never prints a path and its
+# filename-escaping behaviour -- GNU `sha256sum` escapes, perl `shasum` does
+# not -- stops mattering; the digest is taken as the first word of that
+# output. A failed `readlink` or a failed hash returns 1 from the function
+# rather than emitting a record for bytes that were never read.
+_bundle_records() {
+  local p _t _h _pe
+  while IFS= read -r -d '' p; do
+    if [ -L "$p" ]; then
+      _t="$(readlink "$p" && printf '.')" || return 1
+      _t="${_t%.}"
+      _esc "$p"; _pe="$_E"
+      _esc "$_t"
+      printf 'l %s %s\n' "$_pe" "$_E"
+    elif [ -f "$p" ]; then
+      _h="$("${HASH_CMD[@]}" < "$p")" || return 1
+      _h="${_h%% *}"
+      _esc "$p"
+      printf 'f %s %s\n' "$_E" "$_h"
+    else
+      _esc "$p"
+      printf 'o %s\n' "$_E"
+    fi
+  done
+}
+
 # Whole-bundle-directory hash. `capability install` copies the directory, so
 # what this has to detect is a change in what that copy would carry. Three
 # properties of each entry reach the hash and one does not. Content: a file
 # contributes its own digest, bound to its path. Link target: a symlink
 # contributes what it points at, so adding or retargeting one is drift. Path:
-# everything else -- directories, and any FIFO or socket that should not be
-# there -- contributes its path, so an added empty directory is caught. Mode
-# does not: `chmod 755` on a bundle file leaves this digest identical while the
-# directory copy carries the bit. That miss is stale, not unsafe -- an unmirrored
-# local chmod is drift the mirror does not receive, and the mirror keeps the
-# mode it was installed with -- but it is a miss. `-exec sh -c` rather than GNU
-# `find -printf`, which BSD find does not have.
-# A partial walk is not a hash of this bundle, so the status is read rather than
-# piped into sort, and find's stderr is suppressed so the refusal reaches the
-# user instead of `find: Permission denied` (case J5).
+# everything else contributes its path, so an added empty directory is
+# caught. Mode does not: `chmod 755` on a bundle file leaves this digest
+# identical while the directory copy carries the bit. That miss is stale, not
+# unsafe -- an unmirrored local chmod is drift the mirror does not receive,
+# and the mirror keeps the mode it was installed with -- but it is a miss.
+#
+# The stream `_bundle_records` emits is never parsed, only hashed, so its
+# encoding needs to be injective and nothing more: the kind tag keeps a
+# directory from masquerading as a symlink or a hashed file, `_esc` keeps a
+# path or a symlink target from opening a second line, and one record per
+# entry makes the sorted stream an injective encoding of the bundle's state --
+# no two distinct bundle states can produce the same stream.
+# A partial walk is not a hash of this bundle, so the status is read rather
+# than piped into sort. `set -o pipefail` is load-bearing here: without it a
+# `find` that could not read a directory would report through
+# `_bundle_records`' own exit status, and a partial walk would read as a
+# complete one -- exactly the regression case J5 pins. find's stderr is
+# suppressed so the refusal below reaches the user instead of
+# `find: Permission denied`.
 bundle_hash() {
   local _list
-  _list="$(find "$BUNDLE_DIR" \
-       -type l -exec sh -c 'for p in "$@"; do printf "%s -> %s\n" "$p" "$(readlink "$p")"; done' _ {} + \
-    -o -type f -exec "${HASH_CMD[@]}" {} + \
-    -o -print 2>/dev/null)" || return 1
+  _list="$(set -o pipefail; find "$BUNDLE_DIR" -print0 2>/dev/null | _bundle_records)" || return 1
   printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 

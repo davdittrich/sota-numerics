@@ -763,6 +763,26 @@ run_hook
 [ "$(installs)" = 3 ] || fail "I4: a retargeted symlink did not change the bundle hash"
 pass "I4: symlink drift inside the bundle defeats the fast path"
 
+# --- I5: a symlink target cannot forge another entry's digest line ---
+# A directory name cannot contain a slash, so it cannot forge an absolute
+# path; a symlink target is arbitrary bytes and can. Capture the exact line
+# the old file-hashing branch emits for a real file, delete that file, then
+# retarget a symlink so its own line is followed by the captured line -- the
+# walk's raw output becomes byte-identical to the pre-deletion state even
+# though the bundle changed, and the sorted stream cannot tell them apart.
+new_sandbox i5
+printf 'hello\n' > "$BUNDLE/f"
+ln -s foo "$BUNDLE/z"
+run_hook
+[ "$(installs)" = 1 ] || fail "I5: precondition -- first run should install"
+FORGED_LINE="$("${HASH_CMD[@]}" "$BUNDLE/f")"
+rm -f "$BUNDLE/f"
+ln -sfn "$(printf 'foo\n%s' "$FORGED_LINE")" "$BUNDLE/z"
+run_hook
+[ "$(installs)" = 2 ] ||
+  fail "I5: a symlink target forging a deleted file's digest line defeated the fast path"
+pass "I5: a symlink target cannot forge another entry's digest line"
+
 # --- L1: the gsd_tools resolver exists once in this repo ---
 # It used to exist twice: hooks/gsd-tools.sh, which this repo ships and
 # hooks/session-start.sh sources, and a byte-identical inline copy in the hook.

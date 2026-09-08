@@ -91,6 +91,13 @@ a bytecode-cached `__pycache__/` inside the bundle, and the guard's
 `git status --ignored` flag is exactly why it catches this. Delete it and
 reopen the session.
 
+The bundle digest's record format changed: each walk entry now emits a
+kind-tagged, escaped line instead of the old `path -> target` and raw
+`sha256sum`/`shasum` output, closing a collision where a symlink's target
+could carry bytes indistinguishable from another entry's line. The first
+session after upgrading therefore sees a hash mismatch against the old-format
+sidecar and reinstalls once; that reinstall is expected, not drift.
+
 A plan discussing the `<!--` HTML-comment syntax in its own prose (for
 example, inside a backtick-delimited code span) no longer has the rest of the
 plan blanked to EOF. Under the previous scan a single unprotected `<!--`
