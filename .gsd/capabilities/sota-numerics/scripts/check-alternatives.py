@@ -73,11 +73,10 @@ PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 # RESEARCH; a lowercase `plan` is ordinary English inside a filename. The
 # first draft of this regex carried re.IGNORECASE and blocked a phase on
 # `notes-on-the-plan.md` -- a stray note, exactly the false positive that
-# would teach authors to route around the gate. The residual is a lowercase
-# `23-01-plan.md`, which gsd-core's `*-PLAN.md` glob would read on a
-# case-insensitive filesystem and this gate would not; nothing in this
-# repository or the reviews has produced one, and blocking every note that
-# ends in the word "plan" is the more expensive of the two errors.
+# would teach authors to route around the gate. The case-insensitive-
+# filesystem question this raises (a lowercase `23-01-plan.md`) is verified,
+# not asserted, in NOTES.md section 7 -- read it there; do not restate the
+# claim here, or the two copies will drift.
 #
 # Wider than PLAN_FILE_RE, which additionally demands the `<phase>-<NN>-`
 # prefix. Everything between the two is a file that reads as a plan to a human

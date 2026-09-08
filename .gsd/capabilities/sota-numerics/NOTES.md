@@ -174,3 +174,46 @@ nothing in this bundle can detect or refuse that state. The upstream fix is to d
 as `gsd-beads-h1pb`, alongside the ordering coupling above (`gsd-beads-g72`). Until then:
 default is `true`, so a project that never touches `workflow.post_planning_gaps` is
 unaffected, and this is where the exception is written down.
+
+## 7. The case-insensitive-filesystem residual: verified against gsd-core 1.13.0, not a live divergence (gsd-beads-25vc.21.3 item 3)
+
+`PLAN_FILE_RE` and `PLAN_SHAPED_RE` are both case-sensitive by design (section 3 above): a
+file stored as `23-01-plan.md` matches neither, so it is invisible to this gate, not merely
+misnamed. The comment above `PLAN_SHAPED_RE` used to assert, without checking, that
+gsd-core's own `*-PLAN.md` glob would still read such a file on a case-insensitive
+filesystem (macOS default, Windows) where this gate would not -- a real divergence, if true.
+It is not true, measured against the two places in installed gsd-core 1.13.0 that actually
+discover or read `.planning/phases/*/*-PLAN.md` content:
+
+- `~/.claude/gsd-core/workflows/plan-phase.md:574` -- `ls "${PHASE_DIR}"/*-PLAN.md`
+- `~/.claude/gsd-core/workflows/execute-plan.md:58` -- `(ls .planning/phases/XX-name/*-PLAN.md 2>/dev/null || true) | sort`,
+  from which `$PLAN_PATH` is chosen (execute-plan.md:62, "find first PLAN without matching
+  SUMMARY") and `$PHASE` derived (execute-plan.md:69), feeding every later `cat`/`grep` on
+  `{phase}-{plan}-PLAN.md` (execute-plan.md:93, 98, 201, 400, 476).
+
+Both discovery sites are a bare shell glob, not an explicit case-fold and not an
+independently-constructed path. `ls`'s glob matches its pattern against the name `readdir`
+returns -- the name as stored on disk -- using byte-for-byte `fnmatch`, which is
+case-sensitive regardless of whether the underlying filesystem resolves `open()` calls
+case-insensitively. A file stored as `23-01-plan.md` therefore does not match `*-PLAN.md` in
+`ls`, on any platform GSD's bash-based workflows run on, for the same reason `PLAN_FILE_RE`
+does not match it: same answer, no divergence. The later `cat {phase}-{plan}-PLAN.md` reads
+look like the genuinely dangerous third category -- an open of a constructed canonical path,
+which *would* case-fold a lowercase file on a case-insensitive filesystem -- but their
+`{phase}`/`{plan}` values are always the ones the same glob already found in the same run;
+the constructed path is never built from a source independent of that glob, so it can never
+name a file the glob excluded. `~/.claude/gsd-core/bin/gsd-tools.cjs` has no plan-discovery
+or plan-reading code of its own to check against either path: every `-PLAN.md` hit in it
+(lines 69, 160, 173, 2624, 2639) is a doc comment or CLI help string, not executable
+glob/readdir logic.
+
+**Decision (accepted risk):** no macOS or Windows CI leg is added. Measured against gsd-core
+1.13.0's source, there is no divergence for a second runner to catch -- it would exercise
+only the filesystem's own case-folding half of the original claim, a half already shown
+irrelevant here, buying a permanently-maintained runner for a residual with no artifact in
+this repository and no review finding that has ever produced one.
+
+**Reopens if:** a lowercase plan-named file (e.g. `23-01-plan.md`) is ever observed actually
+present in a phase directory, or a future gsd-core release adds an explicit case-fold or an
+independently-sourced constructed-path read to its plan discovery -- at which point this
+section's citations are the ones to re-check first.

@@ -1732,6 +1732,33 @@ class TestMisnamedPlans(unittest.TestCase):
         # Still exactly one remediation line, however many violations.
         self.assertEqual(result.stderr.count("remediation:"), 1)
 
+    def test_lowercase_plan_suffix_is_invisible_not_merely_misnamed(self):
+        """Pins the half of NOTES.md section 7's decision that IS observable
+        on Linux (gsd-beads-25vc.21.3 item 3). `23-01-plan.md` matches
+        neither PLAN_FILE_RE nor PLAN_SHAPED_RE (both case-sensitive), so the
+        gate sees no plan here at all -- not a misnamed one it reports, one
+        it never discovers. If a case fold is ever added to either regex,
+        or to discovery, this case is the one that reopens NOTES.md
+        section 7's decision.
+
+        Two SEPARATE scratch directories, not one: on a case-insensitive
+        filesystem two differently-cased names resolve to the same file, and
+        a single directory holding both would step on the very bug this
+        case is pinning.
+        """
+        with scratch_dir() as tmp_lower:
+            write_plan(tmp_lower, fixture_text("plan-missing-section.md"),
+                       name="23-01-plan.md")
+            lower_result = run_check(tmp_lower)
+        with scratch_dir() as tmp_upper:
+            write_plan(tmp_upper, fixture_text("plan-missing-section.md"),
+                       name="23-01-PLAN.md")
+            upper_result = run_check(tmp_upper)
+        self.assertEqual(lower_result.returncode, 0, lower_result.stderr)
+        self.assertEqual(lower_result.stderr, "")
+        self.assertEqual(upper_result.returncode, 1, upper_result.stdout)
+        self.assertIn("missing '## Alternatives Considered'", upper_result.stderr)
+
 
 class TestEmptyPhaseDir(unittest.TestCase):
     """An empty ${PHASE_DIR} must block, not silently pass.
