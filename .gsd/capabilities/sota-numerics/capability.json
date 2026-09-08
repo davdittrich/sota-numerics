@@ -78,7 +78,7 @@
       "check": {
         "predicate": {
           "kind": "command-exit-zero",
-          "command": "_SN=.gsd/capabilities/sota-numerics/scripts/check-alternatives.py; SOTA_SCRIPT=\"./$_SN\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"$(git rev-parse --show-toplevel 2>/dev/null)/$_SN\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"${GSD_HOME:-$HOME}/$_SN\"; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install sota-numerics' (or reopen the session to let the SessionStart auto-install run)\" >&2; exit 1; }; python3 \"$SOTA_SCRIPT\"",
+          "command": "_SN=.gsd/capabilities/sota-numerics/scripts/check-alternatives.py; SOTA_SCRIPT=\"./$_SN\"; [ -f \"$SOTA_SCRIPT\" ] || SOTA_SCRIPT=\"${GSD_HOME:-$HOME}/$_SN\"; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install sota-numerics' (or reopen the session to let the SessionStart auto-install run)\" >&2; exit 1; }; python3 \"$SOTA_SCRIPT\"",
           "timeout": 30
         }
       },

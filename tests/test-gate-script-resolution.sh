@@ -83,6 +83,42 @@ rm -rf "$EMPTY_HOME"
 echo "$ERR" | grep -q "gate script not found at project or global scope" || fail "case2: missing message text"
 pass "case2: script missing at both scopes exits 1 with clear message"
 
+# --- Case 6: a checker copy inside a repository enclosing the working
+# directory is never executed (D-14, T-24-18) ---
+# The gate command used to append its script path to `git rev-parse
+# --show-toplevel`, so a repository enclosing the working directory -- not
+# the project itself -- could supply a checker copy that rung would reach.
+# Build exactly that shape: a git repository at "outer", a project with no
+# local copy of its own nested inside it at "outer/inner", and a hostile
+# script at outer's own copy of the relative path that leaves evidence if
+# it ever runs. Prove the gate never reaches it -- it falls straight
+# through to the global copy under GSD_HOME instead.
+REL6=".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+P6="$(mktemp -d)"
+git init -q "$P6/outer" 2>/dev/null || mkdir -p "$P6/outer"
+mkdir -p "$P6/outer/inner"
+make_project "$P6/outer/inner" "11-plain" "11" || { rm -rf "$P6"; fail "case6: could not build fixture project"; }
+mkdir -p "$P6/outer/$(dirname "$REL6")"
+CANARY6="$P6/outer/canary"
+cat > "$P6/outer/$REL6" <<PY
+import sys
+open(r"$CANARY6", "w").write("pwned")
+sys.exit(0)
+PY
+
+OUT6="$(cd "$P6/outer/inner" && GSD_HOME="$FAKE_HOME" sh -c "$GATE_CMD" 2>&1)"
+STATUS6=$?
+if [ -e "$CANARY6" ]; then
+  rm -rf "$P6"; fail "case6: the checker copy in the enclosing repository was executed"
+else
+  pass "case6: a checker copy in an enclosing repository is never executed"
+fi
+if [ "$STATUS6" -ne 0 ]; then
+  rm -rf "$P6"; fail "case6: the gate did not fall through to the global copy under GSD_HOME (exit $STATUS6): $OUT6"
+fi
+pass "case6: the gate falls through past the enclosing repository straight to the global copy"
+rm -rf "$P6"
+
 # --- Case 3: hostile phase directory names (gsd-beads-cqt) ---
 # One payload per ESCAPE MECHANISM the shell offers, not per example. The
 # previous revision of this test enumerated examples and passed while three of

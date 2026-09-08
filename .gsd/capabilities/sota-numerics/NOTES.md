@@ -29,12 +29,20 @@ which "is always `blocking: false`" — this capability is the first to actually
 ## 3. Script path resolution and the missing-script guard
 
 Write `_SN` for `.gsd/capabilities/sota-numerics/scripts/check-alternatives.py`. The gate
-command tries three paths in order: `./$_SN`, then `$(git rev-parse --show-toplevel)/$_SN`,
-then `${GSD_HOME:-$HOME}/$_SN`. gsd-core runs the check command at the runtime project root
-with the parent process's environment inherited, so the first rung reaches the project copy
-with no Git at all. The second finds that same copy when the working directory is below the
-project root, and the third resolves a global-scope-only install. `README.md` lists the two
-locations and the rule that the project copy wins; the order above is how that rule is met.
+command tries two paths in order: `./$_SN`, then `${GSD_HOME:-$HOME}/$_SN`. gsd-core runs the
+check command at the runtime project root with the parent process's environment inherited, so
+the first rung reaches the project copy with no Git at all, and the second resolves a
+global-scope-only install. `README.md` lists the two locations and the rule that the project
+copy wins; the order above is how that rule is met.
+
+A third rung used to sit between these two, asking Git for the top level of the repository
+enclosing the working directory and appending the script path to it, meant to widen the
+project lookup to working directories below the project root. It is gone (D-14): that top
+level is whatever repository encloses the *current working directory*, which is a directory
+an attacker chooses, not the project gsd-core dispatches the gate from — a checker script
+planted at the top of that enclosing repository would run in the project's place.
+`tests/test-gate-script-resolution.sh` pins a repository enclosing the working directory,
+carrying a hostile copy at the same relative path, and proves the gate never reaches it.
 
 `${CLAUDE_PLUGIN_ROOT}` is used at no rung: it is a variable this capability does not set, so
 it would leave the lookup dependent on the host, where the project root is an anchor gsd-core
