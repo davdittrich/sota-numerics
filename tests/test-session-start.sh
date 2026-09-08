@@ -85,17 +85,13 @@ mk_scratch() {
   local _pdir=".planning"
   local _cfg="config.json"
   mkdir -p "$SCRATCH/$_pdir" "$SCRATCH/home"
-  # The HOME redirect is not the only thing holding the install back. The hook
-  # resolves gsd-tools from `git rev-parse --show-toplevel` before it consults
-  # PATH, and the walk starts at the cwd -- this scratch dir. With TMPDIR inside
-  # a checkout that ships gsd-core, that rung finds a real binary and the stub
-  # below never runs. The ceiling names the scratch dir's parent, not the
-  # scratch dir: git ignores a ceiling entry that is the directory the walk
-  # starts in, and the hook runs with the scratch dir as its cwd. The hook's own
-  # `git -C "$BUNDLE_DIR"` calls are unaffected, since that path does not lie
-  # under the ceiling.
-  export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home" \
-         GIT_CEILING_DIRECTORIES="$(dirname "$SCRATCH")"
+  # The HOME redirect is what holds the install back: hooks/gsd-tools.sh's
+  # first rung now anchors to CLAUDE_PLUGIN_ROOT (every call site below sets
+  # it explicitly) or, failing that, to the sourced file's own location --
+  # never to the scratch dir this function cd's into (D-13). Only the last
+  # rung, ${CLAUDE_CONFIG_DIR:-$HOME/.claude}, can still see this scratch
+  # dir's cwd, and the HOME redirect covers that.
+  export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home"
   if [ -n "$1" ]; then
     printf '%s\n' "$1" > "$SCRATCH/$_pdir/$_cfg"
   fi
@@ -171,6 +167,59 @@ run_and_cleanup
 echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "case4: injection payload did not fall back to generic framing"
 [ "$PWNED_CREATED" = no ] || fail "case4: injection payload created $PWNED"
 pass "case4: role-argument injection guarded"
+
+# --- Case 6: a hostile repository at the working directory never supplies
+# the node entry point (D-13, T-24-17) ---
+# hooks/gsd-tools.sh's first rung used to run `git rev-parse --show-toplevel`
+# at the caller's cwd; a hostile repository placed there, carrying its own
+# gsd-core/bin/gsd-tools.cjs, would win that rung and get sourced as node
+# code. The rung is gone now: the anchor is CLAUDE_PLUGIN_ROOT, or the
+# sourced file's own location when that is unset -- neither is something a
+# working directory can influence. Prove it with a repository that IS a real
+# git repo (so it would have won the old rung) and carries a script that
+# leaves evidence if node ever runs it.
+HOSTILE="$(mktemp -d)"
+mkdir -p "$HOSTILE/gsd-core/bin"
+CANARY="$HOSTILE/canary"
+cat > "$HOSTILE/gsd-core/bin/gsd-tools.cjs" <<CJS
+require('fs').writeFileSync('$CANARY', 'pwned');
+CJS
+git init -q "$HOSTILE" >/dev/null 2>&1
+
+FAKE_HOME6="$(mktemp -d)"
+OUT6="$(
+  cd "$HOSTILE" && HOME="$FAKE_HOME6" bash -c '
+    unset CLAUDE_PLUGIN_ROOT
+    . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"
+    gsd_tools config-get sota-numerics.enabled --default true
+  '
+)"
+rm -rf "$FAKE_HOME6"
+if [ -e "$CANARY" ]; then
+  fail "case6: hostile repository's gsd-core/bin/gsd-tools.cjs was executed"
+else
+  pass "case6: hostile repository's node entry point never runs, even though it is a real git repository"
+fi
+[ "$OUT6" = "true" ] || fail "case6: legitimate resolution (PATH) still did not succeed despite the hostile cwd (got '$OUT6')"
+rm -rf "$HOSTILE"
+
+# --- Case 7: an unresolvable provider still exits 127 (T-24-21) ---
+# Removing the working-directory rung must not change what happens when NO
+# rung resolves: the fix must not silently disable the hook path it touches.
+EMPTY_CWD="$(mktemp -d)"
+FAKE_HOME7="$(mktemp -d)"
+bash -c '
+  cd "'"$EMPTY_CWD"'" || exit 99
+  export HOME="'"$FAKE_HOME7"'"
+  export PATH="/usr/bin:/bin"
+  unset CLAUDE_PLUGIN_ROOT
+  . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"
+  gsd_tools config-get x --default y
+'
+STATUS7=$?
+rm -rf "$EMPTY_CWD" "$FAKE_HOME7"
+[ "$STATUS7" -eq 127 ] || fail "case7: an unresolvable provider did not exit 127 (got $STATUS7)"
+pass "case7: an unresolvable provider still exits 127"
 
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
