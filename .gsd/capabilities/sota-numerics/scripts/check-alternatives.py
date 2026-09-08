@@ -16,12 +16,15 @@ the violation is about its filename, not any line inside it, since skipping
 it silently is indistinguishable from a clean pass. Every document-derived
 span in a diagnostic is bounded and, when truncated, carries an explicit
 `...[truncated]` marker; no printed stderr line exceeds 200 characters,
-whatever the plan document contains (D-07). Exit 2 = usage/IO error: an empty, missing or
-non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
-10 levels, a discovered plan file that is not valid UTF-8 or could not be
-read (a plan-shaped name that names a directory, for instance), or -- when
-no phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
-`## Current Position` `Phase:` line do not corroborate each other.
+whatever the plan document contains (D-07).
+
+Exit 2 = usage/IO error. Any of five conditions raises it. The phase_dir
+argument is empty, missing, or not a directory. The phase_dir has no
+`.planning/` ancestor within 10 levels. A discovered plan file is not valid
+UTF-8. A discovered plan file could not be read at all; a plan-shaped name
+that names a directory is the usual cause. No phase_dir was given, and the
+STATE.md the phase resolves from carries a frontmatter `current_phase` and a
+`## Current Position` `Phase:` line that do not corroborate each other.
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
 text is authored by a different principal (the planner agent), so it is
