@@ -196,6 +196,11 @@ FENCE_LINE_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
 # faster and immune to the backtracking the scans above are shaped to avoid.
 HTML_COMMENT_OPEN = "<!--"
 HTML_COMMENT_CLOSE = "-->"
+# A single-backtick, same-line, bounded inline code span. Mirrors DOC_REF_RE's
+# shape (line 147) but gets its own name and comment: this one's job is
+# masking-precedence detection (is a `<!--` candidate rendered as literal
+# text?), not citation matching.
+INLINE_CODE_SPAN_RE = re.compile(r"`[^`\n]{1,300}`")
 NON_NEWLINE_RE = re.compile(r"[^\n]")
 
 # CommonMark list markers at zero-to-three-space indentation: a bullet
@@ -423,6 +428,40 @@ def fence_close(text, opener):
     return len(text)
 
 
+def next_comment_opener(text, pos):
+    """The offset of the next real `<!--` at or after `pos`, or -1.
+
+    A `<!--` written inside a single-backtick, same-line inline code span is
+    not a comment opener on the rendered page -- CommonMark renders the whole
+    span, backticks included, as literal text -- so it must not mask
+    anything past it (gsd-beads-25vc.21.1, P2-1). Skip any candidate whose
+    own line contains a code span that covers it, and resume the search past
+    that candidate; an unrelated span elsewhere on the line must not protect
+    a different, uncovered candidate.
+
+    Residual, documented rather than fixed: CommonMark permits an inline
+    code span to cross a line break. This scan only looks at the candidate's
+    own line, so a `<!--` protected only by a multi-line code span is still
+    masked to EOF -- the same fail-closed direction as every other
+    unterminated construct this module masks.
+    """
+    while True:
+        cand = text.find(HTML_COMMENT_OPEN, pos)
+        if cand < 0:
+            return -1
+        line_start = text.rfind("\n", 0, cand) + 1
+        line_end = text.find("\n", cand)
+        if line_end < 0:
+            line_end = len(text)
+        line, offset_in_line = text[line_start:line_end], cand - line_start
+        if not any(
+            m.start() <= offset_in_line < m.end()
+            for m in INLINE_CODE_SPAN_RE.finditer(line)
+        ):
+            return cand
+        pos = cand + len(HTML_COMMENT_OPEN)
+
+
 # A plan's own leading YAML frontmatter block, distinct from
 # STATE_FRONTMATTER_RE above: closes on either `---` or the YAML `...`
 # document-end marker, matching how PyYAML and gsd-core's own frontmatter
@@ -495,13 +534,21 @@ def mask_fenced_regions(text):
     Leading YAML frontmatter is masked first of all, by
     `mask_leading_frontmatter`, since it is a document-level boundary that
     fence/comment/indented-code syntax must not be able to move or hide.
+
+    A `<!--` written inside a same-line inline code span is not a comment
+    opener either -- CommonMark renders the span, backticks and all, as
+    literal text -- so `next_comment_opener` skips those candidates
+    (gsd-beads-25vc.21.1, P2-1). Residual: a code span that crosses a line
+    break is not detected, so a `<!--` protected only by one still masks to
+    EOF -- the same fail-closed direction as every other unterminated
+    construct here.
     """
     text = mask_leading_frontmatter(text)
     spans = []
     pos = 0
     while True:
         fence = next_fence_opener(text, pos)
-        comment = text.find(HTML_COMMENT_OPEN, pos)
+        comment = next_comment_opener(text, pos)
         if fence is None and comment < 0:
             break
         if comment >= 0 and (fence is None or comment < fence.start()):

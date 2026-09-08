@@ -1235,6 +1235,61 @@ class TestHtmlComments(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_a_backticked_comment_opener_does_not_open_a_comment(self):
+        # A `<!--` written inside a single-backtick inline code span renders
+        # as literal text on the page -- CommonMark shows the backticks and
+        # the arrows, not a comment -- so it must not start a masked span
+        # (gsd-beads-25vc.21.1, P2-1).
+        text, _ = bullet_plan()
+        plan = "We discuss `<!--` markers here.\n\n" + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_unrelated_code_span_does_not_protect_a_real_opener_on_the_same_line(
+        self,
+    ):
+        # The backtick-span check must protect only a `<!--` that is itself
+        # inside a span. An unrelated span earlier on the line must not act
+        # as a blanket exemption for a real, unprotected opener later on the
+        # same line -- that would turn the fix into a bypass.
+        text, _ = bullet_plan()
+        plan = "Uses `numpy`. <!--\n" + text + "-->\n"
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_an_unterminated_backtick_before_an_opener_still_masks_to_eof(self):
+        # An unterminated backtick is not a code span -- CommonMark requires
+        # a matching closing run of the same length on the same line here --
+        # so the fail-closed residual from mask_fenced_regions' own
+        # docstring still applies: the opener is unprotected and masks to
+        # EOF.
+        text, _ = bullet_plan()
+        plan = "`a <!--\n" + text
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+
+    def test_a_protected_backtick_candidate_does_not_disturb_fence_precedence(self):
+        # A skipped (backtick-protected) comment candidate earlier in the
+        # text must not disturb the "whichever construct opens first wins"
+        # rule between the fence path and the real comment path.
+        text, _ = bullet_plan()
+        plan = (
+            "We discuss `<!--` markers here.\n\n"
+            "```markdown\n<!--\n```\n\n" + text
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class TestCurrentPhaseResolution(unittest.TestCase):
     """With no argument, the checker resolves its phase from the project's own
