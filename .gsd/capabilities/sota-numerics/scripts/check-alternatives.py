@@ -96,31 +96,15 @@ MISNAMED_PLAN_REASON = (
 SECTION_HEADING_RE = re.compile(
     r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
-# Ends the section body. H1 as well as H2, because `^##` alone let a later
-# `# Section` donate its bullets to this one: a plan with a single real
-# alternative passed on an entry written somewhere else entirely. Up to the
-# three leading spaces CommonMark allows on an ATX heading, matching
-# FENCE_LINE_RE below -- an indented `## Later` donated for the same reason.
-# Deliberately not `#{1,6}`: `### Internal design alternatives` is an
-# in-section construct, so bounding on H3 would cut the body short and drop
-# the `Decided by:` line that follows it. Bounding earlier only ever shrinks
-# the body, which is the fail-closed direction.
-# A setext H1 ends the section too: the heading TEXT line is not an entry, but
-# bullets below it would otherwise be donated into the section the way an ATX
-# H1 once was. The boundary is placed at the TEXT line, not the underline, so
-# the heading itself falls outside the section exactly as `## Later` does.
-#
-# The underline alone is NOT enough, and that was a real defect rather than a
-# nicety. A bare `=+` run with no preceding text line is a horizontal rule, not
-# a heading -- CommonMark requires a paragraph immediately above -- and firing
-# on it truncated the section at the rule and discarded every alternative below
-# it. Measured before this predicate: a `===` rule between two compliant
-# entries reported "fewer than 2 named alternatives (found 1)", a false block
-# on a plan that had both, with a diagnostic naming neither the rule nor the
-# truncation. `-` underlines are deliberately NOT a boundary at all: `---` is
-# equally a thematic break and a frontmatter fence, so treating it as one would
-# false-block the commonest horizontal rule of the two. `=` has no such second
-# meaning once the paragraph predecessor is required.
+# H1/H2 end the section (fail-closed: bounding early only shrinks the body).
+# H3 stays inside it (`### Internal design alternatives`) -- pinned by
+# TestSectionBoundary.test_h3_does_not_end_the_section.
+# A bare `=+` run with no preceding paragraph is a horizontal rule, not a
+# setext heading -- pinned by
+# TestSectionBoundary.test_bare_setext_rule_does_not_end_the_section.
+# `-` underlines are never a boundary either: `---` is also a thematic break
+# and a frontmatter fence -- pinned by
+# TestSectionBoundary.test_thematic_break_does_not_end_the_section.
 NEXT_HEADING_RE = re.compile(
     r"^[ \t]{0,3}#{1,2}[ \t]+"
     r"|^[ \t]{0,3}[^\s][^\n]*\n[ \t]{0,3}=+[ \t]*$",
@@ -131,11 +115,9 @@ INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
-# Leading indentation bounded to CommonMark's own zero-to-three-space top-level
-# range (D-03, REVIEW-CRITICAL-FINAL P1-1(b), gsd-beads-25vc.6). Unbounded
-# `[ \t]*` let a four-space-or-deeper indented sub-bullet or sub-table-row --
-# nested under an organizational top-level bullet that names no mechanism of
-# its own -- be read as a top-level "at least two named alternatives" entry.
+# Indentation bounded to CommonMark's zero-to-three-space top-level range
+# (D-03, REVIEW-CRITICAL-FINAL P1-1(b), gsd-beads-25vc.6) -- pinned by
+# TestBulletIndentationBound.
 BULLET_RE = re.compile(r"^[ \t]{0,3}[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
     r"^[ \t]{0,3}\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
@@ -747,14 +729,6 @@ def split_entries(body):
     return entries or bullet_entries
 
 
-def entry_has_citation(entry_text):
-    return bool(URL_RE.search(entry_text) or DOC_REF_RE.search(entry_text))
-
-
-def entry_years(entry_text):
-    return [int(m.group(0)) for m in YEAR_RE.finditer(entry_text)]
-
-
 def entry_placeholder_violation(entry_text):
     """True when an entry cites a known placeholder host (e.g. example.com)
     or a bare TODO/TBD doc-ref instead of a real citation."""
@@ -769,15 +743,15 @@ def entry_placeholder_violation(entry_text):
 
 
 def validate_entry(name, entry_text, today_year):
-    """Return a list of issue strings for one alternative entry (empty = pass).
+    """Return a violation reason for one alternative entry, or None if it passes.
 
     Accumulates every applicable issue rather than stopping at the first, so
     a plan missing both a citation and a date reports both issues at once.
     """
     issues = []
-    if not entry_has_citation(entry_text):
+    if not (URL_RE.search(entry_text) or DOC_REF_RE.search(entry_text)):
         issues.append("missing URL or doc-ref citation")
-    years = entry_years(entry_text)
+    years = [int(m.group(0)) for m in YEAR_RE.finditer(entry_text)]
     if not years:
         issues.append("no citation date")
     elif not any(today_year - RECENCY_WINDOW_YEARS <= y <= today_year for y in years):
@@ -794,8 +768,8 @@ def validate_entry(name, entry_text, today_year):
     if entry_placeholder_violation(entry_text):
         issues.append("cites a placeholder URL or a bare TODO/TBD citation")
     if issues:
-        return [f"alternative '{elide_span(name)}': {'; '.join(issues)}"]
-    return []
+        return f"alternative '{elide_span(name)}': {'; '.join(issues)}"
+    return None
 
 
 def validate_plan(path):
@@ -859,9 +833,9 @@ def validate_plan(path):
         )
     today_year = datetime.date.today().year
     for name, entry_text, offset in mechanism_entries:
-        issues = validate_entry(name, entry_text, today_year)
-        if issues:
-            return (line_number(masked, body_start + offset), issues[0])
+        reason = validate_entry(name, entry_text, today_year)
+        if reason:
+            return (line_number(masked, body_start + offset), reason)
     if not DECIDED_BY_RE.search(body):
         return (
             heading_line,
@@ -883,13 +857,10 @@ def check_alternatives(phase_dir_arg):
     """Validate every discovered plan; return the list of violations.
 
     Each violation is a (plan_path, line, reason) tuple; the list is empty
-    when every discovered plan passes. Raises ValueError when phase_dir has
-    no `.planning/` ancestor (caller maps this to exit 2).
+    when every discovered plan passes. The caller is responsible for
+    confirming phase_dir sits inside a GSD project before calling this.
     """
     phase_dir_path = Path(phase_dir_arg)
-    # Called for its raise, not its result: it rejects a phase_dir sitting
-    # outside any GSD project.
-    find_project_root(phase_dir_path)
     resolved_phase_dir = phase_dir_path.resolve()
     violations = []
     plans, misnamed = discover_plan_files(resolved_phase_dir)
@@ -932,6 +903,13 @@ def main(argv=None):
         return 2
     else:
         phase_dir_arg = Path(args.phase_dir)
+        # The no-argument path above already established the project root via
+        # resolve_current_phase_dir; this is the only branch that has not.
+        try:
+            find_project_root(phase_dir_arg)
+        except ValueError as exc:
+            print(f"check-alternatives.py: {exc}", file=sys.stderr)
+            return 2
 
     if not phase_dir_arg.is_dir():
         print(f"check-alternatives.py: not a directory: {phase_dir_arg}", file=sys.stderr)
