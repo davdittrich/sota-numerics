@@ -1759,10 +1759,13 @@ class TestEmptyPhaseDir(unittest.TestCase):
 class TestUnreadablePlanFiles(unittest.TestCase):
     """Pins the exit codes README's "Failures and recovery" list claims.
 
-    Both paths reach main() from validate_plan()'s path.read_text(): a decode
-    failure is a UnicodeDecodeError, which subclasses ValueError and so is
-    caught and mapped to 2, while every other OSError escapes uncaught and
-    Python exits 1. The two look alike in the source and behave differently.
+    Both paths reach main() from validate_plan()'s path.read_text(): a
+    decode failure is a UnicodeDecodeError, and every other OSError (a
+    directory named like a plan, a permission failure, a dangling link) is
+    also caught now. Both are re-raised as ValueError, and main()'s existing
+    `except ValueError -> return 2` maps both to the same
+    `check-alternatives.py: <path>: <reason>` contract -- one clean stderr
+    line, no raw traceback, either way (gsd-beads-25vc.21.1, AGY P2).
     """
 
     def test_non_utf8_plan_names_the_file_and_the_remedy(self):
@@ -1779,14 +1782,19 @@ class TestUnreadablePlanFiles(unittest.TestCase):
         self.assertIn("UTF-8", result.stderr)
         self.assertIn("re-save", result.stderr)
 
-    def test_directory_named_like_a_plan_exits_1(self):
-        # Discovery matches on the name, so a directory named NN-NN-PLAN.md is
-        # opened as a file: IsADirectoryError escapes and the gate blocks
-        # without a remediation line.
+    def test_directory_named_like_a_plan_exits_2(self):
+        # Discovery matches on the name, so a directory named NN-NN-PLAN.md
+        # is opened as a file. IsADirectoryError is now caught alongside the
+        # decode failure above and mapped to the same exit-2 contract: one
+        # clean stderr line naming the path, no Traceback, and still no
+        # remediation: line (this is a usage/IO error, not a plan violation).
         with scratch_dir() as tmp:
-            (Path(tmp) / "01-01-PLAN.md").mkdir()
+            plan = Path(tmp) / "01-01-PLAN.md"
+            plan.mkdir()
             result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(str(plan), result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
         self.assertNotIn("remediation:", result.stderr)
 
 

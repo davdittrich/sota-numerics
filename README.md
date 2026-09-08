@@ -191,18 +191,24 @@ Handled outcomes use these exit codes:
 - `0`: all matching plans pass, or no matching plans exist;
 - `1`: one or more plans violate the gate;
 - `2`: the phase directory could not be identified, or a matching plan file is not valid
-  UTF-8. Identification fails when an explicitly passed path is empty or is not an existing
-  directory, when there is no `.planning` ancestor within ten levels, or -- when no path is
-  passed and the phase is resolved from `.planning/STATE.md` -- when that file is unreadable,
-  has no YAML frontmatter, carries zero or more than one `current_phase` field, has no
-  `## Current Position` section or that section carries any count of `Phase:` lines other
-  than exactly one, states a `current_phase` and a `Phase:` value that disagree, or names a
-  number matching anything other than exactly one directory under `.planning/phases/`. The
-  decode failure names the offending plan, the decode reason, the byte offset, and the
-  remedy: `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as
-  UTF-8`.
+  UTF-8 or could not be read. Identification fails when an explicitly passed path is empty or
+  is not an existing directory, when there is no `.planning` ancestor within ten levels, or --
+  when no path is passed and the phase is resolved from `.planning/STATE.md` -- when that file
+  is unreadable, has no YAML frontmatter, carries zero or more than one `current_phase` field,
+  has no `## Current Position` section or that section carries any count of `Phase:` lines
+  other than exactly one, states a `current_phase` and a `Phase:` value that disagree, or names
+  a number matching anything other than exactly one directory under `.planning/phases/`. The
+  decode failure names the offending plan, the decode reason, the byte offset, and the remedy:
+  `<plan_path>: not valid UTF-8 (invalid start byte at byte 36); re-save the plan as UTF-8`.
+  A plan-shaped path that could not be read at all -- a directory named like a plan (for
+  example `mkdir 01-01-PLAN.md`), or a file the process lacks permission to open -- reports
+  the path and the OS error instead: `<plan_path>: could not be read (Is a directory); a
+  plan-shaped name must be a readable file`.
 
-Other unexpected filesystem errors are not converted to `2`; they escape as Python errors, exit `1`, and the gate blocks without printing the `remediation:` line. Plan discovery matches names without a separate file-type check, so a directory with a plan-shaped name takes this path, as does a plan file the process cannot read.
+Plan discovery matches names without a separate file-type check, so a directory with a
+plan-shaped name, or a plan file the process cannot read, both take the `read_text` path in
+`validate_plan` and are reported through the same `check-alternatives.py: ` contract above and
+exit `2`, with no raw traceback either way.
 
 The phase directory argument is optional. The gate itself passes none: its command is
 constant, and the checker resolves the phase from `.planning/STATE.md`'s `current_phase`, so

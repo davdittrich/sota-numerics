@@ -90,3 +90,31 @@ The ignored-files case catches contributors by surprise: running
 a bytecode-cached `__pycache__/` inside the bundle, and the guard's
 `git status --ignored` flag is exactly why it catches this. Delete it and
 reopen the session.
+
+A plan discussing the `<!--` HTML-comment syntax in its own prose (for
+example, inside a backtick-delimited code span) no longer has the rest of the
+plan blanked to EOF. Under the previous scan a single unprotected `<!--`
+candidate, however it appeared on the page, masked everything after it, so a
+compliant `## Alternatives Considered` section written below such a mention
+was invisible to the gate and the plan blocked on a false "missing section".
+A `<!--` that genuinely opens a comment -- including one sharing a line with
+an unrelated code span -- still masks exactly as before; only a candidate
+that CommonMark itself renders as literal text is now skipped.
+
+A symlinked entry under `.planning/phases/` is no longer matched during
+phase-directory discovery. `entry.is_dir()` follows symlinks, so a symlinked
+phase directory used to resolve to a directory anywhere on the filesystem and
+have its plan filenames validated against `current_phase` -- a real traversal
+out of the tree this gate is scoped to, though low impact: only names are
+matched and validated, never file content. A real (non-symlink) phase
+directory at the same number is unaffected.
+
+A plan-shaped path that cannot be read as a file -- most commonly a directory
+named like a plan, such as `mkdir 01-01-PLAN.md` -- now exits `2` with the
+same `check-alternatives.py: <path>: <reason>` message every other exit-`2`
+case uses, instead of an uncaught `IsADirectoryError` traceback on stderr.
+**This changes a verdict, not just a message**: the previous behavior was
+exit `1` with no `remediation:` line, byte-identical in blocking effect
+(non-zero always blocks) but reached through a raw Python traceback rather
+than the module's own diagnostic contract. A permission failure on an
+otherwise-valid plan file reports through the same path.

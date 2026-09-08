@@ -18,8 +18,9 @@ span in a diagnostic is bounded and, when truncated, carries an explicit
 `...[truncated]` marker; no printed stderr line exceeds 200 characters,
 whatever the plan document contains (D-07). Exit 2 = usage/IO error: an empty, missing or
 non-directory phase_dir, a phase_dir with no `.planning/` ancestor within
-10 levels, a discovered plan file that is not valid UTF-8, or -- when no
-phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
+10 levels, a discovered plan file that is not valid UTF-8 or could not be
+read (a plan-shaped name that names a directory, for instance), or -- when
+no phase_dir is given -- a STATE.md whose frontmatter `current_phase` and
 `## Current Position` `Phase:` line do not corroborate each other.
 
 stdlib-only, no child-process invocations anywhere in this module: PLAN.md
@@ -817,6 +818,21 @@ def validate_plan(path):
         raise ValueError(
             f"{path}: not valid UTF-8 ({exc.reason} at byte {exc.start});"
             " re-save the plan as UTF-8"
+        ) from exc
+    except OSError as exc:
+        # A plan-shaped name is not always a plan: a directory named like one
+        # (`mkdir 11-01-PLAN.md`), or a file this process cannot read, used to
+        # escape here as a raw IsADirectoryError/PermissionError traceback --
+        # still fail-closed (any uncaught exception is non-zero and blocks),
+        # but not the `check-alternatives.py: <path>: <reason>` contract the
+        # module docstring promises for every other exit-2 case. The two
+        # except arms are disjoint -- UnicodeDecodeError subclasses
+        # ValueError, not OSError -- so this ordering is cosmetic; the decode
+        # arm is kept first only so its more specific message reads first
+        # when both could apply (gsd-beads-25vc.21.1, AGY P2).
+        raise ValueError(
+            f"{path}: could not be read ({exc.strerror});"
+            " a plan-shaped name must be a readable file"
         ) from exc
     masked = mask_fenced_regions(text)
     body, body_start, boundary = extract_section_body(masked)
