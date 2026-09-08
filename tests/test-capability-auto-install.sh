@@ -92,10 +92,11 @@
 # Nothing here can perform a real global install. Three things hold that up and
 # each is enforced rather than asserted: HOME and GSD_HOME are redirected into a
 # per-case mktemp sandbox; GIT_CEILING_DIRECTORIES stops every git command the
-# hook runs from discovering a repository above that sandbox, which is what
-# keeps the hook's first gsd-tools rung (`git rev-parse --show-toplevel`, then
-# $toplevel/gsd-core/bin/gsd-tools.cjs) from reaching a real binary when TMPDIR
-# happens to sit inside a checkout; and the PATH stub then answers instead.
+# hook itself runs (its bundle-provenance checks against BUNDLE_DIR) from
+# discovering a repository above that sandbox when TMPDIR happens to sit inside
+# a checkout; and run_hook always sets CLAUDE_PLUGIN_ROOT, so gsd-tools.sh's
+# own provider resolution (D-13) never falls back past it to consult the
+# working directory at all, and the PATH stub answers from there.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

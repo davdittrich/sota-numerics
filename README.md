@@ -65,7 +65,7 @@ Planner, executor, and verifier subagents receive role-specific banners. A norma
 
 Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the install check on any of those triggers.
 
-The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks the current repository's `gsd-core/bin/gsd-tools.cjs`, a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
+The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory (D-13) — then a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
 
 ## Configure
 
@@ -219,7 +219,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
 - gsd-core 1.10.0 or newer.
-- Git. The gate does not need it: the project copy resolves relative to the project root, and a global-only install resolves under `${GSD_HOME:-$HOME}`. Git only widens the project lookup to working directories below the project root. Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
+- Git is not needed for the gate or for the hooks' provider resolution: the gate's project copy resolves relative to the project root and a global-only install resolves under `${GSD_HOME:-$HOME}` (D-14), and `gsd-tools.sh` anchors to the plugin root rather than the working directory (D-13). Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
 ## Update or remove

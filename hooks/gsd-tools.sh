@@ -7,10 +7,9 @@ gsd_tools() {
     # matching the convention session-start.sh's own line 4 already uses;
     # BASH_SOURCE[0] falls back to this file's physical path for direct,
     # non-host invocation, where no such variable is set. There is
-    # deliberately no `git rev-parse --show-toplevel` rung here any more --
-    # that resolved the repository enclosing the invoking working directory,
-    # so a hostile repository placed there could supply a node entry point
-    # this function would then execute.
+    # deliberately no Git-based rung asking for the repository enclosing the
+    # invoking working directory any more -- a hostile repository placed
+    # there could supply a node entry point this function would then execute.
     _root="${CLAUDE_PLUGIN_ROOT:-}"
     if [ -z "$_root" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
       _root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
