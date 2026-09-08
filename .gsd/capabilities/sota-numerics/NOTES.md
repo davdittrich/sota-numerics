@@ -5,20 +5,14 @@ This capability ships with a few choices that look wrong at a glance and will at
 
 ## 1. `gates[0].onError` is `"halt"`, deliberately
 
-`onError` routes a *thrown* evaluator error, and gsd-core's predicate
-evaluator throws on exactly two things: a malformed predicate declaration and an unknown
-`predicate.kind`. Every runtime outcome of the check command itself is mapped to a block
-verdict instead — a missing `python3` (exit 127), a crash (exit 1) and the 30s timeout all
-yield `block: true`, and only exit 0 yields `block: false`. So `"halt"` here does not cover a
-broken interpreter; it covers this manifest being wrong about its own predicate, which a
-blocking gate must never pass over in silence.
-
-`contributions[].onError` on this capability's four advisory fragments correctly stays
-`"skip"` — those are non-blocking steering text, and a rendering failure there should never
-halt planning. The two `onError` values differ (`halt` on the one blocking gate, `skip` on
-every advisory contribution) because they govern differently-consequential failures, not
-because one of them is a mistake. Do not "fix" `gates[0].onError` back to `"skip"` to match
-the contributions.
+See `capability.json`'s `gates[0].description` for the full argument: `onError` here is
+deliberately `"halt"` so a malformed manifest (a bad predicate declaration or an unknown
+predicate kind) can never pass silently, while every runtime outcome of the check command
+itself already maps to a block verdict. By contrast, `contributions[].onError` on this
+capability's four advisory fragments correctly stays `"skip"`, since those are non-blocking
+steering text and a rendering failure there should never halt planning — the two values
+differ because they govern differently-consequential failures, not because one is a mistake.
+Do not "fix" `gates[0].onError` back to `"skip"` to match the contributions.
 
 ## 2. The `plan:post` gate fires late — after the plan is already committed
 
