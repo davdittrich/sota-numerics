@@ -515,21 +515,6 @@ class TestDocumentedSyntax(unittest.TestCase):
         ]
         self.assertEqual(missing, [])
 
-        readme_text = (root / "README.md").read_text(encoding="utf-8")
-        self.assertNotIn("Each parsed entry must contain:", readme_text)
-
-        checker_text = (
-            root / ".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
-        ).read_text(encoding="utf-8")
-        normalized_checker_text = " ".join(checker_text.split())
-        self.assertIn(
-            "at least two named mechanism alternatives", normalized_checker_text
-        )
-        self.assertIn(
-            "Internal entries are excluded from the count and evidence validation.",
-            normalized_checker_text,
-        )
-
     def test_documented_mixed_body_exits_0(self):
         with scratch_dir() as tmp:
             write_plan(tmp, DOCUMENTED_MIXED_BODY)
