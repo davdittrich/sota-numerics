@@ -34,6 +34,22 @@ from pathlib import Path
 RECENCY_WINDOW_YEARS = 6
 MIN_ALTERNATIVES = 2
 
+# Diagnostic-bounding widths (D-07, D-08). No earlier decision fixes these
+# three numbers -- they are this plan's own choice of width, not inherited
+# from the review that reported the defect (D-24 discretion):
+#   - QUOTED_SPAN_WIDTH: a document-derived excerpt (an entry name, or the
+#     heading text that ended a section) shown inside a message, in
+#     characters of the excerpt's own content.
+#   - FOUND_VALUES_LIMIT: how many distinct values a "found: ..." list
+#     names before eliding the rest.
+#   - STDERR_LINE_WIDTH: the hard ceiling on one printed stderr line,
+#     whatever the plan document contains -- the backstop behind the two
+#     bounds above, not a replacement for them.
+QUOTED_SPAN_WIDTH = 80
+FOUND_VALUES_LIMIT = 5
+STDERR_LINE_WIDTH = 200
+ELISION_MARKER = "...[truncated]"
+
 # Phase segment is `\d+(?:\.\d+)?` rather than a fixed `\d{2}`, so a
 # sub-numbered phase directory matches: both `11-01-PLAN.md` and
 # `10.1-02-PLAN.md` are plan files.
@@ -192,6 +208,30 @@ SHALLOW_LINE_RE = re.compile(r"^[ \t]{0,3}\S")
 # 2024). No tab-stop expansion -- literal character count, the same
 # simplicity this whole pre-pass already trades for a dependency-free scan.
 INDENTED_CODE_LINE_RE = re.compile(r"^[ \t]{4,}\S")
+
+
+def elide_span(s, width=QUOTED_SPAN_WIDTH):
+    """Truncate a document-derived span to `width` characters of its own
+    content, appending an explicit elision marker when truncated (D-08) so
+    a reader can tell truncation from a value that was already short.
+    """
+    if len(s) <= width:
+        return s
+    return s[:width] + ELISION_MARKER
+
+
+def elide_values(values, limit=FOUND_VALUES_LIMIT):
+    """The first `limit` distinct values, sorted for a message that reads
+    the same regardless of the order the document stated them in, with an
+    explicit elision marker when more were found (D-08). Only how many
+    values the message shows changes -- not which values were found, so
+    this never affects a verdict already decided from the full list.
+    """
+    distinct = sorted(set(values))
+    if len(distinct) <= limit:
+        return ", ".join(str(v) for v in distinct)
+    shown = ", ".join(str(v) for v in distinct[:limit])
+    return f"{shown}, ...[+{len(distinct) - limit} more]"
 
 
 def find_project_root(start):
@@ -528,14 +568,14 @@ def extract_section_body(text):
 
 
 def below_the_boundary(boundary, *patterns):
-    """A clause naming the boundary when what the section lacks is below it."""
+    """A clause naming what the boundary section lacks, when it is below it."""
     if boundary is None:
         return ""
     heading, tail = boundary
     if not any(p.search(tail) for p in patterns):
         return ""
     return (
-        f"; the section ended at the heading '{heading}' and what it needs is"
+        f"; the section ended at the heading '{elide_span(heading)}' and what it needs is"
         " below that heading -- move the heading down, or the content up"
     )
 
@@ -653,15 +693,17 @@ def validate_entry(name, entry_text, today_year):
         # At-least-one-in-window rule: a foundational citation year paired
         # with an in-window year already passes the `years` truthiness check
         # above -- this branch only fires when every year found is out of
-        # window.
-        found = ", ".join(str(y) for y in years)
+        # window. `elide_values` bounds the displayed list to the first 5
+        # distinct years (D-08): an entry text with no length cap of its own
+        # (D-07, REVIEW-PROSE-TOKENS.md P1) must not turn "found" into an
+        # unbounded dump of every four-digit number in the span.
         issues.append(
-            f"no citation dated within the last {RECENCY_WINDOW_YEARS} years (found: {found})"
+            f"no citation dated within the last {RECENCY_WINDOW_YEARS} years (found: {elide_values(years)})"
         )
     if entry_placeholder_violation(entry_text):
         issues.append("cites a placeholder URL or a bare TODO/TBD citation")
     if issues:
-        return [f"alternative '{name}': {'; '.join(issues)}"]
+        return [f"alternative '{elide_span(name)}': {'; '.join(issues)}"]
     return []
 
 
