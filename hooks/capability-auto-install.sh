@@ -124,7 +124,18 @@ bundle_hash() {
 STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
 
 OLD_HASH=""
-[ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
+# A symlink at the sidecar path is read as no recorded hash rather than
+# followed: an attacker who can write in this directory could otherwise
+# point the link at the bundle's current digest and make the fast path
+# fire, switching auto-install off without touching the bundle. "No
+# recorded hash" is the fail-safe direction, since it installs rather than
+# skips, and the suppression does not persist -- the successful install
+# below unlinks and recreates the sidecar as a regular file. One residual,
+# recorded rather than hidden: the -L test and the cat are two syscalls, so
+# a racing attacker could still swap a regular file for a link between
+# them, the same unclosable window already recorded on the write side and
+# for the same reason -- no shell offers O_NOFOLLOW.
+[ ! -L "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
 if ! NEW_HASH="$(bundle_hash)"; then
   echo "capability-auto-install: the $CAP_ID bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope" >&2
   exit 0
@@ -316,12 +327,6 @@ if [ "$INSTALL_STATUS" -eq 0 ]; then
   # threat model already grants that attacker write access to this
   # directory, so unlink-and-recreate is proportionate here, not complete.
   #
-  # Second residual, same reason: the OLD_HASH read above still follows a
-  # symlink planted at STATE_FILE. After this change a planted link survives
-  # at most until the first successful install, and the worst it can do
-  # before then is make the hook skip an install a later session repeats --
-  # the ticket's own "documented, low-value-exploit behaviour" branch. Not
-  # fixed here; tracked as gsd-beads-25vc.21.6.
   rm -f "$STATE_FILE" 2>/dev/null
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then

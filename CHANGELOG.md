@@ -115,7 +115,10 @@ runs the install unbounded, the prior behaviour.
 The recorded-hash sidecar file is now unlinked and recreated on a successful
 install rather than written through, so a symlink planted at its path is
 replaced instead of followed -- a planted link could previously redirect the
-write to overwrite whatever file the link pointed at.
+write to overwrite whatever file the link pointed at. The sidecar is now also
+only read when it is a regular file, so a link planted to hold the bundle's
+current digest makes the hook install rather than take the unchanged-bundle
+fast path.
 
 A plan discussing the `<!--` HTML-comment syntax in its own prose (for
 example, inside a backtick-delimited code span) no longer has the rest of the

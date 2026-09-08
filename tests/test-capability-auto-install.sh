@@ -813,6 +813,23 @@ run_hook
 [ -s "$(sidecar)" ] || fail "I6: the sidecar is empty after a successful install"
 pass "I6: the sidecar write replaces a planted symlink rather than following it"
 
+# --- I7: the OLD_HASH read never follows a symlink planted at the sidecar's
+# path. I6 pins the write: a planted link cannot survive a successful
+# install. I7 pins the read: the read is what decides whether the install
+# happens at all, so a planted link holding the bundle's real hash must not
+# be able to steer it into the fast path. ---
+new_sandbox i7
+run_hook
+[ "$(installs)" = 1 ] ||
+  fail "I7: precondition -- first run should install"
+REAL_HASH="$(cat "$(sidecar)")"
+printf '%s' "$REAL_HASH" > "$SB/forged"
+ln -sfn "$SB/forged" "$(sidecar)"
+run_hook
+[ "$(installs)" = 2 ] ||
+  fail "I7: a sidecar symlink holding the real hash took the fast path"
+pass "I7: the OLD_HASH read refuses a symlinked sidecar even when its target holds the real hash"
+
 # --- L1: the gsd_tools resolver exists once in this repo ---
 # It used to exist twice: hooks/gsd-tools.sh, which this repo ships and
 # hooks/session-start.sh sources, and a byte-identical inline copy in the hook.
