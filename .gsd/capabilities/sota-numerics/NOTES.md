@@ -135,8 +135,9 @@ exits `1`, so the name change did not cost the verdict.
 Phase identity comes from STATE.md rather than from the caller, which couples this gate to
 the order in which gsd-core writes that file. `plan-phase.md:1524` is step 13b, "Record
 Planning Completion in STATE.md"; the `plan:post` gate dispatch is step 13e at
-`plan-phase.md:1558`. `current_phase` is therefore written before the gate runs, and at gate
-time it names the phase just planned.
+`plan-phase.md:1558`. Both positions re-derived 2026-09-08 against the installed gsd-core
+1.13.0, not assumed from an earlier note. `current_phase` is therefore written before the
+gate runs, and at gate time it names the phase just planned.
 
 Every failure path is fail-closed, and `main()` maps each raise to exit `2`. Measured:
 
@@ -154,3 +155,22 @@ changed, `current_phase` would name a different phase and the gate would check t
 pass, with nothing to notice. The upstream fix is unchanged — pass the phase directory as an
 argv element, tracked as `gsd-beads-g72`. Until then the coupling is real and this is where
 it is written down.
+
+### Residual: the same step can be turned off, which silently disables this gate
+
+This is a second, larger coupling than the ordering one above. Step 13e's own opening
+sentence is: "Proactive, non-blocking coverage report gated on `workflow.post_planning_gaps`
+(default `true`)." Step 13e is not only the gap-analysis capability's coverage report — it
+is the *only* dispatch point for every `plan:post` gate any capability registers, this one
+included. A project that sets `workflow.post_planning_gaps` to `false` never reaches step
+13e at all, so this gate — declared blocking, `onError: "halt"`, sold in `plugin.json` and
+`capability.json` as enforcing "on every plan in a phase" — never runs. There is no verdict,
+no error, and nothing an operator turning that key off would see: `render-hooks plan:post`
+still lists the gate as registered, but registration is not dispatch.
+
+The key belongs to a different capability (`gap-analysis`), not to `sota-numerics`, so
+nothing in this bundle can detect or refuse that state. The upstream fix is to decouple
+`plan:post` gate/step/contribution dispatch from `gap-analysis`'s own report toggle, tracked
+as `gsd-beads-h1pb`, alongside the ordering coupling above (`gsd-beads-g72`). Until then:
+default is `true`, so a project that never touches `workflow.post_planning_gaps` is
+unaffected, and this is where the exception is written down.
