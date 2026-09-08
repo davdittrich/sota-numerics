@@ -1811,5 +1811,101 @@ class TestRemediationOutput(unittest.TestCase):
         self.assertEqual(result.stderr.count("remediation:"), 1)
 
 
+class TestDiagnosticBounding(unittest.TestCase):
+    """D-07/D-08: every diagnostic the gate emits is bounded, and a
+    truncated span carries an explicit elision marker so a reader can tell
+    truncation from a value that was already short (T-24-13, T-24-14).
+
+    `check-alternatives.py:537-540` joined every four-digit year found in
+    one entry's whole span into the message with no cap; probed against the
+    shipped script (REVIEW-PROSE-TOKENS.md P1), a plan whose first bullet
+    carried 2,000 out-of-window years produced 12,280 chars / 8,099 tokens
+    on a single stderr line. The heading echoed by `below_the_boundary` had
+    the same defect: an arbitrary, unbounded document line.
+    """
+
+    def test_found_years_list_truncated_to_five_distinct_values(self):
+        # Seven distinct out-of-window years cited on one entry: only the
+        # first five (sorted, so the message is stable regardless of the
+        # order the years were written in) are named, with an explicit
+        # count of how many more were elided.
+        years = [1900, 1901, 1902, 1903, 1904, 1905, 1906]
+        years_text = " ".join(str(y) for y in years)
+        text = (
+            "## Alternatives Considered\n\n"
+            f"- **Ancient option**: cited many stale years. `https://numpy.org/doc` ({years_text}).\n"
+            f"- **Current option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — historical record.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for y in years[:5]:
+            self.assertIn(str(y), result.stderr)
+        for y in years[5:]:
+            self.assertNotIn(str(y), result.stderr)
+        self.assertIn("...[+2 more]", result.stderr)
+
+    def test_pathological_multiline_entry_span_years_still_truncated(self):
+        # Reproduces the reported defect's actual shape: years spread across
+        # continuation lines under one bullet, so the entry's span -- from
+        # its own bullet to the next one -- is multi-line, not a single
+        # citation line. The fix must bound the message regardless of how
+        # the span grew, not merely how it looks in the common case.
+        stale_years = "\n  ".join(
+            " ".join(str(1910 + row * 5 + col) for col in range(5)) for row in range(6)
+        )
+        text = (
+            "## Alternatives Considered\n\n"
+            "- **First option**: many stale years spread across lines.\n"
+            f"  {stale_years}\n"
+            "  `https://numpy.org/doc`\n"
+            f"- **Second option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — historical record.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("1910", result.stderr)
+        self.assertIn("...[+", result.stderr)
+        self.assertNotIn("1939", result.stderr)
+
+    def test_long_boundary_heading_is_truncated_with_a_marker(self):
+        long_heading = "Timing table " + ("x" * 100)
+        with scratch_dir() as tmp:
+            write_plan(tmp, split_across_boundary(f"{long_heading}\n" + "=" * 20))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(long_heading[:80], result.stderr)
+        self.assertNotIn(long_heading, result.stderr)
+        self.assertIn("...[truncated]", result.stderr)
+
+    def test_long_alternative_name_is_truncated_with_a_marker(self):
+        long_name = ("Uncited mechanism with an extremely long descriptive name " * 3).strip()[:150]
+        text = (
+            "## Alternatives Considered\n\n"
+            f"- **{long_name}**: no citation here at all.\n"
+            f"- **Current option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — a real reason.\n"
+        )
+        with scratch_dir() as tmp:
+            write_plan(tmp, text)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(f"alternative '{long_name[:80]}", result.stderr)
+        self.assertNotIn(long_name, result.stderr)
+        self.assertIn("...[truncated]", result.stderr)
+
+    def test_short_messages_carry_no_elision_marker(self):
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-uncited.md"))
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("...[truncated]", result.stderr)
+        self.assertNotIn("...[+", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
