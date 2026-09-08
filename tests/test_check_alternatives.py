@@ -1601,6 +1601,36 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertIn("current_phase", frontmatter_result.stderr)
         self.assertIn("`Phase:", body_result.stderr)
 
+    def test_a_symlinked_phase_directory_is_not_matched(self):
+        # entry.is_dir() follows symlinks, so a symlinked entry under
+        # .planning/phases/ used to resolve to a directory anywhere on the
+        # filesystem and have its plan filenames validated -- a traversal
+        # out of the tree this gate is scoped to (gsd-beads-25vc.21.1, AGY
+        # P2). The real (non-symlink) control for the same resolution loop
+        # is test_resolves_the_current_phase_and_reaches_its_verdict above.
+        with scratch_dir() as tmp, scratch_dir() as outside:
+            root = Path(tmp)
+            outside_dir = Path(outside) / "16-outside"
+            outside_dir.mkdir()
+            write_plan(outside_dir, fixture_text("plan-missing-section.md"),
+                       name="11-01-PLAN.md")
+            (root / ".planning" / "phases").mkdir(parents=True)
+            (root / ".planning" / "phases" / "16-sym").symlink_to(
+                outside_dir, target_is_directory=True
+            )
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\n"
+                "current_phase: 16\nstatus: planning\n---\n"
+                "\n# Project State\n\n## Current Position\n\n"
+                "Phase: 16 (Name) — READY TO EXECUTE\n"
+                "Plan: 1 of 1\nStatus: Ready to execute\n",
+                encoding="utf-8",
+            )
+            result = self.run_no_arg(root)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("matches 0 directories", result.stderr)
+        self.assertNotIn(str(outside_dir), result.stderr)
+
 
 class TestMultiPlanCoverage(unittest.TestCase):
     """Every plan in the directory is checked, not just

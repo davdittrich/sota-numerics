@@ -375,7 +375,18 @@ def resolve_current_phase_dir(start):
     if phases_root.is_dir():
         for entry in sorted(phases_root.iterdir()):
             num = PHASE_NUM_RE.match(entry.name)
-            if entry.is_dir() and num and normalize_phase(num.group(1)) == wanted:
+            # is_dir() follows symlinks, so a symlinked entry under
+            # .planning/phases/ would otherwise resolve to a directory
+            # anywhere on the filesystem and have its plan filenames
+            # validated -- a real traversal out of the tree this gate is
+            # scoped to (gsd-beads-25vc.21.1, AGY P2). is_symlink() is
+            # required alongside is_dir(); do not drop it as redundant.
+            if (
+                entry.is_dir()
+                and not entry.is_symlink()
+                and num
+                and normalize_phase(num.group(1)) == wanted
+            ):
                 matches.append(entry)
     if len(matches) != 1:
         raise ValueError(
