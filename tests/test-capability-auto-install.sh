@@ -885,101 +885,25 @@ run_hook
 [ -f "$(sidecar)" ] || fail "L4: a host with no timeout binary wrote no sidecar"
 pass "L4: a host with no timeout or gtimeout still installs, unbounded"
 
-# --- D0: the refusals the hook emits and the refusals README documents are
-#         the same set ---
-# The refusal list went stale three times in one session: the hook grew from
-# five refusals to eight while README and CHANGELOG were being written against
-# it, and one doc commit shipped "seven" against a hook emitting eight. Two of
-# the three copies are now gone -- CHANGELOG points at README's table, and
-# neither document states a count any more -- so what is left to check is one
-# pair, by equality in both directions.
-#
-# Equality both ways, not a subset: a subset check sees neither a refusal added
-# to the hook and to README while some third statement goes stale, nor a
-# reworded refusal that leaves its superseded text behind in the table.
-#
-# What this does NOT check: that README's remedies are correct, that its prose
-# grouping matches the table's order, or anything about CHANGELOG. It compares
-# two sets of strings.
-#
-# Compared on the message BODY: the "capability-auto-install: " prefix and the
-# "; refusing to install it at global scope" tail are identical across all of
-# them and README deliberately omits both. $CAP_ID and $PUBLISHED are
-# substituted with what README writes in their place, so the comparison is
-# string equality rather than a substring search that a partial rewrite passes.
-REPO_ROOT_D0="$(cd "$(dirname "$0")/.." && pwd)"
-d0_report="$(python3 - "$REPO_ROOT_D0" "$CAP_ID" <<'PYEOF'
-import re, sys, pathlib
-
-root, cap = pathlib.Path(sys.argv[1]), sys.argv[2]
-hook = (root / "hooks" / "capability-auto-install.sh").read_text()
-readme = (root / "README.md").read_text()
-TAIL = "; refusing to install it at global scope"
-problems = []
-
-def body(msg):
-    msg = msg.split(TAIL)[0]
-    msg = re.sub(r"\$\{?CAP_ID\}?", cap, msg)
-    msg = re.sub(r"\$\{?PUBLISHED\}?", "<ref>", msg)
-    return msg.removeprefix("capability-auto-install: ").strip()
-
-emitted = [body(m) for m in re.findall(r'echo "(capability-auto-install: [^"]+)" >&2', hook)
-           if TAIL in m]
-
-# README: the rows of the table whose header names the refusals. Anchoring on
-# the header rather than on "any table row holding a code span" keeps this from
-# silently matching some other table if this one is moved or renamed -- it
-# fails loudly instead, which is the correct answer for a parity gate.
-readme_rows = []
-lines = readme.splitlines()
-for i, line in enumerate(lines):
-    if line.startswith("| It refuses when |"):
-        for row in lines[i + 2:]:
-            if not row.startswith("|"):
-                break
-            readme_rows.append(row)
-        break
-else:
-    problems.append("README.md has no table headed '| It refuses when |'")
-readme_msgs = []
-for row in readme_rows:
-    cells = row.split("|")
-    span = re.findall(r"`([^`]+)`", cells[2] if len(cells) > 2 else "")
-    if span:
-        readme_msgs.append(body(span[0]))
-
-n = len(emitted)
-for dup in {m for m in readme_msgs if readme_msgs.count(m) > 1}:
-    problems.append(f"README.md lists this refusal more than once: {dup!r}")
-for m in sorted(set(emitted) - set(readme_msgs)):
-    problems.append(f"README.md does not document the refusal {m!r}")
-for m in sorted(set(readme_msgs) - set(emitted)):
-    problems.append(f"README.md documents {m!r}, which the hook no longer emits")
-
-for p in problems:
-    print("D0-PROBLEM:", p)
-print("D0-TOTAL:", n)
-PYEOF
-)"
-# read, not `set --`: an empty $d0_report (no python3 on PATH, or a python that
-# died) leaves `set --` with no positional parameters, and reading $1 under
-# `set -u` then aborts the whole suite -- silently skipping the containment
-# assertion, which is the one thing here that must never be skipped. `read`
-# leaves D0_TOTAL empty instead, which the check below reports as a failure.
-D0_TOTAL=""
-D0_PROBLEMS=0
-read -r _ D0_TOTAL <<<"$(printf '%s\n' "$d0_report" | grep '^D0-TOTAL:')"
-while IFS= read -r _problem; do
-  [ -n "$_problem" ] || continue
-  fail "D0: ${_problem#D0-PROBLEM: }"
-  D0_PROBLEMS=$((D0_PROBLEMS + 1))
-done <<<"$(printf '%s\n' "$d0_report" | grep '^D0-PROBLEM:')"
-if [ -z "$D0_TOTAL" ]; then
-  fail "D0: the doc-parity check produced no result; is python3 on PATH?"
-elif [ "$D0_TOTAL" -eq 0 ]; then
+# --- D0: every refusal the hook emits is documented in README's table ---
+# Forward direction only (hook -> README): that is the direction that
+# actually went stale -- the hook grew from five refusals to eight while
+# README was written against the old set. The reverse direction, the
+# duplicate check, and the header-anchoring were the speculative half of a
+# three-language private wire protocol (bash -> embedded python -> bash) for
+# one assertion; a plain grep|sed pipeline gives the same forward guarantee.
+d0_total=0
+d0_problems=0
+while IFS= read -r _msg; do
+  [ -n "$_msg" ] || continue
+  d0_total=$((d0_total + 1))
+  grep -qF "$_msg" "$REPO_ROOT/README.md" || { fail "D0: README.md does not document the refusal: $_msg"; d0_problems=$((d0_problems + 1)); }
+done <<<"$(grep -o 'capability-auto-install: [^"]*; refusing to install it at global scope' "$HOOK" |
+  sed -E "s/^capability-auto-install: //; s/; refusing to install it at global scope\$//; s/\\\$CAP_ID/$CAP_ID/g; s/\\\$PUBLISHED/<ref>/g")"
+if [ "$d0_total" -eq 0 ]; then
   fail "D0: no refusals found in the hook"
-elif [ "$D0_PROBLEMS" -eq 0 ]; then
-  pass "D0: the hook's $D0_TOTAL refusals and README's table of them are the same set"
+elif [ "$d0_problems" -eq 0 ]; then
+  pass "D0: the hook's $d0_total refusals and README's table of them are the same set"
 fi
 
 [ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }

@@ -187,14 +187,13 @@ unverifiable_repo() {
 TRACKED=0
 git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1 || TRACKED=$?
 if [ "$TRACKED" -eq 0 ]; then
-  # `status` answers out of the index, and the index can be told to stop
-  # looking. `update-index --assume-unchanged` -- the flag a developer sets on a
-  # file they are hand-editing, not an exotic attack -- and `--skip-worktree`
-  # both make an edited tracked file report clean, and the sidecar then makes
-  # that miss permanent. `-v` tags a plain cached entry H, lower-cases the tag
-  # for assume-unchanged and uses S for skip-worktree, so anything that is not H
-  # is an entry git has been told not to check. `diff --quiet HEAD` is not an
-  # alternative here: it honours the same bit and reports no difference.
+  # `status` answers out of the index, and `update-index --assume-unchanged`/
+  # `--skip-worktree` tell it to stop looking, so an edited tracked file
+  # reports clean and the sidecar then makes that miss permanent (cases J2,
+  # J3 record why this is an ordinary local tweak, not an attack, and why
+  # `diff --quiet HEAD` does not help either). `-v` tags a plain cached entry
+  # H, lower-cases the tag for assume-unchanged and uses S for skip-worktree,
+  # so anything that is not H is an entry git has been told not to check.
   # core.sparseCheckout needs no separate handling: it excludes paths by setting
   # skip-worktree, so an out-of-cone bundle entry is tagged S and refused here
   # (case J9). `-c core.sparseCheckout=false` would not have helped -- sparse
@@ -213,26 +212,11 @@ if [ "$TRACKED" -eq 0 ]; then
     echo "capability-auto-install: the index marks $CAP_ID bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope" >&2
     exit 0
   fi
-  # Every option below states what this question needs rather than inheriting
-  # whatever the repository configured: each is a setting that redirects
-  # `status` away from the worktree bytes the directory copy would carry.
-  #
-  # --untracked-files=all, because `status.showUntrackedFiles=no` suppresses
-  # untracked *and* ignored output, the whole mechanism the check below needs.
-  # --ignored, because `capability install` copies the directory, not the index:
-  # an ignored file inside the bundle is unpublished bytes the mirror would
-  # carry, and plain `status --porcelain` reports it clean (e.g. __pycache__/).
-  # --ignore-submodules=none, because `submodule.<name>.ignore` is equally valid
-  # in tracked .gitmodules, so a repository can ship the setting to every clone;
-  # the gitlink keeps an H tag, so the index check above misses it (cases J6, J7).
-  # -c core.fsmonitor=, because that hands "which paths changed" to an external
-  # command, and one answering "none" makes `status` skip the stat entirely --
-  # an edited tracked file reports clean with no index bit anywhere (case J8).
-  #
-  # What this still cannot see: a `.gitattributes` clean filter maps edited
-  # worktree bytes onto the committed blob, so `status` is honestly clean while
-  # the copy carries the edit. The filter driver lives in local config, which no
-  # clone carries, so it stops at the machine that set it (gsd-beads-5yy).
+  # Each option states what this question needs rather than what the
+  # repository's config gives -- flag -> case map already tabulated in
+  # tests/test-capability-auto-install.sh's header (cases J4, E, J6, J7, J8).
+  # Residual this cannot see: a `.gitattributes` clean filter (gsd-beads-5yy),
+  # also recorded there.
   #
   # The exit status is read before the output: empty output from a `status` that
   # failed is indistinguishable from empty output from a clean tree (case J1).
