@@ -140,11 +140,14 @@ run_and_cleanup
 [ "$STATUS" -eq 0 ] || fail "case2: enabled=false exited non-zero"
 pass "case2: sota-numerics.enabled=false silent exit 0"
 
+# These assertions pin the pointer form each role banner now prints (gsd-beads-25vc.21.5
+# row 1): each pattern must stay unique to its own role. A pattern that also matches the
+# shared header line would pass for every role and stop testing role dispatch at all.
 # --- Case 3a: ROLE=planner -> planner framing, qualifies the blocking gate ---
 mk_scratch '{"sota-numerics": {"enabled": true}}'
 OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" planner)"
 run_and_cleanup
-echo "$OUT" | grep -q 'ranked criterion' || fail "case3a: planner framing line missing"
+echo "$OUT" | grep -q 'planner fragment' || fail "case3a: planner framing line missing"
 echo "$OUT" | grep -q 'blocking plan:post gate' || fail "case3a: planner banner does not qualify the blocking gate"
 pass "case3a: ROLE=planner framing"
 
@@ -152,7 +155,7 @@ pass "case3a: ROLE=planner framing"
 mk_scratch '{"sota-numerics": {"enabled": true}}'
 OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" executor)"
 run_and_cleanup
-echo "$OUT" | grep -q 'avoid cancellation' || fail "case3b: executor framing line missing"
+echo "$OUT" | grep -q 'executor fragment' || fail "case3b: executor framing line missing"
 pass "case3b: ROLE=executor framing"
 
 # --- Case 3c: ROLE=verifier -> verifier framing ---
@@ -349,11 +352,11 @@ if [ -n "$MANIFEST_ROLES" ]; then
     run_and_cleanup
     case "$role" in
       planner)
-        echo "$OUT" | grep -q 'ranked criterion' || fail "case8: manifest's planner token did not produce the planner framing"
+        echo "$OUT" | grep -q 'planner fragment' || fail "case8: manifest's planner token did not produce the planner framing"
         echo "$OUT" | grep -q 'blocking plan:post gate' || fail "case8: manifest's planner token did not qualify the blocking gate"
         ;;
       executor)
-        echo "$OUT" | grep -q 'avoid cancellation' || fail "case8: manifest's executor token did not produce the executor framing"
+        echo "$OUT" | grep -q 'executor fragment' || fail "case8: manifest's executor token did not produce the executor framing"
         ;;
       verifier)
         echo "$OUT" | grep -q 'not blockers' || fail "case8: manifest's verifier token did not produce the verifier framing"

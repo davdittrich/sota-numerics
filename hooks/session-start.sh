@@ -29,10 +29,18 @@ case "$ROLE" in
   *) ROLE=generic ;;
 esac
 
+# The three role bodies below are pointers, not copies: each fragment they name is
+# injected into this same subagent's context window, so restating its rules here would
+# be a second copy at the same altitude. The four contributions declare `onError` as
+# skip, so a contribution that fails to render fails silently. That is the failsafe this
+# form gives up -- on such a silent render failure the subagent now learns only that the
+# capability is active and that the step carries a blocking gate, not what the gate
+# wants, where before this change the banner was a full backup copy of the rule text.
+# Recorded under gsd-beads-25vc.21.5, row 1.
 case "$ROLE" in
-  planner) FRAMING='Planning: name 2+ current alternatives per non-trivial mechanism choice, each with a dated citation, and state which ranked criterion (performance > simplicity/LOC > ecosystem > maintenance) decided the pick -- pair foundational citations (Kahan, IEEE 754) with a current in-window source. This capability ALSO declares a blocking plan:post gate that mechanically enforces this on every plan -- the advisory framing below is qualified here, not purely advisory.' ;;
-  executor) FRAMING="Executing: derive numeric parameters from first principles or the problem's actual scale, prefer numerically stable formulations, avoid cancellation and silent error propagation, and favour efficiency over simplicity where they conflict." ;;
-  verifier) FRAMING="Verifying: flag shipped-mechanism drift from the plan's justified pick, silent precision or scope loss, and unmeasured performance claims as findings, not blockers -- this capability's only gate already fired at plan:post, not here." ;;
+  planner) FRAMING='Planning: the injected sota-numerics planner fragment carries the Alternatives Considered rules the blocking plan:post gate enforces.' ;;
+  executor) FRAMING='Executing: the injected sota-numerics executor fragment carries the numerical-stability, efficiency and quiet-output rules.' ;;
+  verifier) FRAMING='Verifying: the injected sota-numerics verifier fragment carries the review items; they are findings, not blockers.' ;;
   *) FRAMING='SOTA/efficiency/numerical-stability steering: prefer mathematically correct, precision-preserving, well-cited mechanism choices.' ;;
 esac
 

@@ -63,6 +63,14 @@ completeness, efficiency, and code that stays quiet when an agent runs it; the
 table at the top of the README says which role gets which. These are advisory:
 no gate enforces them, and none was added.
 
+**The SubagentStart banners now point at their fragment instead of copying it.**
+The planner, executor, and verifier banners named their fragment's contributions
+verbatim, in the same context window the fragment is already injected into; they
+now name the fragment instead. This gives up a failsafe: each contribution
+declares `onError: skip`, so a contribution that fails to render fails silently,
+and on such a failure the subagent now learns only that the capability is active
+and the step carries a blocking gate, not what the gate wants.
+
 **The automatic global install can now refuse.** Installing at global GSD scope
 publishes the bundle to every project on the machine, so where a repository
 tracks the bundle, the `SessionStart` and `SubagentStart` hook now installs only
