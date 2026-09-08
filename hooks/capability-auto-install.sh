@@ -319,6 +319,26 @@ INSTALL_STATUS=$?
 if [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
+  # Unlink before writing so the redirection below always creates a fresh
+  # regular file rather than following whatever sits at STATE_FILE. `rm -f`
+  # removes the link itself, never its target, which is the whole point; a
+  # STATE_FILE that is a directory makes both this removal and the
+  # redirection fail harmlessly, leaving no sidecar and a retry next
+  # session -- this file's established failure posture.
+  #
+  # Residual, recorded rather than hidden: there is a window between this
+  # removal and the redirection in which a racing attacker could re-plant the
+  # link. Closing it would need O_NOFOLLOW, which no shell offers, and the
+  # threat model already grants that attacker write access to this
+  # directory, so unlink-and-recreate is proportionate here, not complete.
+  #
+  # Second residual, same reason: the OLD_HASH read above still follows a
+  # symlink planted at STATE_FILE. After this change a planted link survives
+  # at most until the first successful install, and the worst it can do
+  # before then is make the hook skip an install a later session repeats --
+  # the ticket's own "documented, low-value-exploit behaviour" branch. Not
+  # fixed here; tracked as gsd-beads-25vc.21.6.
+  rm -f "$STATE_FILE" 2>/dev/null
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2

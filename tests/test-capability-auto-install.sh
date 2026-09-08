@@ -783,6 +783,21 @@ run_hook
   fail "I5: a symlink target forging a deleted file's digest line defeated the fast path"
 pass "I5: a symlink target cannot forge another entry's digest line"
 
+# --- I6: the sidecar write never follows a symlink planted at its path ---
+new_sandbox i6
+mkdir -p "$SB/home/.gsd"
+printf 'do not touch\n' > "$SB/target"
+ln -sfn "$SB/target" "$(sidecar)"
+run_hook
+[ "$(installs)" = 1 ] ||
+  fail "I6: precondition -- the planted link's content should not match NEW_HASH, so the install should proceed"
+[ "$(cat "$SB/target")" = "do not touch" ] ||
+  fail "I6: the sidecar write clobbered the symlink's target ($(cat "$SB/target" 2>&1))"
+[ ! -L "$(sidecar)" ] || fail "I6: the sidecar path is still a symlink after a successful install"
+[ -f "$(sidecar)" ] || fail "I6: the sidecar path is not a regular file after a successful install"
+[ -s "$(sidecar)" ] || fail "I6: the sidecar is empty after a successful install"
+pass "I6: the sidecar write replaces a planted symlink rather than following it"
+
 # --- L1: the gsd_tools resolver exists once in this repo ---
 # It used to exist twice: hooks/gsd-tools.sh, which this repo ships and
 # hooks/session-start.sh sources, and a byte-identical inline copy in the hook.

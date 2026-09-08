@@ -104,6 +104,11 @@ to `gtimeout`), rather than inline and unbounded in the `SessionStart` and
 hash state unwritten, so a later session retries; a host with neither binary
 runs the install unbounded, the prior behaviour.
 
+The recorded-hash sidecar file is now unlinked and recreated on a successful
+install rather than written through, so a symlink planted at its path is
+replaced instead of followed -- a planted link could previously redirect the
+write to overwrite whatever file the link pointed at.
+
 A plan discussing the `<!--` HTML-comment syntax in its own prose (for
 example, inside a backtick-delimited code span) no longer has the rest of the
 plan blanked to EOF. Under the previous scan a single unprotected `<!--`
