@@ -236,6 +236,136 @@ rm -rf "$EMPTY_CWD" "$FAKE_HOME7"
 [ "$STATUS7" -eq 127 ] || fail "case7: an unresolvable provider did not exit 127 (got $STATUS7)"
 pass "case7: an unresolvable provider still exits 127"
 
+# --- Case 8: hooks.json's SubagentStart wiring actually supplies the role
+# tokens cases 3a-3c only prove session-start.sh honors (gsd-beads-25vc.21.3
+# item 1) ---
+# This pins only OUR half of the contract: the manifest, the script it
+# names, and the role tokens they exchange. Whether Claude Code fires
+# SubagentStart at all, and whether it matches on the subagent name, is host
+# behavior no test in this repository can see; if the host renamed or
+# dropped the event this case would stay green, and that is the documented
+# limit of the coverage, not a claim about it. The evidence that it does
+# fire is first-hand: an in-tree plugin worktree re-published its
+# capability bundle on a gsd-executor subagent spawn -- the incident
+# tests/test-capability-auto-install.sh's I0 comment means by "has happened
+# on this project" when it says the leak it guards against has happened
+# here. No alternative event name has any evidence behind it, so none is
+# asserted.
+HOOKS_CHECK="$(python3 - "$REPO_ROOT" <<'PY'
+import json, os, re, sys
+
+repo_root = sys.argv[1]
+hooks_path = os.path.join(repo_root, "hooks", "hooks.json")
+lines = []
+
+
+def report(ok, msg):
+    lines.append(("PASS" if ok else "FAIL") + ": " + msg)
+
+
+try:
+    with open(hooks_path, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+except Exception as exc:
+    print("FAIL: case8: hooks.json does not parse as JSON (%s)" % exc)
+    sys.exit(0)
+report(True, "case8: hooks.json parses as JSON")
+
+hooks = manifest.get("hooks", {})
+subagent_start = hooks.get("SubagentStart", [])
+matchers = [entry.get("matcher") for entry in subagent_start]
+expected = {"gsd-planner", "gsd-executor", "gsd-verifier"}
+report(
+    len(subagent_start) == 3 and set(matchers) == expected,
+    "case8: SubagentStart holds exactly the three gsd- matchers (got %r)" % (matchers,),
+)
+
+roles = {}
+role_ok = True
+for entry in subagent_start:
+    matcher = entry.get("matcher", "")
+    role = matcher[len("gsd-"):] if matcher.startswith("gsd-") else None
+    entry_hooks = entry.get("hooks", [])
+    command = entry_hooks[0].get("command", "") if len(entry_hooks) == 1 else None
+    ok = (
+        role is not None
+        and len(entry_hooks) == 1
+        and entry_hooks[0].get("type") == "command"
+        and command is not None
+        and '${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh' in command
+        and command.rstrip().endswith(role)
+    )
+    role_ok = role_ok and ok
+    if role:
+        roles[role] = ok
+report(
+    role_ok,
+    "case8: each SubagentStart entry invokes session-start.sh with its own gsd- suffix as the role token",
+)
+
+session_start = hooks.get("SessionStart", [])
+session_matcher_ok = (
+    len(session_start) == 1
+    and session_start[0].get("matcher") == "startup|resume|clear|compact"
+)
+report(session_matcher_ok, "case8: SessionStart's matcher still reads startup|resume|clear|compact")
+
+command_re = re.compile(r'\$\{CLAUDE_PLUGIN_ROOT\}/([^"\s]+)')
+all_scripts_exist = True
+for point_entries in hooks.values():
+    for entry in point_entries:
+        for hook in entry.get("hooks", []):
+            for m in command_re.finditer(hook.get("command", "")):
+                script_path = os.path.join(repo_root, m.group(1))
+                if not os.path.isfile(script_path):
+                    all_scripts_exist = False
+report(
+    all_scripts_exist,
+    "case8: every ${CLAUDE_PLUGIN_ROOT}-relative script the manifest names exists under REPO_ROOT",
+)
+
+for expected_role in ("planner", "executor", "verifier"):
+    if expected_role not in roles:
+        report(False, "case8: manifest has no gsd-%s entry to exercise" % expected_role)
+
+print("\n".join(lines))
+print("ROLES=" + ",".join(sorted(roles)))
+PY
+)"
+echo "$HOOKS_CHECK" | grep -q '^ROLES=' || fail "case8: role extraction from the manifest failed"
+MANIFEST_ROLES="$(echo "$HOOKS_CHECK" | sed -n 's/^ROLES=//p')"
+while IFS= read -r line; do
+  case "$line" in
+    PASS:*) pass "${line#PASS: }" ;;
+    FAIL:*) fail "${line#FAIL: }" ;;
+  esac
+done < <(echo "$HOOKS_CHECK" | grep -E '^(PASS|FAIL):')
+
+if [ -n "$MANIFEST_ROLES" ]; then
+  IFS=',' read -r -a ROLE_ARR <<< "$MANIFEST_ROLES"
+  for role in "${ROLE_ARR[@]}"; do
+    mk_scratch '{"sota-numerics": {"enabled": true}}'
+    OUT="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "$role")"
+    run_and_cleanup
+    case "$role" in
+      planner)
+        echo "$OUT" | grep -q 'ranked criterion' || fail "case8: manifest's planner token did not produce the planner framing"
+        echo "$OUT" | grep -q 'blocking plan:post gate' || fail "case8: manifest's planner token did not qualify the blocking gate"
+        ;;
+      executor)
+        echo "$OUT" | grep -q 'avoid cancellation' || fail "case8: manifest's executor token did not produce the executor framing"
+        ;;
+      verifier)
+        echo "$OUT" | grep -q 'not blockers' || fail "case8: manifest's verifier token did not produce the verifier framing"
+        ;;
+      *)
+        fail "case8: manifest named an unrecognized role '$role'"
+        ;;
+    esac
+  done
+  pass "case8: hooks.json's manifest role tokens each reproduce their cases-3a-3c banner"
+fi
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
