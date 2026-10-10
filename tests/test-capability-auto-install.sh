@@ -879,9 +879,13 @@ fi
 new_sandbox i11
 mkdir -p "$SB/home/.gsd"
 mkfifo "$(sidecar)"
+# Bounded without `timeout`, which stock macOS lacks.
 ( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
   GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" CLAUDE_PLUGIN_ROOT="$ROOT" \
-  timeout -k 2 10 bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err"
+  bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err" &
+i11_pid=$!
+for _ in $(seq 100); do kill -0 "$i11_pid" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$i11_pid" 2>/dev/null; then kill -9 "$i11_pid" 2>/dev/null; wait "$i11_pid" 2>/dev/null; false; else wait "$i11_pid"; fi
 [ "$?" -eq 0 ] || fail "I11: a FIFO at the sidecar path hung or broke the hook"
 [ "$(installs)" = 1 ] || fail "I11: a FIFO sidecar should read as no recorded hash and install ($(installs) installs)"
 pass "I11: a FIFO at the sidecar path is read as no recorded hash"
