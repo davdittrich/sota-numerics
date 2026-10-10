@@ -1918,6 +1918,19 @@ class TestSectionHeadingIndent(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
 
 
+class TestListMarkers(unittest.TestCase):
+    def test_plus_and_ordered_markers_are_alternatives(self):
+        for a, b in (("+", "+"), ("1.", "2."), ("1)", "2)")):
+            with self.subTest(marker=a):
+                result = run_plan(
+                    "## Alternatives Considered\n\n"
+                    f"{a} **Redis**: `https://redis.io/docs/` ({TODAY_YEAR}).\n"
+                    f"{b} **Memcached**: `https://memcached.org/docs/` ({TODAY_YEAR}).\n\n"
+                    "Decided by: performance — Redis.\n"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:

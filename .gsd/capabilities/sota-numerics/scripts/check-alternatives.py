@@ -131,7 +131,7 @@ EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IG
 # Indentation bounded to CommonMark's zero-to-three-space top-level range
 # (D-03, REVIEW-CRITICAL-FINAL P1-1(b), gsd-beads-25vc.6) -- pinned by
 # TestBulletIndentationBound.
-BULLET_RE = re.compile(r"^[ \t]{0,3}[-*][ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
+BULLET_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
     r"^[ \t]{0,3}\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
 )
