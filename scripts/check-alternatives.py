@@ -108,7 +108,7 @@ SYMLINK_PLAN_REASON = (
 # PLAN.md body can trigger catastrophic regex backtracking (ReDoS). The H3
 # heading scan below is intentionally uncapped but still linear.
 SECTION_HEADING_RE = re.compile(
-    r"^[ \t]{0,3}##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
+    r"^[ \t]{0,3}##[ \t]+(?:\d+(?:\.\d+)*[.)]?[ \t]+)?(?:\*\*|__)?Alternatives[ \t]+Considered(?![^\W_])[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 # H1/H2 end the section (fail-closed: bounding early only shrinks the body).
 # H3 stays inside it (`### Internal design alternatives`) -- pinned by
@@ -142,21 +142,21 @@ TABLE_ROW_RE = re.compile(
     r"^[ \t]{0,3}\|[^\n]{0,500}?" + STRONG + r"[^\n]{0,500}\|[ \t]*$", re.MULTILINE
 )
 TABLE_SEPARATOR_RE = re.compile(
-    r"[ \t]*\|?[ \t]*:?-{3,}:?(?:[ \t]*\|[ \t]*:?-{3,}:?)*[ \t]*\|?[ \t]*"
+    r"[ \t]*\|?[ \t]*:?-+:?(?:[ \t]*\|[ \t]*:?-+:?)*[ \t]*\|?[ \t]*"
 )
 URL_RE = re.compile(r"https?://[^\s)>\]]{1,300}")
 DOC_REF_RE = re.compile(r"`[^`\n]{1,300}`")
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 DECIDED_BY_RE = re.compile(
-    r"(?:^|\n)[ \t]*[-*]?[ \t]*\*{0,2}Decided by:\*{0,2}[ \t]*\*{0,2}"
-    r"(?:performance|simplicity|LOC|ecosystem|maintenance)\b",
+    r"(?:^|\n)[ \t]*[-+*]?[ \t]*[*_]{0,2}Decided by[*_]{0,2}:[*_]{0,2}[ \t]*[*_]{0,2}"
+    r"(?:performance|simplicity|LOC|ecosystem|maintenance)(?![^\W_])",
     re.IGNORECASE,
 )
 # Where a bullet entry stops short of the next bullet: a `Decided by:` line,
 # or a blank line followed by a non-indented non-bullet line -- a trailing
 # paragraph whose URL/year are not the last entry's citation.
 ENTRY_END_RE = re.compile(
-    r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)"
+    r"\n(?=[ \t]*[-+*]?[ \t]*[*_]{0,2}Decided by[*_]{0,2}:)"
     r"|\n[ \t]*\n(?=(?![-+*][ \t]|\d{1,9}[.)][ \t])\S)",
     re.IGNORECASE,
 )

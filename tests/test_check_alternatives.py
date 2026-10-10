@@ -2106,5 +2106,42 @@ class TestEntryDating(GateCase):
                   "alternative 'Other'", "missing URL or doc-ref citation")
 
 
+class TestCompliantFormsAccepted(GateCase):
+    def test_table_separator_with_single_hyphens(self):
+        self.gate(f"{_H}\n| Mechanism | Evidence |\n|-|-|\n"
+                  f"| **Redis** | `https://redis.io/docs/` ({TODAY_YEAR}) |\n"
+                  f"| **Memcached** | `https://memcached.org/docs/` ({TODAY_YEAR}) |\n\n{_D}", 0)
+
+    def test_plus_marker_decided_by(self):
+        self.gate(f"{_H}\n{_A}{_B}\n+ {_D}", 0)
+
+    def test_underscore_emphasis_in_names_and_criterion(self):
+        self.gate(f"{_H}\n{_entry('__Redis__')}{_entry('__Memcached__', f'https://memcached.org/ ({TODAY_YEAR}).')}\n"
+                  "Decided by: _performance_\n", 0)
+        self.gate(f"{_H}\n{_A}{_B}\n_Decided by_: __performance__\n", 0)
+
+    def test_section_heading_variants(self):
+        for heading in (
+            "## 3. Alternatives Considered",
+            "## 3) Alternatives Considered",
+            "## **Alternatives Considered**",
+            "## __Alternatives Considered__",
+            "##  Alternatives Considered",
+            "## Alternatives  Considered",
+            "## Alternatives Considered ##",
+        ):
+            with self.subTest(heading=heading):
+                self.gate(f"{heading}\n\n{_A}{_B}\n{_D}", 0)
+
+    def test_setext_section_heading_is_unsupported(self):
+        self.gate(f"Alternatives Considered\n-----------------------\n\n{_A}{_B}\n{_D}", 1, "missing")
+
+    def test_internal_heading_with_up_to_three_spaces(self):
+        for indent in ("", " ", "   "):
+            with self.subTest(indent=len(indent)):
+                self.gate(f"{_H}\n{_A}{_B}\n{indent}### Internal design alternatives\n\n"
+                          f"- **Local**: no citation.\n\n{_D}", 0)
+
+
 if __name__ == "__main__":
     unittest.main()
