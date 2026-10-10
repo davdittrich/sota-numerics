@@ -805,11 +805,13 @@ def validate_entry(name, entry_text, today_year):
     if not cited(entry_text):
         issues.append("missing URL or doc-ref citation")
     # A year dates the citation only when it sits in the citation's own clause.
+    # Digits inside the URL or doc-ref themselves (an issue number, a version) are
+    # not a date.
     years = [
         int(m.group(0))
         for clause in CLAUSE_SPLIT_RE.split(entry_text)
         if cited(clause)
-        for m in YEAR_RE.finditer(clause)
+        for m in YEAR_RE.finditer(DOC_REF_RE.sub(" ", URL_RE.sub(" ", clause)))
     ]
     if not years:
         issues.append("no citation date")

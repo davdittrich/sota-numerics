@@ -1742,8 +1742,8 @@ class TestFoundationalCitationPairing(GateCase):
         at-least-one-in-window rule against an "any out-of-window year" regression."""
         text = (
             "## Alternatives Considered\n\n"
-            "- **Kahan summation**: `Kahan 1965 Communications of the ACM`, no in-window year.\n"
-            "- **IEEE 754**: `IEEE 754-1985`, no in-window year.\n\n"
+            "- **Kahan summation**: Kahan 1965, `Communications of the ACM`, no in-window year.\n"
+            "- **IEEE 754**: IEEE 754-1985 `IEEE Std 754`, no in-window year.\n\n"
             "Decided by: performance — standard-library default path.\n"
         )
         self.gate(text, 1, "1965", "no citation dated within the last")
@@ -1959,6 +1959,18 @@ class TestEntryNameIdentity(GateCase):
         for name in ("**QR **", "** QR**"):
             with self.subTest(name=name):
                 self.gate(f"{_H}\n{_A}{_entry(name)}\n{_D}", 1, self.ONE)
+
+
+class TestYearOutsideCitationText(GateCase):
+    def test_digits_inside_a_url_or_doc_ref_are_not_a_date(self):
+        for cite in (
+            "https://github.com/numpy/numpy/issues/2024",
+            f"https://example.net/v/{TODAY_YEAR}/x".replace("example.net", "numpy.org"),
+            f"`numpy-{TODAY_YEAR}.pdf`",
+        ):
+            with self.subTest(cite=cite):
+                self.gate(f"{_H}\n{_A}- **Other**: see {cite}\n\n{_D}", 1,
+                          "alternative 'Other'", "no citation date")
 
 
 if __name__ == "__main__":
