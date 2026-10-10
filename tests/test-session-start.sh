@@ -464,6 +464,18 @@ case "$OUT13" in "SOTA-NUMERICS"*) ;; *) fail "case13: SessionStart output is no
 run_and_cleanup
 pass "case13: role invocations emit additionalContext JSON; SessionStart stays plain"
 
+# --- Case 14 (F21b): config-get failing inside a GSD project disables the banner and says why ---
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_failing_tools 3
+mk_stub_root 0
+ERR14="$(CLAUDE_PLUGIN_ROOT="$STUB_ROOT" PATH="$FAIL_DIR:$PATH" bash "$STUB_ROOT/hooks/session-start.sh" 2>&1 >"$SCRATCH/out14")"
+OUT14="$(cat "$SCRATCH/out14")"
+rm -rf "$FAIL_DIR"
+run_and_cleanup
+[ -z "$OUT14" ] || fail "case14: banner printed despite a failing config-get: $OUT14"
+echo "$ERR14" | grep -qF 'config-get sota-numerics.enabled failed (exit 3)' || fail "case14: stderr does not name the failure (got: $ERR14)"
+pass "case14: config-get exit 3 suppresses the banner and reports on stderr"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
