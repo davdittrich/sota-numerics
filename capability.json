@@ -1,7 +1,7 @@
 {
   "id": "sota-numerics",
   "role": "feature",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "title": "SOTA/efficiency/numerical-stability steering",
   "description": "Advisory steering across gsd's plan/execute/verify/ship lifecycle toward SOTA numerics: internally consistent and project-consistent, unambiguous, complete, efficient, quiet-running, agent-facing code -- plus the single blocking plan:post gate that mechanically enforces a compliant Alternatives Considered section on every plan in a phase.",
   "tier": "full",

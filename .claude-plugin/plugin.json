@@ -1,6 +1,6 @@
 {
   "name": "sota-numerics",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Makes GSD compare mechanisms before execution and keeps numerical precision and measured performance visible through shipping: four advisory prompts, plus a blocking plan:post gate that requires a compliant Alternatives Considered section on every plan in a phase.",
   "author": {
     "name": "Dennis A. V. Dittrich",
