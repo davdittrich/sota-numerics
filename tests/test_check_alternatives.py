@@ -1885,6 +1885,21 @@ class TestMisnamedPlans(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
 
+class TestBom(unittest.TestCase):
+    def test_bom_plan_with_heading_on_first_line_passes(self):
+        result = run_plan("\ufeff" + fixture_text("plan-compliant.md"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bom_does_not_unmask_heading_inside_frontmatter(self):
+        text = (
+            "\ufeff---\nphase: 1\n## Alternatives Considered\n---\n\n"
+            "# Plan\n"
+        )
+        result = run_plan(text)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("missing '## Alternatives Considered'", result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:

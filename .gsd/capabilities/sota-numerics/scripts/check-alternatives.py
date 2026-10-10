@@ -323,7 +323,7 @@ def resolve_current_phase_dir(start):
     root = find_project_root(start)
     state_path = root / ".planning" / "STATE.md"
     try:
-        state_text = state_path.read_text(encoding="utf-8")
+        state_text = state_path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise ValueError(
             f"cannot read {state_path} to resolve the current phase ({exc.strerror})"
@@ -833,7 +833,7 @@ def validate_plan(path):
     the file).
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError as exc:
         # Name the file and the remedy. UnicodeDecodeError subclasses
         # ValueError, so main() already exits 2 here -- but it printed only the
