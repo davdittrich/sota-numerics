@@ -259,7 +259,7 @@ esac
 rm -rf "$P4"
 pass "case5: project copy precedes global scope in monorepo, non-Git, and absent-copy shapes"
 
-# --- Case 7 (F6a): global copy wins when its version >= the project copy's; python runs isolated ---
+# --- Case 7 (F6a, R-B): global copy wins only when its version is strictly newer than the project copy's; python runs isolated ---
 # A project-local script shadowing the global one is a hostile-repo vector, so the
 # global copy is preferred unless it is verifiably older. Versions come from each
 # bundle's capability.json; an unreadable version keeps the project copy (case 5).
@@ -279,11 +279,12 @@ mk7 "$P7/home" 0.2.1 "$REAL7"
 [ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a project copy shadowed a newer global copy"; }
 mk7 "$P7/home" 0.2.0 "$REAL7"
 ( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a project copy shadowed an equal-version global copy"; }
+[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an equal-version global copy overrode the project copy (an unbumped dev edit must win)"; }
+rm -f "$CANARY7"
 mk7 "$P7/home" 0.1.0 "$REAL7"
 ( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
 [ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an older global copy overrode the project copy"; }
-pass "case7: global copy preferred when version >= project copy, project copy otherwise"
+pass "case7: global copy preferred only when strictly newer than the project copy, project copy otherwise"
 rm -rf "$P7"
 
 P7="$(mktemp -d)"; CANARY7="$P7/canary"
