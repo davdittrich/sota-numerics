@@ -284,6 +284,16 @@ rm -f "$CANARY7"
 mk7 "$P7/home" 0.1.0 "$REAL7"
 ( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
 [ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an older global copy overrode the project copy"; }
+# R-C: a suffixed version ranks below the same numbers without one.
+rm -f "$CANARY7"
+mk7 "$P7/proj" 0.3.0-rc1 "$P7/hostile.py"
+mk7 "$P7/home" 0.3.0 "$REAL7"
+( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a 0.3.0-rc1 project copy shadowed the 0.3.0 global release"; }
+mk7 "$P7/proj" 0.3.0 "$P7/hostile.py"
+mk7 "$P7/home" 0.3.0-rc1 "$REAL7"
+( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a 0.3.0-rc1 global prerelease overrode the 0.3.0 project release"; }
 pass "case7: global copy preferred only when strictly newer than the project copy, project copy otherwise"
 rm -rf "$P7"
 
