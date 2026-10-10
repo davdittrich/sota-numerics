@@ -1925,5 +1925,41 @@ class TestViolationLineShape(GateCase):
         self.assertRegex(result.stderr, r"01-02-PLAN\.md:\d+:")
 
 
+# Compact entry fragments shared by the gate-hardening cases below.
+_A = f"- **Householder QR**: stable. https://numpy.org/doc/stable/ ({TODAY_YEAR}).\n"
+_B = f"- **Pivoted LU**: fast. https://docs.scipy.org/doc/ ({TODAY_YEAR}).\n"
+_D = "Decided by: performance\n"
+_H = "## Alternatives Considered\n"
+
+
+def _entry(name, cite=f"https://numpy.org/doc/ ({TODAY_YEAR})."):
+    return f"- {name}: x. {cite}\n"
+
+
+class TestEntryNameIdentity(GateCase):
+    ONE = "fewer than 2 named alternatives (found 1)"
+
+    def test_lookalike_names_are_one_alternative(self):
+        for a, b in (
+            ("**QR:**", "**QR**:"),
+            ("**QR**", "**ＱＲ**"),
+            ("**QR**", "**Q​R**"),
+            ("**Straße**", "**STRASSE**"),
+            ("**QR**", "__QR__"),
+        ):
+            with self.subTest(a=a, b=b):
+                self.gate(f"{_H}\n{_entry(a)}{_entry(b)}\n{_D}", 1, self.ONE)
+
+    def test_a_name_with_no_letter_or_digit_is_not_an_alternative(self):
+        for name in ("**​**", "**::**", "**-**"):
+            with self.subTest(name=name):
+                self.gate(f"{_H}\n{_A}{_entry(name)}\n{_D}", 1, self.ONE)
+
+    def test_bold_must_be_strong_emphasis(self):
+        for name in ("**QR **", "** QR**"):
+            with self.subTest(name=name):
+                self.gate(f"{_H}\n{_A}{_entry(name)}\n{_D}", 1, self.ONE)
+
+
 if __name__ == "__main__":
     unittest.main()

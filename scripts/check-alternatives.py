@@ -37,6 +37,7 @@ import argparse
 import datetime
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -129,9 +130,12 @@ INTERNAL_HEADING_RE = re.compile(
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
 # Indentation bounded to CommonMark's zero-to-three-space top-level range
 # -- pinned by TestBulletIndentationBound.
-BULLET_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
+# A bold name is CommonMark strong emphasis: no whitespace just inside the
+# delimiters. `__Name__` is the same construct; the name is group 1 or 2.
+STRONG = r"(?:\*\*(\S(?:.{0,198}?\S)?)\*\*|__(\S(?:.{0,198}?\S)?)__)"
+BULLET_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+" + STRONG, re.MULTILINE)
 TABLE_ROW_RE = re.compile(
-    r"^[ \t]{0,3}\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
+    r"^[ \t]{0,3}\|[^\n]{0,500}?" + STRONG + r"[^\n]{0,500}\|[ \t]*$", re.MULTILINE
 )
 TABLE_SEPARATOR_RE = re.compile(
     r"[ \t]*\|?[ \t]*:?-{3,}:?(?:[ \t]*\|[ \t]*:?-{3,}:?)*[ \t]*\|?[ \t]*"
@@ -717,8 +721,9 @@ def split_entries(body):
         stop = ENTRY_END_RE.search(body, match.end(), end)
         if stop:
             end = stop.start()
-        name = match.group(1).strip()
-        if name.rstrip(":").strip().lower() in RESERVED_LABELS:
+        name = (match.group(1) or match.group(2)).strip()
+        key = name_key(name)
+        if key in RESERVED_LABELS or not any(c.isalnum() for c in key):
             continue
         bullet_entries.append((name, body[match.start():end], internal, match.start()))
     mechanism_bullets = [entry for entry in bullet_entries if not entry[2]]
@@ -748,15 +753,24 @@ def split_entries(body):
             if not (row.strip().startswith("|") and row.strip().endswith("|")):
                 break
             m = TABLE_ROW_RE.fullmatch(row)
-            if m:
+            if m and any(c.isalnum() for c in name_key(m.group(1) or m.group(2))):
                 while (
                     transition_i < len(transitions)
                     and transitions[transition_i][0] < line_starts[row_i]
                 ):
                     internal = transitions[transition_i][1]
                     transition_i += 1
-                entries.append((m.group(1).strip(), row, internal, line_starts[row_i]))
+                entries.append(((m.group(1) or m.group(2)).strip(), row, internal, line_starts[row_i]))
     return entries or bullet_entries
+
+
+def name_key(name):
+    """Identity of an alternative's name: NFKC, format characters removed,
+    case-folded, trailing colon dropped -- `**QR:**` and `**QR**:` agree."""
+    folded = "".join(
+        c for c in unicodedata.normalize("NFKC", name) if unicodedata.category(c) != "Cf"
+    ).casefold()
+    return folded.strip().rstrip(":").strip()
 
 
 def entry_placeholder_violation(entry_text):
@@ -874,7 +888,7 @@ def validate_plan(path):
         for name, entry_text, internal, offset in entries
         if not internal
     ]
-    distinct = {name.lower() for name, _, _ in mechanism_entries}
+    distinct = {name_key(name) for name, _, _ in mechanism_entries}
     if len(distinct) < MIN_ALTERNATIVES:
         return [(
             heading_line,
