@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Gate:
+- Security: the gate no longer runs a project-scope `check-alternatives.py` when a global install exists. If `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/capability.json` exists, the gate runs the global script and blocks if it is missing; the project copy runs only without a global manifest. A repository could previously ship a copy claiming a higher version, and the blocking gate passed while running its code. The version comparison is removed.
+- The not-found message names `--scope global` in its install hint.
+- Shortcut: a development checkout with a newer project copy loses to a stale global install; reinstall globally to test it, until gsd exposes a consent-bound project-scope path.
+
 ## 0.2.1 (2026-10-10)
 
 Gate:

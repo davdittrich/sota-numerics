@@ -71,6 +71,9 @@ FAKE_HOME="$(mktemp -d)"
 mkdir -p "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts"
 cp "$REPO_ROOT/scripts/check-alternatives.py" \
   "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+# A real global install always carries its manifest, and the gate keys global
+# scope on that manifest (see case 7), so the fixture carries it too.
+cp "$REPO_ROOT/capability.json" "$FAKE_HOME/.gsd/capabilities/sota-numerics/capability.json"
 
 ( cd "$SCRATCH" && GSD_HOME="$FAKE_HOME" bash -c "$GATE_CMD" )
 STATUS=$?
@@ -223,44 +226,56 @@ rc=0
 rm -rf "$H"
 pass "case4: an unresolvable or ambiguous current_phase blocks (exit 2), never passes"
 
-# --- Case 5: the project copy wins, in every project shape ---
-# The chain used `git rev-parse --show-toplevel` FIRST, so a non-Git project
-# resolved to "/.gsd/..." and silently fell through to the global copy, and a
-# project nested inside a monorepo got the monorepo root rather than its own
-# bundle. Both violate the documented project-before-global precedence. Nothing
-# caught it because no fixture here was ever a Git repo or carried a project
-# copy -- the whole first clause was dead under test.
+# --- Case 5: scope resolution is keyed on the GLOBAL MANIFEST, in every
+# project shape ---
+# SECURITY: a project-scope copy must never outrank a global install. Earlier
+# revisions ran the project copy first (and later whenever its capability.json
+# version was >= the global one), so a hostile repository could drop
+# .gsd/capabilities/sota-numerics/ with version 99.0.0 and the blocking gate
+# would PASS while running its code. gsd-core itself treats a repo-dropped
+# project capability as untrusted until consented (#1459); the gate's direct
+# path exec must not bypass that. Do not restore project-first precedence or a
+# version comparison here.
+# The project copy is used only when no global manifest exists: then any gate
+# that runs came from the repository's own manifest, which the repository
+# already controls. Also pinned: no `git rev-parse` rung, so a non-Git or
+# monorepo-nested project still resolves its own copy.
 CHAIN="${GATE_CMD%%test -f*}"
 resolve_in() {  # $1=cwd  $2=fake HOME
   ( cd "$1" && HOME="$2" env -u GSD_HOME bash -c "$CHAIN"' printf "%s\n" "$SOTA_SCRIPT"' )
 }
 REL=".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+CJ=".gsd/capabilities/sota-numerics/capability.json"
 P4="$(mktemp -d)"
 mkdir -p "$P4/home/$(dirname "$REL")"; : > "$P4/home/$REL"
 mkdir -p "$P4/mono/project/$(dirname "$REL")"; : > "$P4/mono/project/$REL"
 git init -q "$P4/mono" 2>/dev/null
 mkdir -p "$P4/plain/$(dirname "$REL")"; : > "$P4/plain/$REL"
-mkdir -p "$P4/none"
 
+# No global manifest (a stray global script alone is not an install): project copy.
 case "$(resolve_in "$P4/mono/project" "$P4/home")" in
   ./"$REL") : ;;
-  *) rm -rf "$P4"; fail "case5: a project nested in a monorepo did not use its own bundle" ;;
+  *) rm -rf "$P4"; fail "case5: a project nested in a monorepo without a global install did not use its own bundle" ;;
 esac
 case "$(resolve_in "$P4/plain" "$P4/home")" in
   ./"$REL") : ;;
-  *) rm -rf "$P4"; fail "case5: a non-Git project did not use its own bundle" ;;
+  *) rm -rf "$P4"; fail "case5: a non-Git project without a global install did not use its own bundle" ;;
 esac
-case "$(resolve_in "$P4/none" "$P4/home")" in
+# Global manifest present: global copy, even though a project copy exists.
+: > "$P4/home/$CJ"
+case "$(resolve_in "$P4/mono/project" "$P4/home")" in
   "$P4/home/$REL") : ;;
-  *) rm -rf "$P4"; fail "case5: a project with no copy did not fall back to global scope" ;;
+  *) rm -rf "$P4"; fail "case5: a monorepo project copy outranked the global install" ;;
+esac
+case "$(resolve_in "$P4/plain" "$P4/home")" in
+  "$P4/home/$REL") : ;;
+  *) rm -rf "$P4"; fail "case5: a non-Git project copy outranked the global install" ;;
 esac
 rm -rf "$P4"
-pass "case5: project copy precedes global scope in monorepo, non-Git, and absent-copy shapes"
+pass "case5: global manifest selects global scope; project copy only without one (monorepo and non-Git)"
 
-# --- Case 7: global copy wins only when its version is strictly newer than the project copy's; python runs isolated ---
-# A project-local script shadowing the global one is a hostile-repo vector, so the
-# global copy is preferred unless it is verifiably older. Versions come from each
-# bundle's capability.json; an unreadable version keeps the project copy (case 5).
+# --- Case 7: hostile project copy vs. global install; python runs isolated ---
+# Same SECURITY rule as case 5, exercised end to end through the real command.
 REL7=".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
 CJ7=".gsd/capabilities/sota-numerics/capability.json"
 mk7() {  # $1=cwd root $2=version $3=script source file
@@ -268,31 +283,49 @@ mk7() {  # $1=cwd root $2=version $3=script source file
   cp "$3" "$1/$REL7"; printf '{"id":"sota-numerics","version":"%s"}\n' "$2" > "$1/$CJ7"
 }
 P7="$(mktemp -d)"; CANARY7="$P7/canary"
-printf 'import sys\nopen(r"%s", "w").write("local")\nsys.exit(0)\n' "$CANARY7" > "$P7/hostile.py"
+# The hostile script leaves evidence and exits 3, so "the gate exits as the
+# script does" is distinguishable from the checker's own 0/1/2.
+printf 'import sys\nopen(r"%s", "w").write("local")\nsys.exit(3)\n' "$CANARY7" > "$P7/hostile.py"
 REAL7="$REPO_ROOT/scripts/check-alternatives.py"
 make_project "$P7/proj" "11-plain" "11"
-mk7 "$P7/proj" 0.2.0 "$P7/hostile.py"
+
+# 7a: hostile project copy claiming version 99.0.0 + global install -> global runs.
+mk7 "$P7/proj" 99.0.0 "$P7/hostile.py"
 mk7 "$P7/home" 0.2.1 "$REAL7"
 ( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a project copy shadowed a newer global copy"; }
-mk7 "$P7/home" 0.2.0 "$REAL7"
-( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an equal-version global copy overrode the project copy (an unbumped dev edit must win)"; }
+rc=$?
+[ ! -e "$CANARY7" ] || fail "case7a: a version-99 project copy ran instead of the global install"
+[ "$rc" -eq 0 ] || fail "case7a: the global checker did not pass the compliant plan (exit $rc)"
 rm -f "$CANARY7"
-mk7 "$P7/home" 0.1.0 "$REAL7"
-( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an older global copy overrode the project copy"; }
-# R-C: a suffixed version ranks below the same numbers without one.
+pass "case7a: a hostile version-99 project copy never outranks the global install"
+
+# 7b: project-only (no global manifest) -> project script runs, gate exits as it does.
+( cd "$P7/proj" && GSD_HOME="$P7/nohome" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+rc=$?
+[ -e "$CANARY7" ] || fail "case7b: a project-only install did not run the project script"
+[ "$rc" -eq 3 ] || fail "case7b: the gate did not exit as the project script did (exit $rc, want 3)"
 rm -f "$CANARY7"
-mk7 "$P7/proj" 0.3.0-rc1 "$P7/hostile.py"
-mk7 "$P7/home" 0.3.0 "$REAL7"
-( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a 0.3.0-rc1 project copy shadowed the 0.3.0 global release"; }
-mk7 "$P7/proj" 0.3.0 "$P7/hostile.py"
-mk7 "$P7/home" 0.3.0-rc1 "$REAL7"
-( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
-[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a 0.3.0-rc1 global prerelease overrode the 0.3.0 project release"; }
-pass "case7: global copy preferred only when strictly newer than the project copy, project copy otherwise"
+pass "case7b: project-only install runs the project script and propagates its exit"
+
+# 7c: global manifest present, global script deleted -> block, never fall through.
+rm -f "$P7/home/$REL7"
+ERR7C="$( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" 2>&1 >/dev/null )"
+rc=$?
+[ ! -e "$CANARY7" ] || fail "case7c: a missing global script fell through to the project copy"
+[ "$rc" -ne 0 ] || fail "case7c: a global manifest without its script did not block"
+echo "$ERR7C" | grep -q "gate script not found" || fail "case7c: missing not-found message"
+rm -f "$CANARY7"
+pass "case7c: global manifest without its script blocks, project copy never runs"
+
+# 7d: neither scope -> not-found block naming a global-scope install.
+P7E="$(mktemp -d)"
+ERR7D="$( cd "$P7E" && GSD_HOME="$P7/nohome" sh -c "$GATE_CMD" 2>&1 >/dev/null )"
+rc=$?
+rm -rf "$P7E"
+[ "$rc" -eq 1 ] || fail "case7d: no install at either scope did not exit 1 (exit $rc)"
+echo "$ERR7D" | grep -q "gate script not found at project or global scope" || fail "case7d: missing not-found message"
+echo "$ERR7D" | grep -q -- "--scope global" || fail "case7d: message does not name --scope global"
+pass "case7d: no install at either scope blocks with the not-found message"
 rm -rf "$P7"
 
 P7="$(mktemp -d)"; CANARY7="$P7/canary"

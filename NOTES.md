@@ -23,12 +23,13 @@ which "is always `blocking: false`" — this capability is the first to actually
 ## 3. Script path resolution and the missing-script guard
 
 Write `_SN` for `.gsd/capabilities/sota-numerics`. The gate
-command tries two paths in order: `./$_SN`, then `${GSD_HOME:-$HOME}/$_SN`. gsd-core runs the
-check command at the runtime project root with the parent process's environment inherited, so
-the first rung reaches the project copy with no Git at all, and the second resolves a
-global-scope-only install. `README.md` lists the two locations and the version rule: the global copy runs only
-when its `capability.json` version is strictly higher (release above prerelease), so the
-project copy wins at equal versions.
+command keys on the global manifest: if `${GSD_HOME:-$HOME}/$_SN/capability.json` exists it
+runs the global script and blocks if that script is missing; otherwise it runs `./$_SN`'s
+script. gsd-core runs the check command at the runtime project root with the parent process's
+environment inherited, so the project rung needs no Git at all. The version comparison that
+used to let a project copy with an equal or higher `capability.json` version outrank the
+global one is gone: a hostile repository could claim version 99.0.0 and the blocking gate
+passed while running its code.
 
 A third rung used to sit between these two, asking Git for the top level of the repository
 enclosing the working directory and appending the script path to it, meant to widen the
@@ -39,7 +40,7 @@ planted at the top of that enclosing repository would run in the project's place
 `tests/test-gate-script-resolution.sh` pins a repository enclosing the working directory,
 carrying a hostile copy at the same relative path, and proves the gate never reaches it.
 
-The project rung runs `./.gsd/capabilities/sota-numerics/scripts/check-alternatives.py` from the project at `plan:post`. A repository you do not trust can supply that script and a high `capability.json` version, so the gate runs its code. The trust boundary is the project's own code, the same as any project command gsd runs. To prefer the global copy, remove the project copy.
+The project rung runs `./.gsd/capabilities/sota-numerics/scripts/check-alternatives.py` only when no global install exists. In that case any gate that runs at all came from the repository's own manifest, which the repository already controls, so the project script adds no new trust. With a global install present, gsd-core's own rule applies: a repo-dropped project capability is untrusted until consented (#1459), and the gate's direct script path does not bypass that.
 
 `${CLAUDE_PLUGIN_ROOT}` is used at no rung: it is a variable this capability does not set, so
 it would leave the lookup dependent on the host, where the project root is an anchor gsd-core

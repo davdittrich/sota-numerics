@@ -78,7 +78,7 @@
       "check": {
         "predicate": {
           "kind": "command-exit-zero",
-          "command": "_SN=.gsd/capabilities/sota-numerics; _G=\"${GSD_HOME:-$HOME}/$_SN\"; SOTA_SCRIPT=\"./$_SN/scripts/check-alternatives.py\"; if [ -f \"$SOTA_SCRIPT\" ]; then [ -f \"$_G/scripts/check-alternatives.py\" ] && python3 -I -c 'import json,re,sys; v=lambda p: (lambda m: tuple(map(int,m.groups()[:3]))+(m.group(4)==\"\",m.group(4)))(re.match(r\"(\\d+)\\.(\\d+)\\.(\\d+)(.*)\",json.load(open(p))[\"version\"])); sys.exit(0 if v(sys.argv[2])>v(sys.argv[1]) else 1)' \"./$_SN/capability.json\" \"$_G/capability.json\" 2>/dev/null && SOTA_SCRIPT=\"$_G/scripts/check-alternatives.py\"; else SOTA_SCRIPT=\"$_G/scripts/check-alternatives.py\"; fi; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install https://github.com/davdittrich/sota-numerics.git#<tag>' (or a local path to a checkout), or reopen the session to let the SessionStart auto-install run\" >&2; exit 1; }; python3 -I \"$SOTA_SCRIPT\"",
+          "command": "_SN=.gsd/capabilities/sota-numerics; _G=\"${GSD_HOME:-$HOME}/$_SN\"; if [ -f \"$_G/capability.json\" ]; then SOTA_SCRIPT=\"$_G/scripts/check-alternatives.py\"; else SOTA_SCRIPT=\"./$_SN/scripts/check-alternatives.py\"; fi; test -f \"$SOTA_SCRIPT\" || { echo \"sota-numerics: gate script not found at project or global scope -- run 'gsd capability install https://github.com/davdittrich/sota-numerics.git#<tag> --scope global' (or a local path to a checkout), or reopen the session to let the SessionStart auto-install run\" >&2; exit 1; }; python3 -I \"$SOTA_SCRIPT\"",
           "timeout": 30
         }
       },
