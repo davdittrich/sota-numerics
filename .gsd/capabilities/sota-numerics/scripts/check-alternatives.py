@@ -136,6 +136,9 @@ DECIDED_BY_RE = re.compile(
     r"(?:performance|simplicity|LOC|ecosystem|maintenance)",
     re.IGNORECASE,
 )
+# Where a bullet entry stops short of the next bullet: a `Decided by:` line,
+# whose URL/year are not the last entry's citation.
+ENTRY_END_RE = re.compile(r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)", re.IGNORECASE)
 HOST_RE = re.compile(r"^https?://([^/\s]{1,255})")
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
@@ -691,6 +694,9 @@ def split_entries(body):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
         if transition_i < len(transitions):
             end = min(end, transitions[transition_i][0])
+        stop = ENTRY_END_RE.search(body, match.end(), end)
+        if stop:
+            end = stop.start()
         bullet_entries.append(
             (match.group(1).strip(), body[match.start():end], internal, match.start())
         )

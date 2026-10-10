@@ -56,6 +56,13 @@ def run_check(phase_dir, cwd=None):
     )
 
 
+def run_plan(text, name="01-01-PLAN.md"):
+    """Write `text` as the only plan in a fresh phase dir and run the gate."""
+    with scratch_dir() as tmp:
+        write_plan(tmp, text, name)
+        return run_check(tmp)
+
+
 def write_plan(dir_path, text, name="01-01-PLAN.md"):
     """Write `text` under `dir_path` as a filename the discovery regex
     matches. The standalone tests/fixtures/plan-*.md files hold section
@@ -858,6 +865,21 @@ class TestDecidedBy(unittest.TestCase):
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1)
         self.assertIn("Decided by", result.stderr)
+
+
+class TestEntryBoundary(unittest.TestCase):
+    """An entry ends where its bullet does, not at the end of the section."""
+
+    def test_decided_by_url_year_is_not_the_last_entrys_citation(self):
+        text = (
+            "## Alternatives Considered\n\n"
+            f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+            "- **B**: no source here.\n\n"
+            f"Decided by: performance, see https://x.dev {TODAY_YEAR}\n"
+        )
+        result = run_plan(text)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("alternative 'B'", result.stderr)
 
 
 class TestMinimumCount(unittest.TestCase):
