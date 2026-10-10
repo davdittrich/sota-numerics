@@ -922,15 +922,15 @@ TIMEOUT_LOG="$SB/timeout-calls"
 : > "$TIMEOUT_LOG"
 cat > "$SB/bin/timeout" <<STUB
 #!/usr/bin/env bash
-printf '%s\n' "\$1" >> "$TIMEOUT_LOG"
+printf '%s\n' "\${*:1:3}" >> "$TIMEOUT_LOG"
 exit 124
 STUB
 chmod +x "$SB/bin/timeout"
 run_hook
 [ "$(wc -l < "$TIMEOUT_LOG" | tr -d ' ')" = 1 ] ||
   fail "L3: the timeout stub was not called exactly once"
-grep -qE '^[0-9]+$' "$TIMEOUT_LOG" ||
-  fail "L3: timeout was not called with a bare numeric bound (log: $(cat "$TIMEOUT_LOG"))"
+grep -qE '^-k [0-9]+ [0-9]+$' "$TIMEOUT_LOG" ||
+  fail "L3: timeout was not called with a kill grace (-k) and a numeric bound (log: $(cat "$TIMEOUT_LOG"))"
 [ "$(installs)" = 0 ] || fail "L3: the real install stub ran despite the timeout kill"
 err_has "exceeded" || fail "L3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "L3: a killed install wrote the sidecar"

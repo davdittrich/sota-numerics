@@ -285,14 +285,16 @@ fi
 # message below read this constant so the two cannot drift.
 INSTALL_TIMEOUT=60
 
+# -k 5: a child that ignores SIGTERM is SIGKILLed 5s later instead of hanging
+# the session.
 # `timeout` is coreutils and not POSIX -- macOS ships neither unless the user
 # installed coreutils, in which case it is named `gtimeout`. An empty
 # _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
 # host with neither.
 if command -v timeout >/dev/null 2>&1; then
-  _TIMEOUT=(timeout "$INSTALL_TIMEOUT")
+  _TIMEOUT=(timeout -k 5 "$INSTALL_TIMEOUT")
 elif command -v gtimeout >/dev/null 2>&1; then
-  _TIMEOUT=(gtimeout "$INSTALL_TIMEOUT")
+  _TIMEOUT=(gtimeout -k 5 "$INSTALL_TIMEOUT")
 else
   _TIMEOUT=()
 fi
