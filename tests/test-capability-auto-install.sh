@@ -109,7 +109,9 @@ CAP_ID="sota-numerics"
 # undoes, without which the sandbox cannot be removed on the way out.
 FAILURES=0
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
-pass() { echo "PASS: $1"; }
+# A PASS line only if no fail() ran since the previous pass/case boundary.
+_PASS_MARK=0
+pass() { [ "$FAILURES" -eq "$_PASS_MARK" ] && echo "PASS: $1"; _PASS_MARK=$FAILURES; }
 
 if command -v sha256sum >/dev/null 2>&1; then HASH_CMD=(sha256sum)
 elif command -v shasum >/dev/null 2>&1; then HASH_CMD=(shasum -a 256)
@@ -155,6 +157,10 @@ REAL_GSD_BEFORE="$(real_gsd_state)"
 # variable (which is exactly how a missing python3 used to skip it), or an
 # `exit` some future case adds mid-file. It also decides the suite's status, so
 # a leak is red even if every case passed.
+# Limit, stated rather than implied: I0 digests only the sota-numerics mirror and
+# its sidecar under the real GSD_HOME. A leak into any other path under the real
+# HOME (other ids, ~/.claude, ~/.gitconfig) is not detected; the sandbox HOME and
+# GIT_CONFIG_GLOBAL exports in new_sandbox are what keep those out.
 SANDBOX_ROOT="$(mktemp -d)"
 check_containment() {
   if [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ]; then
@@ -164,7 +170,7 @@ check_containment() {
   echo "FAIL: I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
   exit 1
 }
-trap '_rc=$?; rm -rf "$SANDBOX_ROOT" 2>/dev/null; check_containment "$_rc"' EXIT
+trap '_rc=$?; chmod -R u+rwX "$SANDBOX_ROOT" 2>/dev/null; rm -rf "$SANDBOX_ROOT" 2>/dev/null; check_containment "$_rc"' EXIT
 
 # TMPDIR decides where the sandbox lands, and a sandbox inside a checkout is not
 # a sandbox: the hook's git commands would discover that repository, which both
@@ -187,6 +193,9 @@ new_sandbox() {
   ROOT="$SB/${2:-root}"
   BUNDLE="$ROOT/.gsd/capabilities/$CAP_ID"
   PATH_OVERRIDE=""
+  # git_init commits and clones run in this shell: keep them off the developer's
+  # real HOME and global git config.
+  export HOME="$SB/home" GIT_CONFIG_GLOBAL=/dev/null
   mkdir -p "$BUNDLE/scripts" "$SB/home" "$SB/bin" "$ROOT/hooks"
   # A plugin root ships hooks/gsd-tools.sh next to the hook, and the hook
   # sources it for the gsd_tools resolver. A sandbox root without it is a shape
@@ -263,6 +272,12 @@ publish() {
   git -C "$1" push -q origin HEAD:refs/heads/main
   git -C "$1" fetch -q origin
 }
+
+# --- N1 (F25): the sandbox hides the developer's git identity and config from git_init ---
+new_sandbox n1
+[ "$HOME" = "$SB/home" ] && [ "${GIT_CONFIG_GLOBAL:-}" = /dev/null ] ||
+  fail "N1: new_sandbox left HOME/GIT_CONFIG_GLOBAL pointing outside the sandbox (HOME=$HOME)"
+pass "N1: sandbox git runs with a sandbox HOME and no global git config"
 
 # --- A: bundle with no repository anywhere above it ---
 # Not the marketplace shape -- that is a git clone, see A2. This is the
@@ -433,6 +448,7 @@ run_hook
 err_has "git is unusable" || fail "H2: wrong refusal (err: $(cat "$SB/err"))"
 pass "H2: absent git fails closed"
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: H3 (root ignores chmod 000)"; else
 # --- H3: git runs, but will not open the repository that tracks the bundle ---
 # `ls-files --error-unmatch` answers 128 both for "no repository" and for "a
 # repository I refuse to read", and the second must not be read as the first.
@@ -451,7 +467,9 @@ chmod 755 "$ROOT/.git"
 err_has "git cannot read the repository" || fail "H3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "H3: refusal wrote the sidecar, making the miss permanent"
 pass "H3: a repository git refuses to open fails closed"
+fi
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: H4 (root ignores chmod 000)"; else
 # --- H4: git opens the repository but cannot read its index ---
 # Distinct from H3 and not reachable by testing `rev-parse --show-toplevel`:
 # discovery succeeds here, so a --show-toplevel gate routes this case into the
@@ -472,6 +490,7 @@ chmod 644 "$ROOT/.git/index"
 err_has "git cannot read the repository" || fail "H4: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "H4: refusal wrote the sidecar, making the miss permanent"
 pass "H4: a repository whose index git cannot read fails closed"
+fi
 
 # --- H5: a readable .git that git still refuses to open ---
 # The dubious-ownership shape -- .git is perfectly readable, git just declines
@@ -584,6 +603,7 @@ run_hook
 err_has "uncommitted or ignored" || fail "J4: wrong refusal (err: $(cat "$SB/err"))"
 pass "J4: status configured to hide untracked bytes does not hide them from the guard"
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: J5 (root ignores chmod 000)"; else
 # --- J5: part of the bundle cannot be read at all ---
 # Nothing above can see this: an unreadable directory holds no tracked entry, so
 # `ls-files` has nothing to say about it, and `status` -- even with
@@ -605,6 +625,7 @@ err_has "could not be read in full" || fail "J5: wrong refusal (err: $(cat "$SB/
 grep -q "Permission denied" "$SB/err" &&
   fail "J5: find's own error reached the user's stderr instead of a refusal"
 pass "J5: a bundle that cannot be read in full refuses"
+fi
 
 # --- J6: a submodule inside the bundle, told to report itself clean ---
 # `status` walks into a submodule and reports its worktree as dirty, unless it
