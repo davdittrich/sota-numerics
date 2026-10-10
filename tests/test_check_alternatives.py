@@ -425,7 +425,7 @@ N/A — no mechanism choice
 """
         self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
-    def test_unrelated_h3_without_marker_preserves_evidence_span(self):
+    def test_unrelated_h3_without_marker_does_not_extend_the_evidence_span(self):
         text = f"""## Alternatives Considered
 
 - **Mechanism A**: evidence continues below.
@@ -437,7 +437,7 @@ Continuation with `authoritative-doc-A` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        self.gate(text, 0)
+        self.gate(text, 1, "alternative 'Mechanism A'", "missing URL or doc-ref citation")
 
 
 class TestDocumentedSyntax(GateCase):
@@ -1971,6 +1971,17 @@ class TestYearOutsideCitationText(GateCase):
             with self.subTest(cite=cite):
                 self.gate(f"{_H}\n{_A}- **Other**: see {cite}\n\n{_D}", 1,
                           "alternative 'Other'", "no citation date")
+
+
+class TestEntryEndsAtUnindentedParagraph(GateCase):
+    def test_a_trailing_paragraph_does_not_lend_its_citation(self):
+        self.gate(f"{_H}\n{_A}- **Other**: no citation.\n\n"
+                  f"Background reading: https://numpy.org/doc/ ({TODAY_YEAR}).\n\n{_D}",
+                  1, "alternative 'Other'", "missing URL or doc-ref citation")
+
+    def test_an_indented_continuation_paragraph_still_belongs_to_the_entry(self):
+        self.gate(f"{_H}\n{_A}- **Other**: cited below.\n\n"
+                  f"  https://numpy.org/doc/ ({TODAY_YEAR}).\n\n{_D}", 0)
 
 
 if __name__ == "__main__":

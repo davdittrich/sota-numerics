@@ -149,8 +149,13 @@ DECIDED_BY_RE = re.compile(
     re.IGNORECASE,
 )
 # Where a bullet entry stops short of the next bullet: a `Decided by:` line,
-# whose URL/year are not the last entry's citation.
-ENTRY_END_RE = re.compile(r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)", re.IGNORECASE)
+# or a blank line followed by a non-indented non-bullet line -- a trailing
+# paragraph whose URL/year are not the last entry's citation.
+ENTRY_END_RE = re.compile(
+    r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)"
+    r"|\n[ \t]*\n(?=(?![-+*][ \t]|\d{1,9}[.)][ \t])\S)",
+    re.IGNORECASE,
+)
 # Bold labels that introduce prose about an alternative, not an alternative.
 RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by"}
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
