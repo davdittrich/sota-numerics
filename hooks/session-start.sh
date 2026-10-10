@@ -8,6 +8,10 @@ if [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ]; then
   ENABLED="$(gsd_tools config-get sota-numerics.enabled --default true 2>/dev/null)"; ENABLED_STATUS=$?
   if [ "$ENABLED_STATUS" -eq 127 ]; then
     ENABLED=true
+  elif [ "$ENABLED_STATUS" -ne 0 ] && [ ! -d .planning ]; then
+    # Outside a GSD project config-get has nothing to read and may fail; absent
+    # configuration means enabled, so stay on and stay quiet.
+    ENABLED=true
   elif [ "$ENABLED_STATUS" -ne 0 ]; then
     echo "sota-numerics: gsd_tools config-get sota-numerics.enabled failed (exit $ENABLED_STATUS); disabling advisory banner" >&2
     ENABLED=false

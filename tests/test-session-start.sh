@@ -412,6 +412,28 @@ S10=$?
 rm -rf "$H10" "$D10"
 pass "case10: global rung first; relative PATH hits are ignored"
 
+# mk_failing_tools <exit-status> -- a PATH-first gsd-tools whose every call fails; sets FAIL_DIR
+mk_failing_tools() {
+  FAIL_DIR="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "gsd-tools: boom" >&2\nexit %s\n' "$1" > "$FAIL_DIR/gsd-tools"
+  chmod +x "$FAIL_DIR/gsd-tools"
+}
+
+# --- Case 11 (F19d): a failing config-get outside a GSD project is not noise ---
+# With no .planning/ there is nothing to configure: the capability stays enabled
+# and the hook says nothing on stderr.
+mk_scratch ""
+rmdir "$SCRATCH/.planning"
+mk_failing_tools 1
+mk_stub_root 0   # recorder in place of the real auto-install, whose refusals also reach stderr
+ERR11="$(CLAUDE_PLUGIN_ROOT="$STUB_ROOT" PATH="$FAIL_DIR:$PATH" bash "$STUB_ROOT/hooks/session-start.sh" 2>&1 >"$SCRATCH/out11")"
+OUT11="$(cat "$SCRATCH/out11")"
+rm -rf "$FAIL_DIR"
+run_and_cleanup
+echo "$OUT11" | grep -q 'SOTA-NUMERICS' || fail "case11: banner missing outside a GSD project"
+[ -z "$ERR11" ] || fail "case11: stderr noise outside a GSD project: $ERR11"
+pass "case11: failing config-get without .planning/ is silent and stays enabled"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
