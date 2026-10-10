@@ -182,6 +182,14 @@ N/A — no mechanism choice
 
 The checker accepts a hyphen or em dash. Any other text in the section, apart from a trailing `### Internal design alternatives` subsection, disables the exemption.
 
+### Known limits
+
+- HTML blocks (`<script>`, hidden elements, processing instructions, CDATA) are read as text; only comments are masked.
+- Names that differ by cross-script lookalikes (Cyrillic `е` for Latin `e`) stay distinct; NFKC does not fold them.
+- A symlinked phase directory exits `2`.
+- The section heading is ATX only (`## Alternatives Considered`); a setext heading is not found.
+- A STATE-resolved phase with no plan files exits `0` with a note on stderr; the neighbouring phase is not checked.
+
 ### Failures and recovery
 
 The checker reports up to five reasons per failing plan, as `<plan_path>:<line>: <reason>` -- the

@@ -156,6 +156,10 @@ Earlier gsd-core releases tied the skip to the gap-analysis toggle (upstream #36
 the capability's `engines.gsd` floor of `>=1.10.0` was not re-verified for this behaviour.
 Re-check before relying on the gate under that floor.
 
+## 6a. Known limits and their rationale
+
+The gate checks structure, not meaning, and stays a line-oriented scan rather than a Markdown parser. Hidden HTML blocks are read as text because modelling every CommonMark HTML block kind buys nothing against an author who wants to hide text from a reviewer in plain sight. NFKC folding covers compatibility forms (full-width, ligatures) and not cross-script lookalikes, which need a confusables table; the effect is two entries counted where a reader sees one. A symlinked phase directory is refused so the gate never validates a tree outside `.planning/phases/`. Setext section headings are unsupported because the section must be found by one anchored line scan. A zero-plan phase resolved from STATE.md has nothing to check, so it exits `0` (see §6 for the ordering coupling that makes it name the phase just planned).
+
 ## 7. Case-insensitive filesystems: no divergence between this gate and gsd-core
 
 `PLAN_FILE_RE` is case-sensitive, and so is gsd-core's plan discovery. `PLAN_SHAPED_RE`
