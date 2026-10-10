@@ -961,6 +961,38 @@ class TestPlaceholderHostEvasion(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestYearBelongsToCitation(unittest.TestCase):
+    def _run(self, entry_a):
+        return run_plan(
+            "## Alternatives Considered\n\n"
+            f"{entry_a}\n"
+            f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — B.\n"
+        )
+
+    def test_year_in_unrelated_clause_does_not_date_the_citation(self):
+        result = self._run(
+            f"- **A**: first shipped in {TODAY_YEAR}. See `https://redis.io/docs/` for details."
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("date", result.stderr)
+
+    def test_year_in_citation_clause_passes(self):
+        for entry in (
+            f"- **A**: fast. `https://redis.io/docs/` ({TODAY_YEAR}).",
+            f"- **A**: fast. Accessed {TODAY_YEAR}: https://redis.io/docs/",
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(self._run(entry).returncode, 0)
+
+    def test_placeholder_tokens_are_not_doc_refs(self):
+        for token in ("none", "n/a", "N/A", "TBD", "?"):
+            with self.subTest(token=token):
+                result = self._run(f"- **A**: fast. `{token}` ({TODAY_YEAR}).")
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("alternative 'A'", result.stderr)
+
+
 class TestMinimumCount(unittest.TestCase):
     def test_one_alternative_exits_1(self):
         text = (

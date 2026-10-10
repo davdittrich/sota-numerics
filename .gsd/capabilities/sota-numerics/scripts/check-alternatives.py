@@ -147,7 +147,9 @@ ENTRY_END_RE = re.compile(r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)", re.IGNOR
 # Bold labels that introduce prose about an alternative, not an alternative.
 RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by"}
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
-PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
+PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD|N/A|NONE|\?)\s*$", re.IGNORECASE)
+# A clause ends at sentence punctuation followed by whitespace, or a blank line.
+CLAUSE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+|\n[ \t]*\n")
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
 # `current_phase` in STATE.md's YAML frontmatter. Constrained to a phase number
 # at the point of reading, so nothing else can become a directory lookup.
@@ -781,9 +783,21 @@ def validate_entry(name, entry_text, today_year):
     a plan missing both a citation and a date reports both issues at once.
     """
     issues = []
-    if not (URL_RE.search(entry_text) or DOC_REF_RE.search(entry_text)):
+    def cited(clause):
+        return URL_RE.search(clause) or any(
+            not PLACEHOLDER_TEXT_RE.match(m.group(0).strip("`"))
+            for m in DOC_REF_RE.finditer(clause)
+        )
+
+    if not cited(entry_text):
         issues.append("missing URL or doc-ref citation")
-    years = [int(m.group(0)) for m in YEAR_RE.finditer(entry_text)]
+    # A year dates the citation only when it sits in the citation's own clause.
+    years = [
+        int(m.group(0))
+        for clause in CLAUSE_SPLIT_RE.split(entry_text)
+        if cited(clause)
+        for m in YEAR_RE.finditer(clause)
+    ]
     if not years:
         issues.append("no citation date")
     elif not any(today_year - RECENCY_WINDOW_YEARS <= y <= today_year for y in years):
