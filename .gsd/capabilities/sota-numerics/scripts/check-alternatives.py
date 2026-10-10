@@ -869,7 +869,7 @@ def validate_plan(path):
     if not entries:
         return (
             heading_line,
-            "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows",
+            "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows (borderless tables are not supported; use leading and trailing '|')",
         )
     mechanism_entries = [
         (name, entry_text, offset)

@@ -1931,6 +1931,19 @@ class TestListMarkers(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestBorderlessTable(unittest.TestCase):
+    def test_borderless_table_failure_says_unsupported(self):
+        result = run_plan(
+            "## Alternatives Considered\n\n"
+            "Rank | Mechanism | Evidence\n--- | --- | ---\n"
+            f"1 | **Redis** | `https://redis.io/docs/` ({TODAY_YEAR})\n"
+            f"2 | **Memcached** | `https://memcached.org/docs/` ({TODAY_YEAR})\n\n"
+            "Decided by: performance — Redis.\n"
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("borderless tables are not supported", result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:
