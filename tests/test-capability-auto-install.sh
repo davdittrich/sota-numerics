@@ -1116,6 +1116,20 @@ run_hook
 [ -f "$(sidecar)" ] || fail "M3: shasum rung wrote no sidecar"
 pass "M3: shasum hashing and the gtimeout rung install"
 
+# --- Y1: a tracked symlink inside the bundle refuses, whatever else is clean ---
+# gsd-core rejects symlinks, and a committed link passes the clean and
+# published checks (the link, not its target, is what git compares).
+new_sandbox y1
+printf 'outside\n' > "$SB/outside.txt"
+ln -s "$SB/outside.txt" "$BUNDLE/scripts/link"
+git_init "$ROOT"
+publish "$ROOT"
+run_hook
+[ "$(installs)" = 0 ] || fail "Y1: a bundle with a tracked symlink was installed"
+err_has "contains a symlink" || fail "Y1: no symlink refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "Y1: refusal wrote the sidecar"
+pass "Y1: tracked symlink in the bundle refuses, no install, no sidecar"
+
 # --- D0: every refusal the hook emits is documented in README's table ---
 # Forward direction only (hook -> README): that is the direction that
 # actually went stale -- the hook grew from five refusals to eight while
