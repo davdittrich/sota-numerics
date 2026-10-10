@@ -5,13 +5,23 @@
 Gate:
 
 - A plan with several violations reports up to five of them in one run, not one per re-run.
-- A citation needs a four-digit year in its own sentence; placeholder hosts (including subdomains) and `TODO`/`TBD`/`N/A` references are rejected.
+- A citation needs a four-digit year anywhere in the entry text outside URLs and backticked references; placeholder hosts (including subdomains) and `TODO`/`TBD`/`N/A` references are rejected.
 - `Decided by:` accepts a bold value and requires the criterion to end at a word boundary.
 - Bold-named entries accept `+` and ordered-list markers; an entry ends at its `Decided by:` line; reserved-label bullets are ignored and duplicate names collapse.
 - Indented code is masked before HTML comments and fences; the section heading may carry 0-3 leading spaces.
 - A UTF-8 BOM no longer hides plan or STATE.md content.
 - A phase-numbered plan in any case (`23-01-plan.md`) is reported as misnamed; a symlinked plan file is reported, not followed.
 - The project-root search has no ten-ancestor cap.
+- Alternative names are compared after NFKC and casefolding and need strong emphasis (`**Name**` or `__Name__`).
+- A cited entry is dated by any in-window year in it; a year inside a URL or backticked reference does not count.
+- An entry ends at a blank line followed by an unindented non-bullet line, as well as at `Decided by:`.
+- `N/A — no mechanism choice` exempts a section only when it is the section's single line, apart from a trailing internal subsection.
+- Leading tabs expand to 4-column stops before indentation tests.
+- Fences indented inside a list item are masked.
+- A setext `-` or `=` heading, an empty ATX heading and an indented `###` end the section or entry as CommonMark does.
+- HTML comments follow CommonMark opener forms and are masked in linear time.
+- STATE.md frontmatter closing at end of file without a newline is read.
+- Accepted forms: `|-|-|` table separators, `+ Decided by:`, `_criterion_`, numbered or bold section headings.
 - A borderless table gets a message saying only framed tables are supported; a long path is shortened before the failure reason is.
 
 Layout:
@@ -20,6 +30,7 @@ Layout:
 
 Hooks:
 
+- Global auto-install refuses a bundle that holds a symlink.
 - The auto-install hash and the published check cover only `capability.json`, `fragments/` and `scripts/`; a partly tracked bundle is still checked. Existing installs reinstall once, because the hashed paths changed.
 - The auto-install runs only on `SessionStart` and only when the capability is enabled, so parallel subagent spawns no longer race the install lock and a disabled capability is never installed.
 - `SubagentStart` banners reach the subagent as `hookSpecificOutput.additionalContext`.
@@ -27,7 +38,7 @@ Hooks:
 - The install timeout has a kill grace, so a child ignoring SIGTERM cannot hang the session.
 - The sidecar is read only when it is a regular file and is not recorded when the bundle changed during the install; a deleted global mirror is repaired; a symlinked bundle directory is hashed through.
 - `CDPATH` is cleared around `cd`; the absolute global gsd-core path is tried before `PATH`, and relative `PATH` hits are ignored.
-- The gate prefers the global script when its version is at least the project copy's, and runs `python3 -I`.
+- The gate runs the global script only when its version is strictly higher than the project copy's, and runs `python3 -I`.
 - Known residual: the provenance check runs on git's view of the bundle, so a `.gitattributes` clean filter can make the installed worktree bytes differ from the bytes checked.
 
 Docs:

@@ -22,12 +22,13 @@ which "is always `blocking: false`" — this capability is the first to actually
 
 ## 3. Script path resolution and the missing-script guard
 
-Write `_SN` for `.gsd/capabilities/sota-numerics/scripts/check-alternatives.py`. The gate
+Write `_SN` for `.gsd/capabilities/sota-numerics`. The gate
 command tries two paths in order: `./$_SN`, then `${GSD_HOME:-$HOME}/$_SN`. gsd-core runs the
 check command at the runtime project root with the parent process's environment inherited, so
 the first rung reaches the project copy with no Git at all, and the second resolves a
-global-scope-only install. `README.md` lists the two locations and the rule that the project
-copy wins; the order above is how that rule is met.
+global-scope-only install. `README.md` lists the two locations and the version rule: the global copy runs only
+when its `capability.json` version is strictly higher (release above prerelease), so the
+project copy wins at equal versions.
 
 A third rung used to sit between these two, asking Git for the top level of the repository
 enclosing the working directory and appending the script path to it, meant to widen the
@@ -76,14 +77,13 @@ or benchmark passes, because only one in-window year is required.
 of "citations require a recency marker" — would make every foundational citation fail
 the gate. Two things guard against it. `tests/test_check_alternatives.py` in the plugin
 repository carries a `TestFoundationalCitationPairing` class that fails on exactly that
-regression — it lives outside this bundle, so a reader of an installed copy will not find it
-here. `planner-sota.md`, which does ship here, teaches the planner the same pairing rule. If
+regression -- it is in the repository checkout, which is the whole bundle. `planner-sota.md`, which does ship here, teaches the planner the same pairing rule. If
 either is edited, update the other — they teach and enforce one rule from two seats.
 
 ## 6. The gate command is constant; the phase comes from STATE.md
 
 `capability.json` interpolates nothing. `grep -c PHASE_DIR capability.json` is `0`, and the
-command ends `python3 "$SOTA_SCRIPT"` with no argument. `check-alternatives.py` takes the
+command ends `python3 -I "$SOTA_SCRIPT"` with no argument. `check-alternatives.py` takes the
 phase directory as an optional positional and, given none, resolves it from
 `.planning/STATE.md`'s `current_phase` (`resolve_current_phase_dir`), then globs
 `.planning/phases/` for the single directory carrying that number. The directory name is

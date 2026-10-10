@@ -39,7 +39,7 @@ The GSD capability itself declares support for every GSD runtime. Automatic star
 1. `<project>/.gsd/capabilities/sota-numerics`
 2. `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics`
 
-The project copy wins when both exist.
+The gate runs the global copy only when its `capability.json` version is strictly higher than the project copy's; at equal versions the project copy runs.
 
 Without the Claude plugin, install the capability directly; the repository root is the bundle:
 
@@ -51,7 +51,7 @@ gsd-core copies the whole checkout into the global capability directory, so the 
 
 ### What the Claude hooks do
 
-At startup, resume, clear, or compaction, the plugin hashes the capability bundle: `capability.json`, `fragments/` and `scripts/` at the plugin root. Edits elsewhere in the repository (tests, docs, CI) neither trigger a reinstall nor fail the published check below. It installs the bundle at global GSD scope only when that hash changed. Subagent spawns never install; they only print role banners. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+At startup, resume, clear, or compaction, the plugin hashes the capability bundle: `capability.json`, `fragments/` and `scripts/` at the plugin root. Edits elsewhere in the repository (tests, docs, CI) neither trigger a reinstall nor fail the published check below. It installs the bundle at global GSD scope when that hash changed, or when the global mirror's directory, manifest or checker is missing. Subagent spawns never install; they only print role banners. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
 A global install publishes those bytes to every project on the machine, so where a repository tracks the bundle, the hook installs only bytes that repository records as published. Where none tracks it, there is nothing to check against and the bytes install unverified. It reads that from the local `origin/HEAD` or `origin/main` ref; it does not contact the remote, so a session start never waits on the network and never fails offline. Anyone who can write that ref can therefore satisfy the check — the guard is aimed at running a plugin out of a development worktree by accident, not at an adversary with write access to your own repository. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. The bundle walk and `git` itself are checked before anything asks whether a repository tracks the bundle, so a plugin unpacked into a plain directory can hit either.
 
@@ -74,7 +74,7 @@ Planner, executor, and verifier subagents receive role-specific banners. A norma
 
 Auto-install runs only after the plugin reads `sota-numerics.enabled` as true. Disabling the capability silences its banners, installs nothing, and turns off its GSD contributions and gate.
 
-The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory — then a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
+The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory — then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`, then a `gsd-tools` command on `PATH` that resolves to an absolute path. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
 
 The install itself runs under a 60-second bound when `timeout` or `gtimeout` is available. A kill is reported on stderr and leaves the hash state unwritten, so a later session retries; a host with neither runs the install unbounded.
 
@@ -103,7 +103,7 @@ The checker reads direct child files whose names match these shapes:
 
 Both numeric segments are required; the phase segment may contain one decimal point. Nested plans -- files below a subdirectory of the phase directory -- are not looked at, because the discovery walk does not recurse. A name that reads as a plan but does not match this shape, such as `draft-PLAN.md`, is not ignored: it is collected as misnamed and reported as a violation, so a plan a reader would recognise cannot fail silently. Every matching plan is checked in sorted order. A phase-numbered name in any case, such as `23-01-plan.md`, is reported as misnamed, and a symlinked plan file is reported instead of followed. A directory with no matching plans passes.
 
-Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-one or level-two heading -- indented up to the three leading spaces CommonMark allows -- or at end of file. A setext level-one heading (a text line underlined with `=`) also ends it; a `---` underline does not, because it is also a thematic break. Level-three and deeper headings stay inside it, which is what lets the internal-alternatives marker below sit within the section. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
+Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-one or level-two heading -- indented up to the three leading spaces CommonMark allows -- or at end of file. A setext heading also ends it: a paragraph line underlined with `=` or `-`. A `---` after a blank line is a thematic break and does not. Level-three and deeper headings stay inside it, which is what lets the internal-alternatives marker below sit within the section. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
 
 ### Accepted entries
 
@@ -158,7 +158,7 @@ Internal entries need no external citation or date, do not count toward the two 
 Each parsed mechanism entry must contain:
 
 - an `http://` or `https://` URL, or a single-line backticked reference; the parser accepts 1–300 characters after the URL scheme or inside the backticks;
-- at least one four-digit year from the current year through six years earlier, counting both endpoints, in the same sentence as a citation.
+- at least one four-digit year from the current year through six years earlier, counting both endpoints, anywhere in the entry text outside URLs and backticked references.
 
 An older foundational year is allowed when the same entry also carries an in-window year. The checker rejects URLs whose host is `example.com`, `example.org`, `example.net`, or `localhost` (or a subdomain of one; the port is ignored), plus backticked references containing only `TODO`, `TBD`, `N/A`, `NONE`, or `?`. This is a narrow placeholder filter, not URL verification.
 
@@ -174,13 +174,13 @@ The criterion must end at a word boundary, so `performanceXYZ` fails. The check 
 
 ### No mechanism choice
 
-When a plan makes no mechanism choice, the first nonblank section line can be:
+When a plan makes no mechanism choice, the section can be exactly this one line:
 
 ```markdown
 N/A — no mechanism choice
 ```
 
-The checker accepts a hyphen or em dash and stops validating that section once this first line matches. Keep the section to that line unless extra text serves a clear purpose.
+The checker accepts a hyphen or em dash. Any other text in the section, apart from a trailing `### Internal design alternatives` subsection, disables the exemption.
 
 ### Failures and recovery
 
