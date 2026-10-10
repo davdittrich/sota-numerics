@@ -139,6 +139,8 @@ DECIDED_BY_RE = re.compile(
 # Where a bullet entry stops short of the next bullet: a `Decided by:` line,
 # whose URL/year are not the last entry's citation.
 ENTRY_END_RE = re.compile(r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)", re.IGNORECASE)
+# Bold labels that introduce prose about an alternative, not an alternative.
+RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by"}
 HOST_RE = re.compile(r"^https?://([^/\s]{1,255})")
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
@@ -710,9 +712,10 @@ def split_entries(body):
         stop = ENTRY_END_RE.search(body, match.end(), end)
         if stop:
             end = stop.start()
-        bullet_entries.append(
-            (match.group(1).strip(), body[match.start():end], internal, match.start())
-        )
+        name = match.group(1).strip()
+        if name.rstrip(":").strip().lower() in RESERVED_LABELS:
+            continue
+        bullet_entries.append((name, body[match.start():end], internal, match.start()))
     mechanism_bullets = [entry for entry in bullet_entries if not entry[2]]
     if len(mechanism_bullets) >= MIN_ALTERNATIVES:
         return bullet_entries
@@ -847,10 +850,11 @@ def validate_plan(path):
         for name, entry_text, internal, offset in entries
         if not internal
     ]
-    if len(mechanism_entries) < MIN_ALTERNATIVES:
+    distinct = {name.lower() for name, _, _ in mechanism_entries}
+    if len(distinct) < MIN_ALTERNATIVES:
         return (
             heading_line,
-            f"fewer than 2 named alternatives (found {len(mechanism_entries)})"
+            f"fewer than 2 named alternatives (found {len(distinct)})"
             + below_the_boundary(boundary, BULLET_RE, TABLE_ROW_RE),
         )
     today_year = datetime.date.today().year

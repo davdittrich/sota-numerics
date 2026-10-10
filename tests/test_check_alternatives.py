@@ -882,6 +882,34 @@ class TestEntryBoundary(unittest.TestCase):
         self.assertIn("alternative 'B'", result.stderr)
 
 
+class TestNonAlternativeBullets(unittest.TestCase):
+    """Reserved labels are not alternatives; duplicate names count once."""
+
+    def test_reserved_label_bullet_is_not_an_alternative(self):
+        for label in ("Rationale", "why", "Note:", "Chosen", "DECISION", "Decided by"):
+            with self.subTest(label=label):
+                text = (
+                    "## Alternatives Considered\n\n"
+                    f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+                    f"- **{label}**: `https://x.dev/y` ({TODAY_YEAR}).\n\n"
+                    "Decided by: performance — A.\n"
+                )
+                result = run_plan(text)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+    def test_duplicate_names_count_once_case_insensitively(self):
+        text = (
+            "## Alternatives Considered\n\n"
+            f"- **Redis**: `https://redis.io/docs/` ({TODAY_YEAR}).\n"
+            f"- **redis**: `https://redis.io/docs/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — Redis.\n"
+        )
+        result = run_plan(text)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+
+
 class TestMinimumCount(unittest.TestCase):
     def test_one_alternative_exits_1(self):
         text = (
