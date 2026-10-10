@@ -219,10 +219,11 @@ LIST_MARKER_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+")
 # A non-blank line at zero-to-three-space indentation -- the same shallow
 # range FENCE_LINE_RE and LIST_MARKER_RE anchor to.
 SHALLOW_LINE_RE = re.compile(r"^[ \t]{0,3}\S")
+# Leading whitespace of a line; tabs in it are expanded before any indentation test.
+LEADING_WS_RE = re.compile(r"^[ \t]+", re.MULTILINE)
 # A non-blank line indented four or more spaces/tabs: an indented-code-
 # block candidate (https://spec.commonmark.org/0.31.2/#indented-code-blocks,
-# 2024). No tab-stop expansion -- literal character count, the same
-# simplicity this whole pre-pass already trades for a dependency-free scan.
+# 2024). Tabs are already expanded to 4-column stops by then.
 INDENTED_CODE_LINE_RE = re.compile(r"^[ \t]{4,}\S")
 
 
@@ -881,6 +882,9 @@ def validate_plan(path):
             f"{path}: could not be read ({exc.strerror});"
             " a plan-shaped name must be a readable file"
         ) from exc
+    # A tab in leading whitespace advances to the next 4-column stop, so every
+    # indentation test below sees the width CommonMark does.
+    text = LEADING_WS_RE.sub(lambda m: m.group(0).expandtabs(4), text)
     masked = mask_fenced_regions(text)
     body, body_start, boundary = extract_section_body(masked)
     if body is None:

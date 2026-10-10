@@ -2001,5 +2001,20 @@ class TestExemptionIsExact(GateCase):
         self.gate(f"{_H}\nN/A - no mechanism choice\nPicked FFTW\n", 1)
 
 
+class TestTabIndentation(GateCase):
+    def test_tab_indented_section_heading_is_code_not_a_heading(self):
+        self.gate(f"\t{_H}\n{_A}{_B}\n{_D}", 1, "missing")
+
+    def test_tab_indented_bullets_are_code_not_entries(self):
+        self.gate(f"{_H}\n{_A}\t{_B}\n{_D}", 1, "fewer than 2 named alternatives (found 1)")
+
+    def test_tab_indented_block_after_a_paragraph_is_masked(self):
+        self.gate(f"Example:\n\n\t<!-- sample\n\n{_H}\n{_A}{_B}\n{_D}", 0)
+        self.gate(f"Example:\n\n\t{_H}\n\t{_A}\t{_B}", 1, "missing")
+
+    def test_space_tab_mix_counts_to_the_next_stop(self):
+        self.gate(f"{_H}\n{_A}  \t{_B}\n{_D}", 1, "fewer than 2 named alternatives (found 1)")
+
+
 if __name__ == "__main__":
     unittest.main()
