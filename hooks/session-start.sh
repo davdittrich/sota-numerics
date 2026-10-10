@@ -54,6 +54,14 @@ case "$ROLE" in
   *) FRAMING='SOTA/efficiency/numerical-stability steering: prefer mathematically correct, precision-preserving, well-cited mechanism choices.' ;;
 esac
 
-printf 'SOTA-NUMERICS -- advisory steering (plan:post also carries a blocking Alternatives Considered gate)\n%s\n' "$FRAMING"
+BANNER="$(printf 'SOTA-NUMERICS -- advisory steering (plan:post also carries a blocking Alternatives Considered gate)\n%s\n' "$FRAMING")"
+if [ -n "${1:-}" ]; then
+  # SubagentStart injects context only through hookSpecificOutput.additionalContext;
+  # JSON-escape backslash, double quote and newline.
+  _J="${BANNER//\\/\\\\}"; _J="${_J//\"/\\\"}"; _J="${_J//$'\n'/\\n}"
+  printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' "$_J"
+else
+  printf '%s\n' "$BANNER"
+fi
 
 exit 0

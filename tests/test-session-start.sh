@@ -446,6 +446,24 @@ done
 run_and_cleanup
 pass "case12: role invocations skip the auto-install"
 
+# --- Case 13 (F20): role invocations emit SubagentStart hookSpecificOutput JSON ---
+# SubagentStart only documents hookSpecificOutput.additionalContext; plain stdout is
+# not injected. SessionStart (no role) keeps plain stdout.
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+for _r in planner executor verifier; do
+  OUT13="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "$_r")"
+  echo "$OUT13" | python3 -c '
+import json, sys
+o = json.load(sys.stdin)["hookSpecificOutput"]
+assert o["hookEventName"] == "SubagentStart", o
+assert "SOTA-NUMERICS" in o["additionalContext"], o
+' 2>/dev/null || fail "case13: $_r did not emit SubagentStart additionalContext JSON (got: $OUT13)"
+done
+OUT13="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT")"
+case "$OUT13" in "SOTA-NUMERICS"*) ;; *) fail "case13: SessionStart output is no longer plain text (got: $OUT13)" ;; esac
+run_and_cleanup
+pass "case13: role invocations emit additionalContext JSON; SessionStart stays plain"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
