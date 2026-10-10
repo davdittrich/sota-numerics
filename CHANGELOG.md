@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 (2026-10-10)
+
+Hooks:
+- Security: SessionStart auto-install passes `--yes` only when the staged `capability.json` declares no executable surface (hooks, commands, mcpServers, reviewer lanes); otherwise it installs without `--yes`, prints one review line and reminds next session. An unparseable manifest or missing `node` fails closed.
 
 Gate:
 - Security: the gate no longer runs a project-scope `check-alternatives.py` when a global install exists. If `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/capability.json` exists, the gate runs the global script and blocks if it is missing; the project copy runs only without a global manifest. Any manifest entry counts, including a dangling symlink or a directory. A non-absolute base (`HOME` unset or empty, relative `GSD_HOME`) blocks. A repository could previously ship a copy claiming a higher version, and the blocking gate passed while running its code. The version comparison is removed.
