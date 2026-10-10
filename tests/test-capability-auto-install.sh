@@ -963,6 +963,40 @@ run_hook
 [ -f "$(sidecar)" ] || fail "L4: a host with no timeout binary wrote no sidecar"
 pass "L4: a host with no timeout or gtimeout still installs, unbounded"
 
+# --- M1 (F21a): a failing install reports it and records no sidecar ---
+new_sandbox m1
+printf '#!/usr/bin/env bash\nexit 1\n' > "$SB/bin/gsd-tools"
+run_hook
+err_has "capability install failed" || fail "M1: no failure message (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "M1: a failed install wrote the sidecar"
+pass "M1: an install exiting 1 reports 'install failed' and leaves no sidecar"
+
+# --- M2 (F21c): a malformed capability id installs nothing ---
+for _id in '../x' 'A' '' 'a/b'; do
+  new_sandbox m2
+  ( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
+    GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK" "$_id" ) >"$SB/out" 2>"$SB/err"
+  [ "$(installs)" = 0 ] || fail "M2: id '$_id' reached the install"
+  [ ! -d "$SB/home/.gsd" ] || fail "M2: id '$_id' wrote under GSD_HOME"
+done
+pass "M2: ids failing ^[a-z][a-z0-9-]*\$ never install"
+
+# --- M3 (F21h): the shasum and gtimeout fallback rungs work ---
+new_sandbox m3
+mkdir -p "$SB/rungs"
+for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/rungs/$_t"
+done
+ln -sf "$SB/bin/gsd-tools" "$SB/rungs/gsd-tools"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
+chmod +x "$SB/rungs/gtimeout"
+PATH_OVERRIDE="$SB/rungs"
+run_hook
+[ "$(installs)" = 1 ] || fail "M3: no sha256sum + gtimeout host did not install (err: $(cat "$SB/err"))"
+[ "$(cat "$SB/gtimeout-calls" 2>/dev/null)" = "-k 5" ] || fail "M3: gtimeout was not used with -k 5 (got: $(cat "$SB/gtimeout-calls" 2>&1))"
+[ -f "$(sidecar)" ] || fail "M3: shasum rung wrote no sidecar"
+pass "M3: shasum hashing and the gtimeout rung install"
+
 # --- D0: every refusal the hook emits is documented in README's table ---
 # Forward direction only (hook -> README): that is the direction that
 # actually went stale -- the hook grew from five refusals to eight while
