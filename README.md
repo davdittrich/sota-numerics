@@ -78,6 +78,8 @@ The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` 
 
 The install itself runs under a 60-second bound when `timeout` or `gtimeout` is available. A kill is reported on stderr and leaves the hash state unwritten, so a later session retries; a host with neither runs the install unbounded.
 
+The hook grants consent (`--yes`) only to a bundle whose `capability.json` declares no executable surface — no `hooks`, `commands`, `mcpServers` or `reviewer` entry, the surfaces gsd-core asks consent for. The check runs under `node`, and an unparseable manifest or a missing `node` counts as executable. Otherwise the install runs without `--yes`, the hook prints one stderr line naming the `gsd-tools capability install <dir> --scope global` command to review and install it yourself, and leaves the hash state unwritten. The install never reads the session's stdin.
+
 ## Configure
 
 One project setting controls the capability:

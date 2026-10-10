@@ -1076,7 +1076,7 @@ pass "L3c: a timeout rejecting -k falls back to a bare bound"
 # under `set -u`.
 new_sandbox l4
 mkdir -p "$SB/notimeout"
-for _t in env bash find sort awk sha256sum shasum cat mkdir dirname readlink rm wc git; do
+for _t in env bash find sort awk sha256sum shasum cat mkdir dirname readlink rm wc git node; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/notimeout/$_t"
 done
 ln -sf "$SB/bin/gsd-tools" "$SB/notimeout/gsd-tools"
@@ -1107,7 +1107,7 @@ pass "M2: ids failing ^[a-z][a-z0-9-]*\$ never install"
 # --- M3: the shasum and gtimeout fallback rungs work ---
 new_sandbox m3
 mkdir -p "$SB/rungs"
-for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do
+for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git node; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/rungs/$_t"
 done
 ln -sf "$SB/bin/gsd-tools" "$SB/rungs/gsd-tools"
@@ -1133,6 +1133,74 @@ run_hook
 err_has "contains a symlink" || fail "Y1: no symlink refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "Y1: refusal wrote the sidecar"
 pass "Y1: tracked symlink in the bundle refuses, no install, no sidecar"
+
+# --- X1: a hostile repository at the session's cwd never supplies gsd-tools ---
+# SECURITY: the hook runs at SessionStart in whatever repository the session
+# opened. A cloned repo shipping gsd-core/bin/gsd-tools.cjs must never be
+# executed; resolution comes from the plugin root, the user's gsd-core, or
+# PATH only. Do not restore a working-directory lookup.
+new_sandbox x1
+HOSTILE="$SB/hostile"
+mkdir -p "$HOSTILE/gsd-core/bin"
+git -C "$HOSTILE" init -q
+printf 'require("fs").writeFileSync(%s, "x");\n' "\"$SB/hostile-ran\"" > "$HOSTILE/gsd-core/bin/gsd-tools.cjs"
+run_hook "$HOSTILE" "$ROOT"
+[ ! -e "$SB/hostile-ran" ] || fail "X1: the cwd repository's gsd-core/bin/gsd-tools.cjs was executed"
+[ "$(installs)" = 1 ] || fail "X1: PATH gsd-tools was not used ($(installs) installs, err: $(cat "$SB/err"))"
+pass "X1: a hostile cwd repository's gsd-tools.cjs never runs; PATH gsd-tools does"
+
+# --- X2: a declarative bundle is installed with --yes ---
+new_sandbox x2
+run_hook
+grep -qx "capability install $BUNDLE --scope global --yes" "$SB/installs" ||
+  fail "X2: declarative bundle not installed with --yes (calls: $(cat "$SB/installs"))"
+[ -f "$(sidecar)" ] || fail "X2: no sidecar after a consented install"
+pass "X2: a bundle with no executable surface is auto-consented"
+
+# --- X3: a bundle declaring an executable surface is never auto-consented ---
+# gsd-core counts hooks, commands, mcpServers and a reviewer lane as executable
+# (capability-trust hasExecutable); granting them unattended at SessionStart is
+# consent the user never gave. An unparseable manifest is treated the same.
+x3_manifest() {
+  node -e 'const fs=require("fs"),f=process.argv[1],m=JSON.parse(fs.readFileSync(f,"utf8"));Object.assign(m,JSON.parse(process.argv[2]));fs.writeFileSync(f,JSON.stringify(m))' "$BUNDLE/capability.json" "$1"
+}
+for _x in hooks commands mcp-array mcp-object reviewer unparseable; do
+  new_sandbox "x3-$_x"
+  case "$_x" in
+    hooks)      x3_manifest '{"hooks":[{"event":"SessionStart","script":"x.sh"}]}' ;;
+    commands)   x3_manifest '{"commands":[{"family":"x","module":"x.cjs"}]}' ;;
+    mcp-array)  x3_manifest '{"mcpServers":[{"name":"x"}]}' ;;
+    mcp-object) x3_manifest '{"mcpServers":{"x":{"command":"x"}}}' ;;
+    reviewer)   x3_manifest '{"reviewer":{"slug":"x"}}' ;;
+    unparseable) printf '{"id":"%s", BROKEN\n' "$CAP_ID" > "$BUNDLE/capability.json" ;;
+  esac
+  run_hook
+  [ "$(installs)" = 1 ] || fail "X3 $_x: expected one install call, got $(installs)"
+  grep -q -- '--yes' "$SB/installs" && fail "X3 $_x: --yes passed (calls: $(cat "$SB/installs"))"
+  grep -qx "capability install $BUNDLE --scope global" "$SB/installs" ||
+    fail "X3 $_x: unexpected arguments (calls: $(cat "$SB/installs"))"
+  [ "$(wc -l < "$SB/err" | tr -d ' ')" = 1 ] || fail "X3 $_x: expected one stderr line (err: $(cat "$SB/err"))"
+  err_has "gsd-tools capability install $BUNDLE --scope global" ||
+    fail "X3 $_x: stderr does not say how to review (err: $(cat "$SB/err"))"
+  [ ! -f "$(sidecar)" ] || fail "X3 $_x: unconsented install wrote the sidecar"
+  grep -q "Auto-installed" "$SB/out" && fail "X3 $_x: reported as auto-installed"
+done
+pass "X3: hooks, commands, mcpServers, reviewer or an unparseable manifest get no --yes, one review line, no sidecar"
+
+# --- X4: the install never reads the session's stdin ---
+# A consent prompt reading SessionStart's stdin could block the session.
+new_sandbox x4
+cat > "$SB/bin/gsd-tools" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
+read -r _l && printf '%s' "\$_l" > "$SB/stdin-read"
+exit 0
+STUB
+chmod +x "$SB/bin/gsd-tools"
+printf 'y\n' | run_hook
+[ "$(installs)" = 1 ] || fail "X4: install stub not called ($(installs))"
+[ ! -s "$SB/stdin-read" ] || fail "X4: the install read the session's stdin"
+pass "X4: the install runs with stdin from /dev/null"
 
 # --- D0: every refusal the hook emits is documented in README's table ---
 # Forward direction only (hook -> README): that is the direction that

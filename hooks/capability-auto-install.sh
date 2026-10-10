@@ -236,14 +236,37 @@ for _t in timeout gtimeout; do
 done
 
 # gsd_tools is a shell function, so run it inside `bash -c`; PLUGIN_ROOT and
-# BUNDLE_DIR arrive as $1/$2 so neither must survive quoting twice.
-_INSTALL_CHILD='[ -f "$1/hooks/gsd-tools.sh" ] && . "$1/hooks/gsd-tools.sh"; gsd_tools capability install "$2" --scope global --yes'
+# BUNDLE_DIR arrive as $1/$2 so neither must survive quoting twice; $3, when
+# present, is --yes.
+_INSTALL_CHILD='[ -f "$1/hooks/gsd-tools.sh" ] && . "$1/hooks/gsd-tools.sh"; gsd_tools capability install "$2" --scope global "${@:3}"'
+
+# Consent: --yes only for a declarative bundle. gsd-core counts hooks, commands,
+# mcpServers and a reviewer lane as executable surfaces (capability-trust
+# hasExecutable); those need the user's own consent, never an unattended
+# SessionStart grant (cases X3). The manifest path arrives as argv, never
+# interpolated; an unparseable manifest or a missing node counts as executable
+# (fail closed).
+_YES=()
+node -e '
+const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const arr = (v) => Array.isArray(v) && v.length > 0;
+const obj = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
+process.exit(arr(m.hooks) || arr(m.commands) || arr(m.mcpServers) || obj(m.mcpServers) || obj(m.reviewer) ? 1 : 0);
+' "$BUNDLE_DIR/capability.json" >/dev/null 2>&1 && _YES=(--yes)
 
 # Absolute spec: a relative one would resolve against the user's cwd. The
 # "${_TIMEOUT[@]+...}" form is deliberate: a bare empty array aborts under
-# `set -u` on bash 3.2 (macOS).
-"${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" bash -c "$_INSTALL_CHILD" _ "$PLUGIN_ROOT" "$BUNDLE_DIR" >/dev/null 2>&1
+# `set -u` on bash 3.2 (macOS). </dev/null: a consent prompt must never read
+# the session's stdin and block startup (case X4).
+"${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" bash -c "$_INSTALL_CHILD" _ "$PLUGIN_ROOT" "$BUNDLE_DIR" "${_YES[@]+"${_YES[@]}"}" </dev/null >/dev/null 2>&1
 INSTALL_STATUS=$?
+
+# Without --yes gsd-core discloses the executable surfaces and stops. Write no
+# sidecar, so every session reminds the user until they review it themselves.
+if [ "${#_YES[@]}" -eq 0 ]; then
+  echo "capability-auto-install: $CAP_ID declares executable surfaces and was not auto-consented; review and install it with: gsd-tools capability install $BUNDLE_DIR --scope global" >&2
+  exit 0
+fi
 
 # Failure branches break the silent `|| true` convention and write no
 # STATE_FILE: unattended, silence would leave the capability inactive for good.
