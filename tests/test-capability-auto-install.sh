@@ -794,6 +794,16 @@ mkfifo "$(sidecar)"
 pass "I11: a FIFO at the sidecar path is read as no recorded hash"
 rm -f "$(sidecar)"
 
+# --- I12 (F19c): CDPATH must not redirect or pollute the plugin root ---
+# A bare relative CLAUDE_PLUGIN_ROOT is searched under CDPATH by `cd`, which also
+# prints the directory it chose; the root would then be the decoy (or two lines).
+new_sandbox i12
+mkdir -p "$SB/decoy/root/.gsd/capabilities/$CAP_ID"
+CDPATH="$SB/decoy" run_hook "$SB" root
+grep -qF -- "install $ROOT/.gsd/capabilities/$CAP_ID " "$SB/installs" ||
+  fail "I12: CDPATH changed the plugin root (installs: $(cat "$SB/installs"))"
+pass "I12: CDPATH does not redirect the plugin root"
+
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop

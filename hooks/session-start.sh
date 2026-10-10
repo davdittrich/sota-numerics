@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/.." && pwd)}"
 
 if [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ]; then
   . "$PLUGIN_ROOT/hooks/gsd-tools.sh"

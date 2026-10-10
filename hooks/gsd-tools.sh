@@ -12,7 +12,7 @@ gsd_tools() {
     # there could supply a node entry point this function would then execute.
     _root="${CLAUDE_PLUGIN_ROOT:-}"
     if [ -z "$_root" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
-      _root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+      _root="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
     fi
     if [ -n "$_root" ] && [ -f "$_root/gsd-core/bin/gsd-tools.cjs" ]; then
       _GSD_TOOLS_ARGS=(node "$_root/gsd-core/bin/gsd-tools.cjs")
