@@ -9,14 +9,14 @@ exemption line for a plan where no mechanism choice exists. Internal entries
 are excluded from the count and evidence validation.
 
 Exit 0 = every discovered plan passes. Exit 1 = one or more violations,
-printed to stderr as `<plan_path>:<line>: <reason>` (D-08), followed by
+printed to stderr as `<plan_path>:<line>: <reason>`, followed by
 exactly one `remediation: ...` line; a plan-shaped file whose name no plan
 reader matches is itself such a violation, reported against line 1 because
 the violation is about its filename, not any line inside it, since skipping
 it silently is indistinguishable from a clean pass. Every document-derived
 span in a diagnostic is bounded and, when truncated, carries an explicit
 `...[truncated]` marker; no printed stderr line exceeds 200 characters,
-whatever the plan document contains (D-07).
+whatever the plan document contains.
 
 Exit 2 = usage/IO error. Any of five conditions raises it. The phase_dir
 argument is empty, missing, or not a directory. The phase_dir has no
@@ -43,9 +43,8 @@ from urllib.parse import urlsplit
 RECENCY_WINDOW_YEARS = 6
 MIN_ALTERNATIVES = 2
 
-# Diagnostic-bounding widths (D-07, D-08). No earlier decision fixes these
-# three numbers -- they are this plan's own choice of width, not inherited
-# from the review that reported the defect (D-24 discretion):
+# Diagnostic-bounding widths. No earlier decision fixes these
+# three numbers -- they are this plan's own choice of width, not inherited:
 #   - QUOTED_SPAN_WIDTH: a document-derived excerpt (an entry name, or the
 #     heading text that ended a section) shown inside a message, in
 #     characters of the excerpt's own content.
@@ -129,8 +128,7 @@ INTERNAL_HEADING_RE = re.compile(
 )
 EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
 # Indentation bounded to CommonMark's zero-to-three-space top-level range
-# (D-03, REVIEW-CRITICAL-FINAL P1-1(b), gsd-beads-25vc.6) -- pinned by
-# TestBulletIndentationBound.
+# -- pinned by TestBulletIndentationBound.
 BULLET_RE = re.compile(r"^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\*\*(.{1,200}?)\*\*", re.MULTILINE)
 TABLE_ROW_RE = re.compile(
     r"^[ \t]{0,3}\|[^\n]{0,500}?\*\*(.{1,200}?)\*\*[^\n]{0,500}\|[ \t]*$", re.MULTILINE
@@ -221,7 +219,7 @@ INDENTED_CODE_LINE_RE = re.compile(r"^[ \t]{4,}\S")
 
 def elide_span(s, width=QUOTED_SPAN_WIDTH):
     """Truncate a document-derived span to `width` characters of its own
-    content, appending an explicit elision marker when truncated (D-08) so
+    content, appending an explicit elision marker when truncated so
     a reader can tell truncation from a value that was already short.
     """
     if len(s) <= width:
@@ -232,7 +230,7 @@ def elide_span(s, width=QUOTED_SPAN_WIDTH):
 def elide_values(values, limit=FOUND_VALUES_LIMIT):
     """The first `limit` distinct values, sorted for a message that reads
     the same regardless of the order the document stated them in, with an
-    explicit elision marker when more were found (D-08). Only how many
+    explicit elision marker when more were found. Only how many
     values the message shows changes -- not which values were found, so
     this never affects a verdict already decided from the full list.
     """
@@ -245,7 +243,7 @@ def elide_values(values, limit=FOUND_VALUES_LIMIT):
 
 def elide_line(s, width=STDERR_LINE_WIDTH):
     """Hard backstop: `s` truncated so the printed result never exceeds
-    `width` characters, whatever the plan document contains (D-07). Unlike
+    `width` characters, whatever the plan document contains. Unlike
     `elide_span`, this reserves room for its own marker so the guarantee is
     exact rather than approximate -- the two span-level bounds above keep
     an ordinary line well under this ceiling, but a long enough phase
@@ -272,7 +270,7 @@ def format_violation(plan_path, line, reason, width=STDERR_LINE_WIDTH):
 
 
 def line_number(text, offset):
-    """The 1-indexed line number of `offset` within `text` (D-08: every
+    """The 1-indexed line number of `offset` within `text` (every
     violation names the line it is about, not only the file)."""
     return text.count("\n", 0, offset) + 1
 
@@ -344,8 +342,7 @@ def resolve_current_phase_dir(start):
     # YAML (a later key silently shadows an earlier one in most parsers, but
     # this file is read with a regex, not a YAML loader), and `search` took
     # only the FIRST match -- silently steering the gate at whichever phase
-    # happened to match first instead of blocking on the ambiguity (D-04,
-    # REVIEW-CRITICAL-FINAL shape 2). The body witness below already demanded
+    # happened to match first instead of blocking on the ambiguity. The body witness below already demanded
     # exactly one `Phase:` line; this makes the frontmatter witness parallel.
     fm_phases = STATE_CURRENT_PHASE_RE.findall(fm.group(1))
     if len(fm_phases) == 0:
@@ -393,8 +390,7 @@ def resolve_current_phase_dir(start):
             # .planning/phases/ would otherwise resolve to a directory
             # anywhere on the filesystem and have its plan filenames
             # validated -- a real traversal out of the tree this gate is
-            # scoped to (gsd-beads-25vc.21.1, AGY P2). is_symlink() is
-            # required alongside is_dir(); do not drop it as redundant.
+            # scoped to. is_symlink() is required alongside is_dir(); do not drop it as redundant.
             if (
                 entry.is_dir()
                 and not entry.is_symlink()
@@ -459,7 +455,7 @@ def next_comment_opener(text, pos):
     A `<!--` written inside a single-backtick, same-line inline code span is
     not a comment opener on the rendered page -- CommonMark renders the whole
     span, backticks included, as literal text -- so it must not mask
-    anything past it (gsd-beads-25vc.21.1, P2-1). Skip any candidate whose
+    anything past it. Skip any candidate whose
     own line contains a code span that covers it, and resume the search past
     that candidate; an unrelated span elsewhere on the line must not protect
     a different, uncovered candidate.
@@ -493,7 +489,7 @@ def next_comment_opener(text, pos):
 # reader both terminate a document. Requires a closing delimiter to match
 # at all -- an opening `---` with nothing that closes it is a thematic
 # break or a setext H2 underline, not frontmatter, and must be left
-# unmasked rather than blanked to EOF (D-01).
+# unmasked rather than blanked to EOF.
 PLAN_FRONTMATTER_RE = re.compile(
     r"\A---[ \t]*\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*\r?\n", re.DOTALL
 )
@@ -506,8 +502,7 @@ def mask_leading_frontmatter(text):
     -- alongside `phase:`, `plan:`, `must_haves:` and the like -- is
     CommonMark-invisible on the rendered page, exactly like a fence or an
     indented code block, but SECTION_HEADING_RE matched it anyway: a plan
-    that never wrote a real body section still passed the gate (D-01,
-    REVIEW-AGY-FINAL blocking item 2).
+    that never wrote a real body section still passed the gate.
 
     Run first, before fence/comment/indented-code masking: frontmatter is
     a document-level construct bounded by literal `---`/`...` lines, not
@@ -550,7 +545,7 @@ def mask_fenced_regions(text):
     matching CommonMark, where neither construct nests inside the other.
 
     CommonMark's other invisible-on-the-page construct is the indented code
-    block: four or more leading spaces, no delimiter at all (D-02). Fences
+    block: four or more leading spaces, no delimiter at all. Fences
     above are masked by explicit open/close bytes; an indented block is
     masked per line instead, by `mask_indented_code_blocks` below, run
     before fences and comments so a `<!--` or fence marker written inside an
@@ -562,8 +557,7 @@ def mask_fenced_regions(text):
 
     A `<!--` written inside a same-line inline code span is not a comment
     opener either -- CommonMark renders the span, backticks and all, as
-    literal text -- so `next_comment_opener` skips those candidates
-    (gsd-beads-25vc.21.1, P2-1). Residual: a code span that crosses a line
+    literal text -- so `next_comment_opener` skips those candidates. Residual: a code span that crosses a line
     break is not detected, so a `<!--` protected only by one still masks to
     EOF -- the same fail-closed direction as every other unterminated
     construct here.
@@ -598,7 +592,7 @@ def mask_fenced_regions(text):
 def mask_indented_code_blocks(text):
     """Blank indented code blocks the same way the fence scan above blanks
     fences: same-length spaces for every non-newline byte, so offsets and
-    line numbers survive (D-02, REVIEW-CRITICAL-FINAL P1-1a).
+    line numbers survive.
 
     A run starts at a non-blank line indented four or more spaces that
     follows a blank line, and continues -- through blank lines and further
@@ -644,7 +638,7 @@ def extract_section_body(text):
     line to the next H1/H2 heading or EOF. `body_start` is `body`'s offset
     within `text`, kept so a caller can turn an offset inside `body` back
     into a line number in the original document -- every violation names
-    the line it is about, not only the file (D-08). `boundary` is None when
+    the line it is about, not only the file. `boundary` is None when
     the section reaches EOF, else `(heading_line, tail)` -- the heading that
     ended it, and everything from that heading onward.
 
@@ -697,7 +691,7 @@ def split_entries(body):
 
     Returns a list of `(name, entry_text, internal, offset)` tuples, where
     `offset` is the entry's own start position within `body` -- kept so a
-    violation on one entry can name its own line, not just the file (D-08).
+    violation on one entry can name its own line, not just the file.
     """
     transitions = []
     internal = False
@@ -810,8 +804,8 @@ def validate_entry(name, entry_text, today_year):
         # with an in-window year already passes the `years` truthiness check
         # above -- this branch only fires when every year found is out of
         # window. `elide_values` bounds the displayed list to the first 5
-        # distinct years (D-08): an entry text with no length cap of its own
-        # (D-07, REVIEW-PROSE-TOKENS.md P1) must not turn "found" into an
+        # distinct years: an entry text with no length cap of its own
+        # must not turn "found" into an
         # unbounded dump of every four-digit number in the span.
         issues.append(
             f"no citation dated within the last {RECENCY_WINDOW_YEARS} years (found: {elide_values(years)})"
@@ -833,7 +827,7 @@ def validate_plan(path):
     `line` is 1-indexed into the plan file: the heading line for a
     section-level violation (missing section, too few alternatives, no
     `Decided by:` line), or the entry's own line for a per-entry citation
-    issue (D-08 -- every violation names the line it is about, not only
+    issue (every violation names the line it is about, not only
     the file).
     """
     try:
@@ -857,7 +851,7 @@ def validate_plan(path):
         # except arms are disjoint -- UnicodeDecodeError subclasses
         # ValueError, not OSError -- so this ordering is cosmetic; the decode
         # arm is kept first only so its more specific message reads first
-        # when both could apply (gsd-beads-25vc.21.1, AGY P2).
+        # when both could apply.
         raise ValueError(
             f"{path}: could not be read ({exc.strerror});"
             " a plan-shaped name must be a readable file"
@@ -991,8 +985,8 @@ def main(argv=None):
         return 0
 
     # Only these two shapes interpolate plan-document text, so only these go
-    # through the hard per-line backstop (D-07): every span quoted inside a
-    # violation reason is already bounded at 80 chars (D-08), but the
+    # through the hard per-line backstop: every span quoted inside a
+    # violation reason is already bounded at 80 chars, but the
     # surrounding fixed prose plus a long phase-directory path can still push
     # one line past 200 on its own.
     for plan_path, line, reason in violations:

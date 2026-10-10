@@ -41,7 +41,7 @@
 # carries the edit. No `status` option reaches that; a byte comparison against
 # the published tree would. The filter driver lives in local config, which no
 # clone carries, so unlike J7 it cannot follow the bundle to a consumer.
-# Tracked as gsd-beads-5yy. The honest predicate for row 5 is therefore "git,
+# The honest predicate for row 5 is therefore "git,
 # asked without inheriting the repository's configuration, reports the worktree
 # clean" -- not "the bundle's bytes are the published bytes", which is stronger
 # than what this hook measures.
@@ -95,7 +95,7 @@
 # hook itself runs (its bundle-provenance checks against BUNDLE_DIR) from
 # discovering a repository above that sandbox when TMPDIR happens to sit inside
 # a checkout; and run_hook always sets CLAUDE_PLUGIN_ROOT, so gsd-tools.sh's
-# own provider resolution (D-13) never falls back past it to consult the
+# own provider resolution never falls back past it to consult the
 # working directory at all, and the PATH stub answers from there.
 set -u
 
@@ -127,7 +127,7 @@ REAL_GSD="${GSD_HOME:-$HOME}/.gsd"
 # value rather than only against this run's own baseline.
 #
 # Two walks, not one, because a leaked __pycache__ needs to move this digest
-# and its own content churn must not (gsd-beads-25vc.21.3 item 2). The first
+# and its own content churn must not. The first
 # walk lists every path -- directories included, names only -- so a new
 # `__pycache__` directory or a new `.pyc` inside an existing one changes the
 # digest. The second is the original content walk, still pruning
@@ -276,7 +276,7 @@ publish() {
   git -C "$1" fetch -q origin
 }
 
-# --- N1 (F25): the sandbox hides the developer's git identity and config from git_init ---
+# --- N1: the sandbox hides the developer's git identity and config from git_init ---
 new_sandbox n1
 [ "$HOME" = "$SB/home" ] && [ "${GIT_CONFIG_GLOBAL:-}" = /dev/null ] ||
   fail "N1: new_sandbox left HOME/GIT_CONFIG_GLOBAL pointing outside the sandbox (HOME=$HOME)"
@@ -769,7 +769,7 @@ run_hook
 [ "$(installs)" = 1 ] || fail "I1: unchanged bundle reinstalled ($(installs) installs in 2 runs)"
 pass "I1: unchanged bundle takes the hash fast path"
 
-# --- I8 (F14): a deleted mirror is repaired even though the sidecar still matches ---
+# --- I8: a deleted mirror is repaired even though the sidecar still matches ---
 new_sandbox i8
 run_hook
 [ "$(installs)" = 1 ] || fail "I8: precondition -- first run should install"
@@ -789,7 +789,7 @@ for _f in capability.json scripts/check-alternatives.py; do
 done
 pass "I8b: the fast path requires the mirror's manifest and checker, not just its directory"
 
-# --- I9 (F15): a symlinked bundle directory is walked, so edits inside it are drift ---
+# --- I9: a symlinked bundle directory is walked, so edits inside it are drift ---
 new_sandbox i9
 mv "$BUNDLE" "$SB/real-bundle"
 ln -s "$SB/real-bundle" "$BUNDLE"
@@ -800,7 +800,7 @@ run_hook
 [ "$(installs)" = 2 ] || fail "I9: an edit behind a symlinked bundle directory did not change the hash"
 pass "I9: a symlinked bundle directory is hashed through, not as a bare link"
 
-# --- I10 (F16): a bundle that changes while the install runs is not recorded as installed ---
+# --- I10: a bundle that changes while the install runs is not recorded as installed ---
 # The clean-check ran before the install; an edit in between means the mirror may
 # hold bytes the sidecar hash does not describe, so the sidecar must not be written.
 new_sandbox i10
@@ -834,7 +834,7 @@ err_has "could not be re-read" || fail "I10b: no re-read warning (err: $(cat "$S
 pass "I10b: a failed re-hash says so and records nothing"
 fi
 
-# --- I11 (F19a): a FIFO at the sidecar path must not hang the hook ---
+# --- I11: a FIFO at the sidecar path must not hang the hook ---
 # `-r` is true for a FIFO and `cat` then blocks forever on SessionStart.
 new_sandbox i11
 mkdir -p "$SB/home/.gsd"
@@ -847,7 +847,7 @@ mkfifo "$(sidecar)"
 pass "I11: a FIFO at the sidecar path is read as no recorded hash"
 rm -f "$(sidecar)"
 
-# --- I12 (F19c): CDPATH must not redirect or pollute the plugin root ---
+# --- I12: CDPATH must not redirect or pollute the plugin root ---
 # A bare relative CLAUDE_PLUGIN_ROOT is searched under CDPATH by `cd`, which also
 # prints the directory it chose; the root would then be the decoy (or two lines).
 new_sandbox i12
@@ -1042,7 +1042,7 @@ run_hook
 [ -f "$(sidecar)" ] || fail "L4: a host with no timeout binary wrote no sidecar"
 pass "L4: a host with no timeout or gtimeout still installs, unbounded"
 
-# --- M1 (F21a): a failing install reports it and records no sidecar ---
+# --- M1: a failing install reports it and records no sidecar ---
 new_sandbox m1
 printf '#!/usr/bin/env bash\nexit 1\n' > "$SB/bin/gsd-tools"
 run_hook
@@ -1050,7 +1050,7 @@ err_has "capability install failed" || fail "M1: no failure message (err: $(cat 
 [ ! -f "$(sidecar)" ] || fail "M1: a failed install wrote the sidecar"
 pass "M1: an install exiting 1 reports 'install failed' and leaves no sidecar"
 
-# --- M2 (F21c): a malformed capability id installs nothing ---
+# --- M2: a malformed capability id installs nothing ---
 for _id in '../x' 'A' '' 'a/b'; do
   new_sandbox m2
   ( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
@@ -1060,7 +1060,7 @@ for _id in '../x' 'A' '' 'a/b'; do
 done
 pass "M2: ids failing ^[a-z][a-z0-9-]*\$ never install"
 
-# --- M3 (F21h): the shasum and gtimeout fallback rungs work ---
+# --- M3: the shasum and gtimeout fallback rungs work ---
 new_sandbox m3
 mkdir -p "$SB/rungs"
 for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do

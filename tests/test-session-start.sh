@@ -31,7 +31,7 @@ pass() { echo "PASS: $1"; }
 # path. The digest is the one 23-01-PLAN.md quotes for this directory.
 #
 # Two walks, not one, because a leaked __pycache__ needs to move this digest
-# and its own content churn must not (gsd-beads-25vc.21.3 item 2). The first
+# and its own content churn must not. The first
 # walk lists every path -- directories included, names only -- so a new
 # `__pycache__` directory or a new `.pyc` inside an existing one changes the
 # digest. The second is the original content walk, still pruning
@@ -103,7 +103,7 @@ mk_scratch() {
   # The HOME redirect is what holds the install back: hooks/gsd-tools.sh's
   # first rung now anchors to CLAUDE_PLUGIN_ROOT (every call site below sets
   # it explicitly) or, failing that, to the sourced file's own location --
-  # never to the scratch dir this function cd's into (D-13). Only the last
+  # never to the scratch dir this function cd's into. Only the last
   # rung, ${CLAUDE_CONFIG_DIR:-$HOME/.claude}, can still see this scratch
   # dir's cwd, and the HOME redirect covers that.
   export HOME="$SCRATCH/home" GSD_HOME="$SCRATCH/home"
@@ -140,8 +140,8 @@ run_and_cleanup
 [ "$STATUS" -eq 0 ] || fail "case2: enabled=false exited non-zero"
 pass "case2: sota-numerics.enabled=false silent exit 0"
 
-# These assertions pin the pointer form each role banner now prints (gsd-beads-25vc.21.5
-# row 1): each pattern must stay unique to its own role. A pattern that also matches the
+# These assertions pin the pointer form each role banner now prints:
+# each pattern must stay unique to its own role. A pattern that also matches the
 # shared header line would pass for every role and stop testing role dispatch at all.
 # --- Case 3a: ROLE=planner -> planner framing, qualifies the blocking gate ---
 mk_scratch '{"sota-numerics": {"enabled": true}}'
@@ -187,7 +187,7 @@ echo "$OUT" | grep -q 'SOTA/efficiency/numerical-stability steering' || fail "ca
 pass "case4: role-argument injection guarded"
 
 # --- Case 6: a hostile repository at the working directory never supplies
-# the node entry point (D-13, T-24-17) ---
+# the node entry point ---
 # hooks/gsd-tools.sh's first rung used to run `git rev-parse --show-toplevel`
 # at the caller's cwd; a hostile repository placed there, carrying its own
 # gsd-core/bin/gsd-tools.cjs, would win that rung and get sourced as node
@@ -221,7 +221,7 @@ fi
 [ "$OUT6" = "true" ] || fail "case6: legitimate resolution (PATH) still did not succeed despite the hostile cwd (got '$OUT6')"
 rm -rf "$HOSTILE"
 
-# --- Case 7: an unresolvable provider still exits 127 (T-24-21) ---
+# --- Case 7: an unresolvable provider still exits 127 ---
 # Removing the working-directory rung must not change what happens when NO
 # rung resolves: the fix must not silently disable the hook path it touches.
 EMPTY_CWD="$(mktemp -d)"
@@ -240,8 +240,7 @@ rm -rf "$EMPTY_CWD" "$FAKE_HOME7"
 pass "case7: an unresolvable provider still exits 127"
 
 # --- Case 8: hooks.json's SubagentStart wiring actually supplies the role
-# tokens cases 3a-3c only prove session-start.sh honors (gsd-beads-25vc.21.3
-# item 1) ---
+# tokens cases 3a-3c only prove session-start.sh honors ---
 # This pins only OUR half of the contract: the manifest, the script it
 # names, and the role tokens they exchange. Whether Claude Code fires
 # SubagentStart at all, and whether it matches on the subagent name, is host
@@ -380,7 +379,7 @@ mk_stub_root() {
     > "$STUB_ROOT/hooks/capability-auto-install.sh"
 }
 
-# --- Case 9 (F13): enabled=false must not install anything ---
+# --- Case 9: enabled=false must not install anything ---
 # The install is a machine-wide mutation; a user who switched the capability off
 # must not get it re-installed on every session start.
 mk_scratch '{"sota-numerics": {"enabled": false}}'
@@ -395,7 +394,7 @@ CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/n
 run_and_cleanup
 pass "case9: auto-install runs only when the capability is enabled"
 
-# --- Case 10 (F17): the global gsd-core rung beats PATH; a relative PATH entry never runs ---
+# --- Case 10: the global gsd-core rung beats PATH; a relative PATH entry never runs ---
 # A `gsd-tools` found through PATH can be a repo-local file (PATH=./bin or "."),
 # so the absolute ${CLAUDE_CONFIG_DIR:-$HOME/.claude} rung is tried first and a
 # PATH hit is accepted only when it is an absolute path.
@@ -419,7 +418,7 @@ mk_failing_tools() {
   chmod +x "$FAIL_DIR/gsd-tools"
 }
 
-# --- Case 11 (F19d): a failing config-get outside a GSD project is not noise ---
+# --- Case 11: a failing config-get outside a GSD project is not noise ---
 # With no .planning/ there is nothing to configure: the capability stays enabled
 # and the hook says nothing on stderr.
 mk_scratch ""
@@ -434,7 +433,7 @@ echo "$OUT11" | grep -q 'SOTA-NUMERICS' || fail "case11: banner missing outside 
 [ -z "$ERR11" ] || fail "case11: stderr noise outside a GSD project: $ERR11"
 pass "case11: failing config-get without .planning/ is silent and stays enabled"
 
-# --- Case 12 (F10b): SubagentStart (role) invocations never install ---
+# --- Case 12: SubagentStart (role) invocations never install ---
 # Parallel subagent spawns would race gsd-core's install lock ("install failed");
 # only SessionStart installs.
 mk_scratch '{"sota-numerics": {"enabled": true}}'
@@ -446,7 +445,7 @@ done
 run_and_cleanup
 pass "case12: role invocations skip the auto-install"
 
-# --- Case 13 (F20): role invocations emit SubagentStart hookSpecificOutput JSON ---
+# --- Case 13: role invocations emit SubagentStart hookSpecificOutput JSON ---
 # SubagentStart only documents hookSpecificOutput.additionalContext; plain stdout is
 # not injected. SessionStart (no role) keeps plain stdout.
 mk_scratch '{"sota-numerics": {"enabled": true}}'
@@ -464,7 +463,7 @@ case "$OUT13" in "SOTA-NUMERICS"*) ;; *) fail "case13: SessionStart output is no
 run_and_cleanup
 pass "case13: role invocations emit additionalContext JSON; SessionStart stays plain"
 
-# --- Case 14 (F21b): config-get failing inside a GSD project disables the banner and says why ---
+# --- Case 14: config-get failing inside a GSD project disables the banner and says why ---
 mk_scratch '{"sota-numerics": {"enabled": true}}'
 mk_failing_tools 3
 mk_stub_root 0

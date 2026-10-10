@@ -3,7 +3,7 @@ gsd_tools() {
     _GSD_TOOLS_ARGS_SET=1
     local _root _p
     # Anchored to the sourced file's own location, not the caller's working
-    # directory (D-13): a host-set plugin-root variable wins when present,
+    # directory: a host-set plugin-root variable wins when present,
     # matching the convention session-start.sh's own line 4 already uses;
     # BASH_SOURCE[0] falls back to this file's physical path for direct,
     # non-host invocation, where no such variable is set. There is

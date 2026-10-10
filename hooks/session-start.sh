@@ -56,7 +56,6 @@ esac
 # form gives up -- on such a silent render failure the subagent now learns only that the
 # capability is active and that the step carries a blocking gate, not what the gate
 # wants, where before this change the banner was a full backup copy of the rule text.
-# Recorded under gsd-beads-25vc.21.5, row 1.
 case "$ROLE" in
   planner) FRAMING='Planning: the injected sota-numerics planner fragment carries the Alternatives Considered rules the blocking plan:post gate enforces.' ;;
   executor) FRAMING='Executing: the injected sota-numerics executor fragment carries the numerical-stability, efficiency and quiet-output rules.' ;;

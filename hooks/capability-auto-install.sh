@@ -231,7 +231,7 @@ if [ "$TRACKED" -eq 0 ]; then
   # Each option states what this question needs rather than what the
   # repository's config gives -- flag -> case map already tabulated in
   # tests/test-capability-auto-install.sh's header (cases J4, E, J6, J7, J8).
-  # Residual this cannot see: a `.gitattributes` clean filter (gsd-beads-5yy),
+  # Residual this cannot see: a `.gitattributes` clean filter,
   # also recorded there.
   #
   # The exit status is read before the output: empty output from a `status` that

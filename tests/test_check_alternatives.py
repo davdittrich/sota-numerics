@@ -747,13 +747,12 @@ class TestSupportedEntryShapes(unittest.TestCase):
 
 class TestBulletIndentationBound(unittest.TestCase):
     """`BULLET_RE` and the framed table-row scan bound their leading
-    indentation to CommonMark's zero-to-three-space top-level range (D-03,
-    REVIEW-CRITICAL-FINAL P1-1(b)). Unbounded, either scan let a
+    indentation to CommonMark's zero-to-three-space top-level range. Unbounded, either scan let a
     four-space-indented sub-entry -- nested under an organizational
     top-level bullet that names no mechanism of its own -- satisfy the
     "at least two named alternatives" requirement, on a plan that named
     exactly zero alternatives at the level the requirement is about.
-    `mask_indented_code_blocks` (D-02, plan 24-01) does not close this: it
+    `mask_indented_code_blocks` does not close this: it
     deliberately never masks a line inside an open list item, because an
     ordinary continuation paragraph under a bullet must stay readable.
     """
@@ -803,7 +802,7 @@ class TestBulletIndentationBound(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_compliant_top_level_entry_still_draws_citation_from_a_sub_bullet(self):
-        # D-05's negative case: a compliant top-level entry that carries an
+        # Negative case: a compliant top-level entry that carries an
         # indented sub-bullet underneath must still count, and the
         # sub-bullet must still contribute its citation/year to the parent
         # entry -- the bound applies only to what counts as a NEW top-level
@@ -1081,7 +1080,7 @@ class TestExemption(unittest.TestCase):
 
 class TestFencedRegions(unittest.TestCase):
     """A `## Alternatives Considered` inside a code fence is illustration, not
-    a decision record (gsd-beads-358).
+    a decision record.
 
     `extract_section_body` took the FIRST occurrence anywhere in the file, so a
     plan whose only occurrence sat inside a ```markdown fence -- README ships
@@ -1202,17 +1201,17 @@ class TestFencedRegions(unittest.TestCase):
 
 class TestIndentedCodeBlocks(unittest.TestCase):
     """A four-space indented code block is CommonMark's other invisible-on-
-    the-rendered-page construct (D-02, REVIEW-CRITICAL-FINAL P1-1a). Fences
+    the-rendered-page construct. Fences
     are already masked by `TestFencedRegions` above; this class pins the
     indented form, reproducing the exact shape that review confirmed passes
     at exit 0 on the shipped script.
     """
 
     def test_indented_alternatives_are_not_counted_as_prose(self):
-        # REVIEW-CRITICAL-FINAL P1-1a's reproduction: a real, column-0
+        # Reproduction: a real, column-0
         # heading is found correctly, but its entries and Decided-by line
         # sit four spaces in. CommonMark renders that as inert code, not
-        # list items -- BULLET_RE's unbounded indentation (D-03, out of
+        # list items -- BULLET_RE's unbounded indentation (out of
         # scope here) still counts them today, so this exits 0 before the
         # fix and must exit 1 after it.
         plan = (
@@ -1250,7 +1249,7 @@ class TestIndentedCodeBlocks(unittest.TestCase):
         self.assertIn("missing '## Alternatives Considered' section", result.stderr)
 
     def test_a_bullet_continuation_paragraph_is_not_treated_as_code(self):
-        # D-05's negative case: an ordinary continuation paragraph under a
+        # Negative case: an ordinary continuation paragraph under a
         # top-level bullet, indented four spaces because that is still
         # inside the list item, is prose -- not an indented code block --
         # and must never be masked.
@@ -1284,7 +1283,6 @@ class TestFrontmatterMasking(unittest.TestCase):
     page the same way a fence or an indented code block is, but neither
     mask covers it: a `## Alternatives Considered` heading declared only
     inside the frontmatter block was still credited by the section scan
-    (D-01, REVIEW-AGY-FINAL blocking item 2).
     """
 
     def test_a_section_declared_only_in_frontmatter_is_a_missing_section(self):
@@ -1342,7 +1340,7 @@ class TestFrontmatterMasking(unittest.TestCase):
 
 class TestHtmlComments(unittest.TestCase):
     """An `## Alternatives Considered` inside an HTML comment renders nothing,
-    so it records nothing (gsd-beads-a54).
+    so it records nothing.
 
     The same defect as the fenced one in the other syntax CommonMark keeps off
     the page, and the more reachable of the two: the author who drops two
@@ -1413,8 +1411,7 @@ class TestHtmlComments(unittest.TestCase):
     def test_a_backticked_comment_opener_does_not_open_a_comment(self):
         # A `<!--` written inside a single-backtick inline code span renders
         # as literal text on the page -- CommonMark shows the backticks and
-        # the arrows, not a comment -- so it must not start a masked span
-        # (gsd-beads-25vc.21.1, P2-1).
+        # the arrows, not a comment -- so it must not start a masked span.
         text, _ = bullet_plan()
         plan = "We discuss `<!--` markers here.\n\n" + text
         with scratch_dir() as tmp:
@@ -1468,7 +1465,7 @@ class TestHtmlComments(unittest.TestCase):
 
 class TestCurrentPhaseResolution(unittest.TestCase):
     """With no argument, the checker resolves its phase from the project's own
-    STATE.md (gsd-beads-cqt).
+    STATE.md.
 
     The gate command is constant precisely so that no directory name is ever
     spliced into the `sh -c` string gsd-core builds. That moves phase identity
@@ -1610,7 +1607,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("expected exactly 1", result.stderr)
 
-    # Two witnesses, not one (gsd-beads-76k). gsd-core's step 13b writes the
+    # Two witnesses, not one. gsd-core's step 13b writes the
     # `## Current Position` `Phase:` line and re-derives `current_phase` from
     # it, so it updates both or neither. On three measured section shapes it
     # updates neither and still exits 0, and the surviving stale
@@ -1694,7 +1691,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
 
     # The frontmatter parse used to take the FIRST of possibly several
     # `current_phase:` matches while the body parse already demanded exactly
-    # one (D-04, REVIEW-CRITICAL-FINAL shape 2, gsd-beads-25vc.7). A duplicated
+    # one. A duplicated
     # frontmatter key let an author -- or a half-applied merge -- steer this
     # blocking gate at whichever phase happened to match first, silently.
 
@@ -1745,7 +1742,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertIn("3", result.stderr)
 
     def test_frontmatter_and_body_ambiguity_reasons_are_distinguishable(self):
-        # T-24-12 / D-04 internal alternative: the two branches' reason
+        # the two branches' reason
         # strings are kept parallel in shape (both name a count and "need
         # exactly one") but distinguishable in text, so a halt names which
         # parse spoke.
@@ -1780,8 +1777,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         # entry.is_dir() follows symlinks, so a symlinked entry under
         # .planning/phases/ used to resolve to a directory anywhere on the
         # filesystem and have its plan filenames validated -- a traversal
-        # out of the tree this gate is scoped to (gsd-beads-25vc.21.1, AGY
-        # P2). The real (non-symlink) control for the same resolution loop
+        # out of the tree this gate is scoped to. The real (non-symlink) control for the same resolution loop
         # is test_resolves_the_current_phase_and_reaches_its_verdict above.
         with scratch_dir() as tmp, scratch_dir() as outside:
             root = Path(tmp)
@@ -1850,8 +1846,7 @@ class TestEmptyDirectory(unittest.TestCase):
 
 
 class TestMisnamedPlans(unittest.TestCase):
-    """A plan-shaped file PLAN_FILE_RE rejects is reported, never skipped
-    (gsd-beads-8d5).
+    """A plan-shaped file PLAN_FILE_RE rejects is reported, never skipped.
 
     Discovery answered two different questions with the same silence: "this
     phase has no plans" and "this phase has a plan I refused to read". The
@@ -2122,7 +2117,7 @@ class TestUnreadablePlanFiles(unittest.TestCase):
     also caught now. Both are re-raised as ValueError, and main()'s existing
     `except ValueError -> return 2` maps both to the same
     `check-alternatives.py: <path>: <reason>` contract -- one clean stderr
-    line, no raw traceback, either way (gsd-beads-25vc.21.1, AGY P2).
+    line, no raw traceback, either way.
     """
 
     def test_non_utf8_plan_names_the_file_and_the_remedy(self):
@@ -2185,7 +2180,7 @@ class TestPathSafety(unittest.TestCase):
 
 
 class TestFoundationalCitationPairing(unittest.TestCase):
-    """REVIEWS finding 2: at-least-one-in-window year, not none-outside-window."""
+    """at-least-one-in-window year, not none-outside-window."""
 
     def test_foundational_fixture_copy_exits_0(self):
         with scratch_dir() as tmp:
@@ -2229,7 +2224,7 @@ class TestFoundationalCitationPairing(unittest.TestCase):
 
 
 class TestRemediationOutput(unittest.TestCase):
-    """REVIEWS findings 1/3: the --force remediation line."""
+    """the --force remediation line."""
 
     def test_remediation_names_phase_number_from_basename(self):
         tmp = tempfile.mkdtemp(prefix="07-", dir=PLAN_TMPDIR)
@@ -2262,13 +2257,13 @@ class TestRemediationOutput(unittest.TestCase):
 
 
 class TestDiagnosticBounding(unittest.TestCase):
-    """D-07/D-08: every diagnostic the gate emits is bounded, and a
+    """every diagnostic the gate emits is bounded, and a
     truncated span carries an explicit elision marker so a reader can tell
-    truncation from a value that was already short (T-24-13, T-24-14).
+    truncation from a value that was already short.
 
     `check-alternatives.py:537-540` joined every four-digit year found in
     one entry's whole span into the message with no cap; probed against the
-    shipped script (REVIEW-PROSE-TOKENS.md P1), a plan whose first bullet
+    shipped script, a plan whose first bullet
     carried 2,000 out-of-window years produced 12,280 chars / 8,099 tokens
     on a single stderr line. The heading echoed by `below_the_boundary` had
     the same defect: an arbitrary, unbounded document line.
@@ -2331,7 +2326,7 @@ class TestDiagnosticBounding(unittest.TestCase):
         self.assertNotIn(long_heading, result.stderr)
         self.assertIn("...[truncated]", result.stderr)
         # A meaningful prefix of the heading survives. Exactly how much
-        # depends on the line-level backstop (D-07), which may cut further
+        # depends on the line-level backstop, which may cut further
         # into an already-bounded span when the rest of the message -- the
         # fixed "fewer than 2 ... the section ended at ..." prose plus the
         # plan path -- is itself long; the two bounds are independent, and
@@ -2364,11 +2359,10 @@ class TestDiagnosticBounding(unittest.TestCase):
 
 
 class TestViolationLineShape(unittest.TestCase):
-    """D-08: each violation reports as `<plan_path>:<line>: <reason>` -- the
-    shape the capability already documents for its other usage error (Phase
-    23 D-13 precedent) -- and a run still emits exactly one remediation
+    """Each violation reports as `<plan_path>:<line>: <reason>` -- the
+    shape the capability already documents for its other usage error -- and a run still emits exactly one remediation
     line no matter how many violations there are or how long any one
-    diagnostic line would otherwise be (T-24-15)."""
+    diagnostic line would otherwise be."""
 
     def test_missing_section_names_line_one(self):
         with scratch_dir() as tmp:
@@ -2435,7 +2429,7 @@ class TestViolationLineShape(unittest.TestCase):
     def test_no_stderr_line_exceeds_two_hundred_characters(self):
         # A pathologically deep phase directory path, so the composed
         # `<path>:<line>: <reason>` line would otherwise exceed the bound
-        # regardless of how short the reason itself is (D-07).
+        # regardless of how short the reason itself is.
         with scratch_dir() as tmp:
             deep = Path(tmp, "a" * 60, "b" * 60, "c" * 60)
             deep.mkdir(parents=True)

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Regression test for the plan:post gate command: how it resolves SOTA_SCRIPT
-# (github.com/davdittrich/gsd-beads/issues/1's packaging investigation --
-# hooks/capability-auto-install.sh always installs at global scope, never
+# (hooks/capability-auto-install.sh always installs at global scope, never
 # project scope, so the command must find the script there too), and that it
-# carries no consumer-supplied data into the shell at all (gsd-beads-cqt).
+# carries no consumer-supplied data into the shell at all.
 # Extracts the gate command verbatim from capability.json (not a hand-copied
 # duplicate) so this test tracks the real predicate string, not a stale mirror.
 set -u
@@ -26,7 +25,7 @@ PY
 )"
 [ -n "$GATE_CMD" ] || { fail "could not extract gate command from capability.json"; exit 1; }
 
-# --- Case 0: the gate command is CONSTANT (gsd-beads-cqt) ---
+# --- Case 0: the gate command is CONSTANT ---
 # gsd-core interpolates ${PHASE_NUMBER}/${PHASE_DIR}/${PHASE_REQ_IDS} with a
 # plain String.replace (gate-predicate-evaluator.cjs, INTERPOLATION_RE) and
 # hands the result to execTool('sh', ['-c', cmd]) (check-command-router.cjs
@@ -89,8 +88,7 @@ pass "case2: script missing at both scopes exits 1 with clear message"
 
 # --- Case 2b: HOME and GSD_HOME both unset -> ${GSD_HOME:-$HOME} expands to
 # the empty string, so the third rung becomes the root-anchored
-# /.gsd/capabilities/sota-numerics/scripts/check-alternatives.py
-# (REVIEW-CRITICAL-FINAL P2-3). `sh -c` has no `set -u`, so this is
+# /.gsd/capabilities/sota-numerics/scripts/check-alternatives.py. `sh -c` has no `set -u`, so this is
 # unexercised elsewhere; still fail-closed (exit 1), but pin it so a future
 # rewrite that assumes one of the two is always set stays honest. ---
 ERR2B="$(cd "$SCRATCH" && env -u HOME -u GSD_HOME bash -c "$GATE_CMD" 2>&1 >/dev/null)"
@@ -100,7 +98,7 @@ echo "$ERR2B" | grep -q "gate script not found at project or global scope" || fa
 pass "case2b: HOME and GSD_HOME both unset still fails closed with the same message"
 
 # --- Case 6: a checker copy inside a repository enclosing the working
-# directory is never executed (D-14, T-24-18) ---
+# directory is never executed ---
 # The gate command used to append its script path to `git rev-parse
 # --show-toplevel`, so a repository enclosing the working directory -- not
 # the project itself -- could supply a checker copy that rung would reach.
@@ -135,7 +133,7 @@ fi
 pass "case6: the gate falls through past the enclosing repository straight to the global copy"
 rm -rf "$P6"
 
-# --- Case 3: hostile phase directory names (gsd-beads-cqt) ---
+# --- Case 3: hostile phase directory names ---
 # One payload per ESCAPE MECHANISM the shell offers, not per example. The
 # previous revision of this test enumerated examples and passed while three of
 # these executed, because every payload it carried was UNBALANCED -- it never
@@ -259,7 +257,7 @@ esac
 rm -rf "$P4"
 pass "case5: project copy precedes global scope in monorepo, non-Git, and absent-copy shapes"
 
-# --- Case 7 (F6a, R-B): global copy wins only when its version is strictly newer than the project copy's; python runs isolated ---
+# --- Case 7: global copy wins only when its version is strictly newer than the project copy's; python runs isolated ---
 # A project-local script shadowing the global one is a hostile-repo vector, so the
 # global copy is preferred unless it is verifiably older. Versions come from each
 # bundle's capability.json; an unreadable version keeps the project copy (case 5).
@@ -306,7 +304,7 @@ printf 'import sys\nopen(r"%s", "w").write("shadow")\nsys.exit(0)\n' "$CANARY7" 
 rm -rf "$P7"
 pass "case7: python runs isolated (-I); sibling modules cannot shadow the stdlib"
 
-# --- Case 8 (F6b): the missing-script message names only installable forms ---
+# --- Case 8: the missing-script message names only installable forms ---
 ERR8="$(cd "$SCRATCH" && GSD_HOME="$(mktemp -d)" bash -c "$GATE_CMD" 2>&1 >/dev/null)"
 echo "$ERR8" | grep -q 'sota-numerics\.git#' || fail "case8: message does not cite the git URL#tag install form"
 echo "$ERR8" | grep -q 'capability install sota-numerics' && fail "case8: message still cites the unsupported bare-name install"

@@ -31,7 +31,7 @@ copy wins; the order above is how that rule is met.
 
 A third rung used to sit between these two, asking Git for the top level of the repository
 enclosing the working directory and appending the script path to it, meant to widen the
-project lookup to working directories below the project root. It is gone (D-14): that top
+project lookup to working directories below the project root. It is gone: that top
 level is whatever repository encloses the *current working directory*, which is a directory
 an attacker chooses, not the project gsd-core dispatches the gate from — a checker script
 planted at the top of that enclosing repository would run in the project's place.
@@ -141,7 +141,7 @@ Fail-closed covers the cases where the phase cannot be identified. It
 does not cover the case where it is identified *wrongly*: if that 13b/13e ordering ever
 changed, `current_phase` would name a different phase and the gate would check that one and
 pass, with nothing to notice. The upstream fix is unchanged — pass the phase directory as an
-argv element, tracked as `gsd-beads-g72`. Until then the coupling is real and this is where
+argv element. Until then the coupling is real and this is where
 it is written down.
 
 ### Residual: `workflow.post_planning_gaps` does not gate this capability
