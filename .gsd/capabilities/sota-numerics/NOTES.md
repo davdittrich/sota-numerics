@@ -114,11 +114,10 @@ verdicts, not a gate that failed to find anything.
 | phase directory name | exit | side effect |
 | --- | --- | --- |
 | `11-a'; touch PWNED; :'b` | 0 | none |
-| `11-o'$(touch PWNED)'brien` | 0 | none |
-| ``11-x'`touch PWNED`'y`` | 0 | none |
-| `11-r'\|touch PWNED\|\|:'s` | 0 | none |
 | `11-t'>canary.txt;:'u` | 0 | none; `canary.txt` intact |
 | `11-o'brien` | 0 | none |
+
+The `$(...)`, backtick and `|`-pipe variants also exit `0` with no side effect.
 
 `11-o'brien` exiting `0` is a behaviour change: it exited `2` before. The apostrophe
 limitation is fixed, not documented away. A hostile name with a non-compliant plan still
@@ -127,87 +126,53 @@ exits `1`, so the name change did not cost the verdict.
 ### Residual: the gate now depends on gsd-core's workflow ordering
 
 Phase identity comes from STATE.md rather than from the caller, which couples this gate to
-the order in which gsd-core writes that file. `plan-phase.md:1524` is step 13b, "Record
-Planning Completion in STATE.md"; the `plan:post` gate dispatch is step 13e at
-`plan-phase.md:1558`. Both positions re-derived 2026-09-08 against the installed gsd-core
-1.13.0, not assumed from an earlier note. `current_phase` is therefore written before the
-gate runs, and at gate time it names the phase just planned.
+the order in which gsd-core writes that file. In `plan-phase.md` (gsd-core 1.16.0), step 13b,
+"Record Planning Completion in STATE.md", precedes step 13e, the `plan:post` gate dispatch.
+`current_phase` is therefore written before the gate runs, and at gate time it names the
+phase just planned.
 
 Every failure path is fail-closed, and `main()` maps each raise to exit `2`. Measured:
 
-| condition | exit |
-| --- | --- |
-| no `.planning/STATE.md` | 2 |
-| STATE.md with no `current_phase` | 2 |
-| `current_phase` not matching `^\d+(\.\d+)?$` (traversal, metacharacters) | 2 |
-| `current_phase` matching 0 directories | 2 |
-| `current_phase` matching 2 directories | 2 |
+Each of these exits `2`: no `.planning/STATE.md`; STATE.md with no `current_phase`; a
+`current_phase` not matching `^\d+(\.\d+)?$` (traversal, metacharacters); a `current_phase`
+matching zero or two directories.
 
-Do not oversell that. Fail-closed covers the cases where the phase cannot be identified. It
+Fail-closed covers the cases where the phase cannot be identified. It
 does not cover the case where it is identified *wrongly*: if that 13b/13e ordering ever
 changed, `current_phase` would name a different phase and the gate would check that one and
 pass, with nothing to notice. The upstream fix is unchanged — pass the phase directory as an
 argv element, tracked as `gsd-beads-g72`. Until then the coupling is real and this is where
 it is written down.
 
-### Residual: the same step can be turned off, which silently disables this gate
+### Residual: `workflow.post_planning_gaps` does not gate this capability
 
-This is a second, larger coupling than the ordering one above. Step 13e's own opening
-sentence is: "Proactive, non-blocking coverage report gated on `workflow.post_planning_gaps`
-(default `true`)." Step 13e is not only the gap-analysis capability's coverage report — it
-is the *only* dispatch point for every `plan:post` gate any capability registers, this one
-included. A project that sets `workflow.post_planning_gaps` to `false` never reaches step
-13e at all, so this gate — declared blocking, `onError: "halt"`, sold in `plugin.json` and
-`capability.json` as enforcing "on every plan in a phase" — never runs. There is no verdict,
-no error, and nothing an operator turning that key off would see: `render-hooks plan:post`
-still lists the gate as registered, but registration is not dispatch.
+Verified against gsd-core 1.16.0. Step 13e (`plan:post`) dispatches every registered
+`plan:post` hook. The `workflow.post_planning_gaps` key (default `true`) is a `when`
+condition on the first-party `gap-analysis` gate only, so setting it to `false` skips that
+gate and leaves this one running. gsd-core states the rule in step 13e: an empty
+`activeHooks` list is the only reason to skip the step silently.
 
-The key belongs to a different capability (`gap-analysis`), not to `sota-numerics`, so
-nothing in this bundle can detect or refuse that state. The upstream fix is to decouple
-`plan:post` gate/step/contribution dispatch from `gap-analysis`'s own report toggle, tracked
-as `gsd-beads-h1pb`, alongside the ordering coupling above (`gsd-beads-g72`). Until then:
-default is `true`, so a project that never touches `workflow.post_planning_gaps` is
-unaffected, and this is where the exception is written down.
+Earlier gsd-core releases tied the skip to the gap-analysis toggle (upstream #3606), so
+the capability's `engines.gsd` floor of `>=1.10.0` was not re-verified for this behaviour.
+Re-check before relying on the gate under that floor.
 
-## 7. The case-insensitive-filesystem residual: verified against gsd-core 1.13.0, not a live divergence (gsd-beads-25vc.21.3 item 3)
+## 7. Case-insensitive filesystems: no divergence between this gate and gsd-core
 
-`PLAN_FILE_RE` and `PLAN_SHAPED_RE` are both case-sensitive by design (section 3 above): a
-file stored as `23-01-plan.md` matches neither, so it is invisible to this gate, not merely
-misnamed. The comment above `PLAN_SHAPED_RE` used to assert, without checking, that
-gsd-core's own `*-PLAN.md` glob would still read such a file on a case-insensitive
-filesystem (macOS default, Windows) where this gate would not -- a real divergence, if true.
-It is not true, measured against the two places in installed gsd-core 1.13.0 that actually
-discover or read `.planning/phases/*/*-PLAN.md` content:
+`PLAN_FILE_RE` is case-sensitive, and so is gsd-core's plan discovery. `PLAN_SHAPED_RE`
+adds one case-insensitive exception: a phase-numbered name such as `23-01-plan.md` is
+reported as misnamed instead of ignored.
 
-- `~/.claude/gsd-core/workflows/plan-phase.md:574` -- `ls "${PHASE_DIR}"/*-PLAN.md`
-- `~/.claude/gsd-core/workflows/execute-plan.md:58` -- `(ls .planning/phases/XX-name/*-PLAN.md 2>/dev/null || true) | sort`,
-  from which `$PLAN_PATH` is chosen (execute-plan.md:62, "find first PLAN without matching
-  SUMMARY") and `$PHASE` derived (execute-plan.md:69), feeding every later `cat`/`grep` on
-  `{phase}-{plan}-PLAN.md` (execute-plan.md:93, 98, 201, 400, 476).
+Verified against gsd-core 1.16.0. Two workflows discover plans, `plan-phase.md` and
+`execute-plan.md`, and both use a bare shell glob (`ls .../*-PLAN.md`). `ls` matches the
+pattern against the name `readdir` returns, byte for byte, so `23-01-plan.md` does not match
+`*-PLAN.md` on any platform GSD's bash workflows run on. This is the same answer
+`PLAN_FILE_RE` gives. Later reads of `{phase}-{plan}-PLAN.md` use values taken from the
+same glob, so they never name a file the glob excluded. `gsd-tools.cjs` has no plan
+discovery of its own.
 
-Both discovery sites are a bare shell glob, not an explicit case-fold and not an
-independently-constructed path. `ls`'s glob matches its pattern against the name `readdir`
-returns -- the name as stored on disk -- using byte-for-byte `fnmatch`, which is
-case-sensitive regardless of whether the underlying filesystem resolves `open()` calls
-case-insensitively. A file stored as `23-01-plan.md` therefore does not match `*-PLAN.md` in
-`ls`, on any platform GSD's bash-based workflows run on, for the same reason `PLAN_FILE_RE`
-does not match it: same answer, no divergence. The later `cat {phase}-{plan}-PLAN.md` reads
-look like the genuinely dangerous third category -- an open of a constructed canonical path,
-which *would* case-fold a lowercase file on a case-insensitive filesystem -- but their
-`{phase}`/`{plan}` values are always the ones the same glob already found in the same run;
-the constructed path is never built from a source independent of that glob, so it can never
-name a file the glob excluded. `~/.claude/gsd-core/bin/gsd-tools.cjs` has no plan-discovery
-or plan-reading code of its own to check against either path: every `-PLAN.md` hit in it
-(lines 69, 160, 173, 2624, 2639) is a doc comment or CLI help string, not executable
-glob/readdir logic.
+**Decision (accepted risk):** no macOS or Windows CI leg. There is no divergence for a second
+runner to catch.
 
-**Decision (accepted risk):** no macOS or Windows CI leg is added. Measured against gsd-core
-1.13.0's source, there is no divergence for a second runner to catch -- it would exercise
-only the filesystem's own case-folding half of the original claim, a half already shown
-irrelevant here, buying a permanently-maintained runner for a residual with no artifact in
-this repository and no review finding that has ever produced one.
-
-**Reopens if:** a lowercase plan-named file (e.g. `23-01-plan.md`) is ever observed actually
-present in a phase directory, or a future gsd-core release adds an explicit case-fold or an
-independently-sourced constructed-path read to its plan discovery -- at which point this
-section's citations are the ones to re-check first.
+**Reopens if:** a lowercase plan-named file is observed in a phase directory, or gsd-core
+adds an explicit case-fold or an independently built plan path to its discovery. Re-check
+the two glob sites first.

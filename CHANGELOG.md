@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+Gate:
+
+- A plan with several violations reports up to five of them in one run, not one per re-run.
+- A citation needs a four-digit year in its own sentence; placeholder hosts (including subdomains) and `TODO`/`TBD`/`N/A` references are rejected.
+- `Decided by:` accepts a bold value and requires the criterion to end at a word boundary.
+- Bold-named entries accept `+` and ordered-list markers; an entry ends at its `Decided by:` line; reserved-label bullets are ignored and duplicate names collapse.
+- Indented code is masked before HTML comments and fences; the section heading may carry 0-3 leading spaces.
+- A UTF-8 BOM no longer hides plan or STATE.md content.
+- A phase-numbered plan in any case (`23-01-plan.md`) is reported as misnamed; a symlinked plan file is reported, not followed.
+- The project-root search has no ten-ancestor cap.
+- A borderless table gets a message saying only framed tables are supported; a long path is shortened before the failure reason is.
+
+Hooks:
+
+- The auto-install runs only on `SessionStart` and only when the capability is enabled, so parallel subagent spawns no longer race the install lock and a disabled capability is never installed.
+- `SubagentStart` banners reach the subagent as `hookSpecificOutput.additionalContext`.
+- A failing `config-get` outside a GSD project counts as enabled and prints nothing.
+- The install timeout has a kill grace, so a child ignoring SIGTERM cannot hang the session.
+- The sidecar is read only when it is a regular file and is not recorded when the bundle changed during the install; a deleted global mirror is repaired; a symlinked bundle directory is hashed through.
+- `CDPATH` is cleared around `cd`; the absolute global gsd-core path is tried before `PATH`, and relative `PATH` hits are ignored.
+- The gate prefers the global script when its version is at least the project copy's, and runs `python3 -I`.
+- Known residual: the provenance check runs on git's view of the bundle, so a `.gitattributes` clean filter can make the installed worktree bytes differ from the bytes checked.
+
+Docs:
+
+- NOTES and README state that `workflow.post_planning_gaps` gates only the first-party gap-analysis hook in gsd-core 1.16.0, so this gate still runs when it is `false`.
+- README states the CWM and Olausson et al. results as those papers report them.
+
 ## 0.2.0
 
 **The gate's rules for what a plan must contain are unchanged; how it finds and
@@ -52,11 +82,6 @@ holding twenty plans named none of them. It now reads
 `<plan_path>: not valid UTF-8 (<reason> at byte <n>); re-save the plan as UTF-8`.
 No verdict changes; only the message.
 
-Plans whose `Alternatives Considered` content sits outside code fences are
-judged exactly as before. A plan that relied on fenced text to satisfy the
-gate now fails, and a caller that named no phase directory, or named one
-carrying shell metacharacters, gets a different verdict.
-
 **Steering covers more ground.** All four advisory fragments changed. Between
 them they now also steer toward internal and project consistency, unambiguity,
 completeness, efficiency, and code that stays quiet when an agent runs it; the
@@ -76,13 +101,6 @@ publishes the bundle to every project on the machine, so where a repository
 tracks the bundle, the `SessionStart` and `SubagentStart` hook now installs only
 bytes it can show are already published. Where no repository tracks the bundle
 there is nothing to check against, and those bytes install unverified.
-A marketplace install is not protected by it in every form. Claude Code caches plugins both as depth-1
-git clones and as plain directories. The plain form has no repository over it,
-so the check does not apply. The clone form is tracked, so the check applies and
-passes: the clone is clean, and its `HEAD` is the published tip it was cloned
-from. The host's own `.in_use/` and `.orphaned_at` bookkeeping sits at the
-plugin root, three directories above the bundle, outside the scope of the
-uncommitted-or-ignored test.
 
 A refusal reaches you in two situations: an environment fault, or running this
 plugin from a git checkout that tracks the bundle — a development clone or
@@ -93,11 +111,6 @@ every one of those until you clear it. README's "What the Claude hooks do"
 tabulates every refusal, the stderr it prints, and what clears it.
 
 The hook then installs nothing and records nothing, so the next session retries.
-The ignored-files case catches contributors by surprise: running
-`python3 -m check-alternatives` instead of running the script directly leaves
-a bytecode-cached `__pycache__/` inside the bundle, and the guard's
-`git status --ignored` flag is exactly why it catches this. Delete it and
-reopen the session.
 
 The bundle digest's record format changed: each walk entry now emits a
 kind-tagged, escaped line instead of the old `path -> target` and raw
