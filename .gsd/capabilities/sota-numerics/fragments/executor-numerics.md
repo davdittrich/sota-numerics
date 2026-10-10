@@ -1,7 +1,7 @@
 Numerical-stability and efficiency discipline for execution is advisory only — this capability's single gate already fired at plan:post, not here.
 Derive numeric parameters (tolerances, iteration counts, thresholds, learning rates) from first principles or the problem's actual scale, not by tuning a value until a test happens to pass.
 Prefer numerically stable formulations over merely convenient ones — reformulate to avoid catastrophic cancellation (subtracting nearly-equal large quantities) and avoid letting rounding error propagate silently through a chain of operations.
-Where efficiency and simplicity conflict, favour efficiency and speed, per this project's own priority order.
+Where efficiency and simplicity conflict, favour efficiency and name the simplicity given up.
 Treat the emitted code as complete and unambiguous at the point of use: write every branch the caller can reach, give every argument the code accepts a defined meaning, and name a value the caller must supply rather than defaulting it silently.
 If a simplification trades away precision, name its ceiling — the condition under which it breaks — wherever the simplification is described: in a `# ponytail:`-style comment when it lives in code, and in the prose itself when it lives in prose.
 Code an agent runs directly by hand is **quiet**. On success it prints a compact machine-readable result, or nothing. On failure it prints one line per problem plus exactly one line naming the fix; an unresolvable input gets the diagnostic, no fix line. It signals through its exit code, no progress chatter. When a result would flood the context window it writes it to a file and prints that path.
