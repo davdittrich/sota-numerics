@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.1 (unreleased)
+## 0.2.1 (2026-10-10)
 
 Gate:
 - A STATE-resolved phase with no plan files now exits `2` instead of `0`.
