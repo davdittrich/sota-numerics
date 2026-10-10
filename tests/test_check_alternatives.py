@@ -2082,5 +2082,12 @@ class TestCommentOpenerForms(GateCase):
         self.assertLess(elapsed, 2)
 
 
+class TestFrontmatterClosedAtEof(GateCase):
+    def test_a_section_inside_frontmatter_closed_at_eof_is_masked(self):
+        for close in ("---", "..."):
+            with self.subTest(close=close):
+                self.gate(f"---\nphase: 1\n{_H}\n{_A}{_B}\n{_D}{close}", 1, "missing")
+
+
 if __name__ == "__main__":
     unittest.main()

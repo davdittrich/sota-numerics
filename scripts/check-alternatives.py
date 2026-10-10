@@ -532,7 +532,7 @@ def next_comment_opener(text, pos):
 # break or a setext H2 underline, not frontmatter, and must be left
 # unmasked rather than blanked to EOF.
 PLAN_FRONTMATTER_RE = re.compile(
-    r"\A---[ \t]*\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*\r?\n", re.DOTALL
+    r"\A---[ \t]*\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)", re.DOTALL
 )
 
 
