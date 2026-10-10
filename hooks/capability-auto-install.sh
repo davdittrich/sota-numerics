@@ -313,7 +313,12 @@ INSTALL_STATUS=$?
 # Both failure branches below break this repo's silent `|| true` convention and
 # write no STATE_FILE: the path is unattended, so silence would leave a
 # capability permanently inactive, and the next session must retry.
-if [ "$INSTALL_STATUS" -eq 0 ]; then
+# Re-hash after the install: the publication guard above judged the bytes as
+# they were then. If they moved while the install ran, the mirror is not
+# described by NEW_HASH, so record nothing and let the next session retry.
+if [ "$INSTALL_STATUS" -eq 0 ] && [ "$(bundle_hash)" != "$NEW_HASH" ]; then
+  echo "capability-auto-install: the $CAP_ID bundle changed during the install; not recording it as installed" >&2
+elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
   # Unlink before writing so the redirection below always creates a fresh

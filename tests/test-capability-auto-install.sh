@@ -765,6 +765,22 @@ run_hook
 [ "$(installs)" = 2 ] || fail "I9: an edit behind a symlinked bundle directory did not change the hash"
 pass "I9: a symlinked bundle directory is hashed through, not as a bare link"
 
+# --- I10 (F16): a bundle that changes while the install runs is not recorded as installed ---
+# The clean-check ran before the install; an edit in between means the mirror may
+# hold bytes the sidecar hash does not describe, so the sidecar must not be written.
+new_sandbox i10
+cat > "$SB/bin/gsd-tools" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
+printf 'raced\n' >> "$BUNDLE/scripts/check.py"
+exit 0
+STUB
+run_hook
+[ "$(installs)" = 1 ] || fail "I10: precondition -- the install should have run"
+[ ! -f "$(sidecar)" ] || fail "I10: a bundle edited during the install still got a sidecar"
+err_has "changed during" || fail "I10: no warning (err: $(cat "$SB/err"))"
+pass "I10: a bundle that changed during the install leaves no sidecar"
+
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop
