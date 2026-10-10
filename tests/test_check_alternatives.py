@@ -2016,5 +2016,14 @@ class TestTabIndentation(GateCase):
         self.gate(f"{_H}\n{_A}  \t{_B}\n{_D}", 1, "fewer than 2 named alternatives (found 1)")
 
 
+class TestFenceInsideListItem(GateCase):
+    def test_a_deeply_indented_fence_in_a_list_item_is_masked(self):
+        for fence in ("```", "~~~"):
+            with self.subTest(fence=fence):
+                self.gate(f"{_H}\n{_A}- **Other**: no citation.\n\n"
+                          f"    {fence}\n    https://numpy.org/doc/ ({TODAY_YEAR})\n    {fence}\n\n{_D}",
+                          1, "alternative 'Other'", "missing URL or doc-ref citation")
+
+
 if __name__ == "__main__":
     unittest.main()

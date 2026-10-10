@@ -195,10 +195,12 @@ STATE_BODY_PHASE_RE = re.compile(
     r"^[ \t]{0,3}\*{0,2}Phase:\*{0,2}[ \t]*(\d+(?:\.\d+)?)\b", re.MULTILINE
 )
 
-# A CommonMark fenced code block opener: up to three leading spaces, then three
-# or more backticks or tildes, then an optional info string. Anchored per line,
+# A CommonMark fenced code block opener: leading spaces, then three or more
+# backticks or tildes, then an optional info string. Deep indentation is a fence
+# only inside a list item: any other 4+-space block is already blanked by
+# `mask_indented_code_blocks`, which runs first. Anchored per line,
 # no nested quantifiers -- same ReDoS discipline as the scans above.
-FENCE_LINE_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
+FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
 # The other construct CommonMark keeps out of the rendered page. Plain string
 # search, not a regex: the delimiters are literals, so `str.find` is both
 # faster and immune to the backtracking the scans above are shaped to avoid.
