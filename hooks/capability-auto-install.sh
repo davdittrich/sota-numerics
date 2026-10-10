@@ -108,7 +108,7 @@ _bundle_records() {
 # `find: Permission denied`.
 bundle_hash() {
   local _list
-  _list="$(set -o pipefail; find "$BUNDLE_DIR" -print0 2>/dev/null | _bundle_records)" || return 1
+  _list="$(set -o pipefail; find "$BUNDLE_DIR/" -print0 2>/dev/null | _bundle_records)" || return 1
   printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 

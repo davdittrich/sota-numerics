@@ -754,6 +754,17 @@ run_hook
 [ "$(installs)" = 2 ] || fail "I8: a deleted mirror was not reinstalled ($(installs) installs)"
 pass "I8: the fast path requires the mirror directory to exist"
 
+# --- I9 (F15): a symlinked bundle directory is walked, so edits inside it are drift ---
+new_sandbox i9
+mv "$BUNDLE" "$SB/real-bundle"
+ln -s "$SB/real-bundle" "$BUNDLE"
+run_hook
+[ "$(installs)" = 1 ] || fail "I9: precondition -- first run should install"
+printf 'print("edited")\n' > "$SB/real-bundle/scripts/check.py"
+run_hook
+[ "$(installs)" = 2 ] || fail "I9: an edit behind a symlinked bundle directory did not change the hash"
+pass "I9: a symlinked bundle directory is hashed through, not as a bare link"
+
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop
