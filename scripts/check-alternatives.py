@@ -115,17 +115,20 @@ SECTION_HEADING_RE = re.compile(
 # A bare `=+` run with no preceding paragraph is a horizontal rule, not a
 # setext heading -- pinned by
 # TestSectionBoundary.test_bare_setext_rule_does_not_end_the_section.
-# `-` underlines are never a boundary either: `---` is also a thematic break
-# and a frontmatter fence -- pinned by
+# A `-` run is a setext H2 underline only directly under a paragraph line (not
+# a list item, quote, table row or heading); after a blank line it is a
+# thematic break and a frontmatter fence -- pinned by
 # TestSectionBoundary.test_thematic_break_does_not_end_the_section.
+# An empty ATX heading (`##` alone) is still a heading.
 NEXT_HEADING_RE = re.compile(
-    r"^[ \t]{0,3}#{1,2}[ \t]+"
-    r"|^[ \t]{0,3}[^\s][^\n]*\n[ \t]{0,3}=+[ \t]*$",
+    r"^[ \t]{0,3}#{1,2}(?:[ \t\r]|$)"
+    r"|^[ \t]{0,3}[^\s][^\n]*\n[ \t]{0,3}=+[ \t]*$"
+    r"|^[ \t]{0,3}(?![-+*>|#]|\d{1,9}[.)])[^\s][^\n]*\n[ \t]{0,3}-+[ \t]*$",
     re.MULTILINE,
 )
-H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
+H3_HEADING_RE = re.compile(r"^[ \t]{0,3}###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
-    r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
+    r"^[ \t]{0,3}### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
 EXEMPTION_RE = re.compile(r"N/A[ \t]*[-—][ \t]*no mechanism choice\.?", re.IGNORECASE)
 # Indentation bounded to CommonMark's zero-to-three-space top-level range

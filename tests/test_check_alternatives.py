@@ -2025,5 +2025,27 @@ class TestFenceInsideListItem(GateCase):
                           1, "alternative 'Other'", "missing URL or doc-ref citation")
 
 
+for _name, (_boundary, _ends) in {
+    "setext_h2_ends_the_section": ("Later Section\n---", True),
+    "setext_h2_short_underline_ends_the_section": ("Later Section\n--", True),
+    "empty_atx_h2_ends_the_section": ("##", True),
+    "empty_atx_h1_ends_the_section": ("#", True),
+    "list_item_before_a_rule_does_not_end_the_section": ("- item\n---", False),
+}.items():
+    setattr(TestSectionBoundary, f"test_{_name}", _boundary_test(_boundary, _ends))
+
+
+class TestIndentedH3(GateCase):
+    MARKER = "   ### Internal design alternatives"
+
+    def test_an_indented_internal_heading_ends_the_entry_before_it(self):
+        self.gate(f"{_H}\n{_A}- **Other**: no citation.\n{self.MARKER}\n\n"
+                  f"- **Local**: https://numpy.org/doc/ ({TODAY_YEAR}).\n\n{_D}",
+                  1, "alternative 'Other'", "missing URL or doc-ref citation")
+
+    def test_an_indented_internal_heading_scopes_the_entries_after_it(self):
+        self.gate(f"{_H}\n{_A}{_B}\n{self.MARKER}\n\n- **Local**: no citation.\n\n{_D}", 0)
+
+
 if __name__ == "__main__":
     unittest.main()
