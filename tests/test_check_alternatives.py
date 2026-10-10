@@ -1968,6 +1968,29 @@ class TestDeepProjectRoot(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestAllViolationsPerPlan(unittest.TestCase):
+    def test_every_bad_entry_and_missing_decided_by_reported_together(self):
+        result = run_plan(
+            "## Alternatives Considered\n\n"
+            "- **A**: no source.\n"
+            "- **B**: no source either.\n"
+            f"- **C**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("alternative 'A'", result.stderr)
+        self.assertIn("alternative 'B'", result.stderr)
+        self.assertIn("no 'Decided by:' line", result.stderr)
+        self.assertEqual(result.stderr.count("remediation:"), 1)
+
+    def test_violations_per_plan_are_capped_at_five(self):
+        bullets = "".join(f"- **Opt{i}**: no source.\n" for i in range(9))
+        result = run_plan(
+            f"## Alternatives Considered\n\n{bullets}\nDecided by: performance — x.\n"
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr.count("01-01-PLAN.md:"), 5, result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:

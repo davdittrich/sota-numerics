@@ -823,8 +823,12 @@ def validate_entry(name, entry_text, today_year):
     return None
 
 
+MAX_VIOLATIONS_PER_PLAN = 5
+
+
 def validate_plan(path):
-    """Return None if `path` is compliant, else a `(line, reason)` violation.
+    """Return `[]` if `path` is compliant, else up to MAX_VIOLATIONS_PER_PLAN
+    `(line, reason)` violations.
 
     `line` is 1-indexed into the plan file: the heading line for a
     section-level violation (missing section, too few alternatives, no
@@ -861,16 +865,16 @@ def validate_plan(path):
     masked = mask_fenced_regions(text)
     body, body_start, boundary = extract_section_body(masked)
     if body is None:
-        return (1, "missing '## Alternatives Considered' section")
+        return [(1, "missing '## Alternatives Considered' section")]
     if is_exempt(body):
-        return None
+        return []
     heading_line = line_number(masked, body_start)
     entries = split_entries(body)
     if not entries:
-        return (
+        return [(
             heading_line,
             "section found but no alternatives parsed; entries must be '- **Name**' bullets or bold-name table rows (borderless tables are not supported; use leading and trailing '|')",
-        )
+        )]
     mechanism_entries = [
         (name, entry_text, offset)
         for name, entry_text, internal, offset in entries
@@ -878,23 +882,24 @@ def validate_plan(path):
     ]
     distinct = {name.lower() for name, _, _ in mechanism_entries}
     if len(distinct) < MIN_ALTERNATIVES:
-        return (
+        return [(
             heading_line,
             f"fewer than 2 named alternatives (found {len(distinct)})"
             + below_the_boundary(boundary, BULLET_RE, TABLE_ROW_RE),
-        )
+        )]
     today_year = datetime.date.today().year
+    found = []
     for name, entry_text, offset in mechanism_entries:
         reason = validate_entry(name, entry_text, today_year)
         if reason:
-            return (line_number(masked, body_start + offset), reason)
+            found.append((line_number(masked, body_start + offset), reason))
     if not DECIDED_BY_RE.search(body):
-        return (
+        found.append((
             heading_line,
             "no 'Decided by:' line naming a ranked criterion"
             + below_the_boundary(boundary, DECIDED_BY_RE),
-        )
-    return None
+        ))
+    return found[:MAX_VIOLATIONS_PER_PLAN]
 
 
 def phase_label_from_dirname(phase_dir_arg):
@@ -920,10 +925,9 @@ def check_alternatives(phase_dir_arg):
         if plan_path.is_symlink():
             violations.append((plan_path, 1, SYMLINK_PLAN_REASON))
             continue
-        result = validate_plan(plan_path)
-        if result is not None:
-            line, reason = result
-            violations.append((plan_path, line, reason))
+        violations.extend(
+            (plan_path, line, reason) for line, reason in validate_plan(plan_path)
+        )
     # A misnamed file's violation is about its filename, not any line inside
     # it -- line 1 is the only line every file has, misnamed or not.
     violations.extend((path, 1, MISNAMED_PLAN_REASON) for path in misnamed)
