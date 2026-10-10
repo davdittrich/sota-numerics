@@ -816,6 +816,24 @@ run_hook
 err_has "changed during" || fail "I10: no warning (err: $(cat "$SB/err"))"
 pass "I10: a bundle that changed during the install leaves no sidecar"
 
+# --- I10b (R-F): a re-hash that fails is reported as unreadable, not as "changed" ---
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: I10b (root ignores chmod 000)"; else
+new_sandbox i10b
+cat > "$SB/bin/gsd-tools" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
+mkdir -p "$BUNDLE/private" && chmod 000 "$BUNDLE/private"
+exit 0
+STUB
+run_hook
+chmod 755 "$BUNDLE/private"
+[ "$(installs)" = 1 ] || fail "I10b: precondition -- the install should have run"
+[ ! -f "$(sidecar)" ] || fail "I10b: an unverifiable bundle still got a sidecar"
+err_has "changed during" && fail "I10b: failed re-hash reported as a change (err: $(cat "$SB/err"))"
+err_has "could not be re-read" || fail "I10b: no re-read warning (err: $(cat "$SB/err"))"
+pass "I10b: a failed re-hash says so and records nothing"
+fi
+
 # --- I11 (F19a): a FIFO at the sidecar path must not hang the hook ---
 # `-r` is true for a FIFO and `cat` then blocks forever on SessionStart.
 new_sandbox i11

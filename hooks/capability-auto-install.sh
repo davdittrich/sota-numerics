@@ -321,7 +321,11 @@ INSTALL_STATUS=$?
 # Re-hash after the install: the publication guard above judged the bytes as
 # they were then. If they moved while the install ran, the mirror is not
 # described by NEW_HASH, so record nothing and let the next session retry.
-if [ "$INSTALL_STATUS" -eq 0 ] && [ "$(bundle_hash)" != "$NEW_HASH" ]; then
+REHASH=""; REHASH_STATUS=0
+[ "$INSTALL_STATUS" -eq 0 ] && { REHASH="$(bundle_hash)"; REHASH_STATUS=$?; }
+if [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH_STATUS" -ne 0 ]; then
+  echo "capability-auto-install: the $CAP_ID bundle could not be re-read after the install; not recording it as installed" >&2
+elif [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH" != "$NEW_HASH" ]; then
   echo "capability-auto-install: the $CAP_ID bundle changed during the install; not recording it as installed" >&2
 elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
