@@ -164,8 +164,6 @@ ENTRY_END_RE = re.compile(
 RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by"}
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD|N/A|NONE|\?)\s*$", re.IGNORECASE)
-# A clause ends at sentence punctuation followed by whitespace, or a blank line.
-CLAUSE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+|\n[ \t]*\n")
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
 # `current_phase` in STATE.md's YAML frontmatter. Constrained to a phase number
 # at the point of reading, so nothing else can become a directory lookup.
@@ -845,15 +843,15 @@ def validate_entry(name, entry_text, today_year):
 
     if not cited(entry_text):
         issues.append("missing URL or doc-ref citation")
-    # A year dates the citation only when it sits in the citation's own clause.
-    # Digits inside the URL or doc-ref themselves (an issue number, a version) are
-    # not a date.
-    years = [
-        int(m.group(0))
-        for clause in CLAUSE_SPLIT_RE.split(entry_text)
-        if cited(clause)
-        for m in YEAR_RE.finditer(DOC_REF_RE.sub(" ", URL_RE.sub(" ", clause)))
-    ]
+    # A year anywhere in a cited entry dates it -- clause boundaries are not
+    # reliable in citations ("Higham et al. 2024.", "Smith, J. (2025)."). Digits
+    # inside the URL or doc-ref themselves (an issue number, a version) are not
+    # a date.
+    years = (
+        [int(m.group(0)) for m in YEAR_RE.finditer(DOC_REF_RE.sub(" ", URL_RE.sub(" ", entry_text)))]
+        if cited(entry_text)
+        else []
+    )
     if not years:
         issues.append("no citation date")
     elif not any(today_year - RECENCY_WINDOW_YEARS <= y <= today_year for y in years):

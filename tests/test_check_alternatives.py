@@ -814,12 +814,11 @@ class TestYearBelongsToCitation(GateCase):
             "Decided by: performance — B.\n"
         )
 
-    def test_year_in_unrelated_clause_does_not_date_the_citation(self):
+    def test_year_elsewhere_in_a_cited_entry_dates_it(self):
         result = self._run(
             f"- **A**: first shipped in {TODAY_YEAR}. See `https://redis.io/docs/` for details."
         )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("date", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_year_in_citation_clause_passes(self):
         for entry in (
@@ -2087,6 +2086,24 @@ class TestFrontmatterClosedAtEof(GateCase):
         for close in ("---", "..."):
             with self.subTest(close=close):
                 self.gate(f"---\nphase: 1\n{_H}\n{_A}{_B}\n{_D}{close}", 1, "missing")
+
+
+class TestEntryDating(GateCase):
+    def test_initials_and_et_al_do_not_split_the_dated_clause(self):
+        for prose in (
+            f"Higham et al. {TODAY_YEAR}. https://nhigham.com/",
+            f"Smith, J. ({TODAY_YEAR}). https://nhigham.com/",
+            f"J. H. Wilkinson, {TODAY_YEAR}. https://nhigham.com/",
+        ):
+            with self.subTest(prose=prose):
+                self.gate(f"{_H}\n{_A}- **Other**: {prose}\n\n{_D}", 0)
+
+    def test_a_year_anywhere_in_a_cited_entry_dates_it(self):
+        self.gate(f"{_H}\n{_A}- **Other**: shipped in {TODAY_YEAR}. See https://nhigham.com/ for details.\n\n{_D}", 0)
+
+    def test_a_year_without_a_citation_is_not_a_citation(self):
+        self.gate(f"{_H}\n{_A}- **Other**: shipped in {TODAY_YEAR}.\n\n{_D}", 1,
+                  "alternative 'Other'", "missing URL or doc-ref citation")
 
 
 if __name__ == "__main__":
