@@ -53,7 +53,7 @@ def run_check(phase_dir, cwd=None):
     )
 
 
-def run_plan(text, name="01-01-PLAN.md"):
+def check(text, name="01-01-PLAN.md"):
     """Write `text` as the only plan in a fresh phase dir and run the gate."""
     with scratch_dir() as tmp:
         write_plan(tmp, text, name)
@@ -61,10 +61,8 @@ def run_plan(text, name="01-01-PLAN.md"):
 
 
 def write_plan(dir_path, text, name="01-01-PLAN.md"):
-    """Write `text` under `dir_path` as a filename the discovery regex
-    matches. The standalone tests/fixtures/plan-*.md files hold section
-    content only -- they are copied under a matching name here rather than
-    discovered by their own bare filenames."""
+    """Write `text` under `dir_path` as a discoverable plan name (fixtures hold
+    section content only)."""
     Path(dir_path, name).write_text(text, encoding="utf-8")
 
 
@@ -81,6 +79,20 @@ def fixture_text(name):
 def copy_fixture_dir(name, dest):
     for src in (FIXTURES_DIR / name).iterdir():
         write_plan(dest, fixture_text(f"{name}/{src.name}"), name=src.name)
+
+
+class GateCase(unittest.TestCase):
+    def gate(self, text, code, *has, lacks=(), name="01-01-PLAN.md"):
+        """Run the gate on `text`; assert exit `code` and stderr substrings."""
+        return self.expect(check(text, name), code, *has, lacks=lacks)
+
+    def expect(self, result, code, *has, lacks=()):
+        self.assertEqual(result.returncode, code, result.stderr)
+        for s in has:
+            self.assertIn(s, result.stderr)
+        for s in lacks:
+            self.assertNotIn(s, result.stderr)
+        return result
 
 
 COMPLIANT_ENTRY_TEMPLATE = """## Alternatives Considered
@@ -133,12 +145,9 @@ def table_plan(heading="## Alternatives Considered", entries=SHAPE_ENTRIES):
 
 
 def split_across_boundary(boundary):
-    """One cited alternative inside the section; a second cited alternative
-    and the `Decided by:` line placed after `boundary`.
-
-    The plan holds two compliant alternatives in total but only one within
-    the section, so it is compliant exactly when `boundary` fails to end
-    the section and donates its entry to it."""
+    """One cited alternative inside the section; a second one and the `Decided by:`
+    line placed after `boundary`. Compliant exactly when `boundary` fails to end
+    the section."""
     first, second = SHAPE_ENTRIES
     entries = [
         f"- **{name}**: {prose} {citation} ({year})."
@@ -164,12 +173,9 @@ DOCUMENTED_MIXED_BODY = f"""## Alternatives Considered
 """
 
 
-class TestMixedAlternatives(unittest.TestCase):
+class TestMixedAlternatives(GateCase):
     def test_mixed_bullets_exits_0(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, DOCUMENTED_MIXED_BODY)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(DOCUMENTED_MIXED_BODY, 0)
 
     def test_mixed_table_exits_0(self):
         text = f"""## Alternatives Considered
@@ -188,10 +194,7 @@ class TestMixedAlternatives(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_internal_bullets_do_not_suppress_mechanism_table(self):
         text = f"""## Alternatives Considered
@@ -208,10 +211,7 @@ class TestMixedAlternatives(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_internal_bullets_do_not_increase_table_mechanism_count(self):
         text = f"""## Alternatives Considered
@@ -227,11 +227,7 @@ class TestMixedAlternatives(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_internal_entries_do_not_count(self):
         text = f"""## Alternatives Considered
@@ -245,11 +241,7 @@ class TestMixedAlternatives(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_exact_marker_bounds_preceding_mechanism_evidence(self):
         text = f"""## Alternatives Considered
@@ -267,13 +259,7 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Deficient mechanism'", result.stderr)
-        self.assertIn("missing URL or doc-ref citation", result.stderr)
-        self.assertIn("no citation date", result.stderr)
+        self.gate(text, 1, "alternative 'Deficient mechanism'", "missing URL or doc-ref citation", "no citation date")
 
     def test_peer_h3_after_exact_marker_resumes_mechanism_scope(self):
         text = f"""## Alternatives Considered
@@ -291,13 +277,7 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
-        self.assertIn("missing URL or doc-ref citation", result.stderr)
-        self.assertIn("no citation date", result.stderr)
+        self.gate(text, 1, "alternative 'Resumed mechanism'", "missing URL or doc-ref citation", "no citation date")
 
     def test_long_peer_h3_resumes_mechanism_bullet_scope(self):
         peer_heading = "### " + ("X" * 201)
@@ -316,11 +296,7 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+        self.gate(text, 1, "alternative 'Resumed mechanism'")
 
     def test_bare_peer_h3_resumes_mechanism_table_scope(self):
         text = f"""## Alternatives Considered
@@ -344,29 +320,18 @@ Internal prose must not lend `https://numpy.org/doc/stable/` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Resumed mechanism'", result.stderr)
+        self.gate(text, 1, "alternative 'Resumed mechanism'")
 
     def test_mixed_section_missing_decided_by_fails(self):
         text = DOCUMENTED_MIXED_BODY.replace(f"\n{SHAPE_DECISION}\n", "\n")
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no 'Decided by:' line naming a ranked criterion", result.stderr)
+        self.gate(text, 1, "no 'Decided by:' line naming a ranked criterion")
 
 
-class TestMixedCompatibility(unittest.TestCase):
+class TestMixedCompatibility(GateCase):
     def test_no_marker_bullets_and_table_exit_0(self):
         for text, _ in (bullet_plan(), table_plan()):
             with self.subTest(shape=text.splitlines()[2][:1]):
-                with scratch_dir() as tmp:
-                    write_plan(tmp, text)
-                    result = run_check(tmp)
-                self.assertEqual(result.returncode, 0)
+                self.gate(text, 0)
 
     def test_uncited_mechanism_still_fails(self):
         text = f"""## Alternatives Considered
@@ -381,13 +346,7 @@ class TestMixedCompatibility(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Uncited mechanism'", result.stderr)
-        self.assertIn("missing URL or doc-ref citation", result.stderr)
-        self.assertIn("no citation date", result.stderr)
+        self.gate(text, 1, "alternative 'Uncited mechanism'", "missing URL or doc-ref citation", "no citation date")
 
     def test_marker_variants_remain_mechanism_scope(self):
         variants = (
@@ -411,21 +370,14 @@ class TestMixedCompatibility(unittest.TestCase):
 
 {SHAPE_DECISION}
 """
-                with scratch_dir() as tmp:
-                    write_plan(tmp, text)
-                    result = run_check(tmp)
-                self.assertEqual(result.returncode, 1)
-                self.assertIn("alternative 'Local choice'", result.stderr)
+                self.gate(text, 1, "alternative 'Local choice'")
 
     def test_exact_marker_allows_trailing_horizontal_whitespace(self):
         text = DOCUMENTED_MIXED_BODY.replace(
             "### Internal design alternatives",
             "### Internal design alternatives \t",
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_marker_bearing_exemption_exits_0(self):
         text = """## Alternatives Considered
@@ -436,10 +388,7 @@ N/A — no mechanism choice
 
 - **Local layout**: project-local reasoning.
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_two_bullets_override_valid_table(self):
         bullets, _ = bullet_plan()
@@ -453,10 +402,7 @@ N/A — no mechanism choice
 {SHAPE_DECISION}
 """,
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_one_bullet_selects_valid_table(self):
         table, _ = table_plan()
@@ -464,10 +410,7 @@ N/A — no mechanism choice
             "## Alternatives Considered\n\n",
             "## Alternatives Considered\n\n- **Ignored bullet**: no evidence.\n\n",
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_bullet_and_table_do_not_combine(self):
         text = f"""## Alternatives Considered
@@ -480,11 +423,7 @@ N/A — no mechanism choice
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_unrelated_h3_without_marker_preserves_evidence_span(self):
         text = f"""## Alternatives Considered
@@ -498,19 +437,13 @@ Continuation with `authoritative-doc-A` ({TODAY_YEAR}).
 
 {SHAPE_DECISION}
 """
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
 
-class TestDocumentedSyntax(unittest.TestCase):
+class TestDocumentedSyntax(GateCase):
     def test_readme_and_planner_name_exact_mixed_contract(self):
         control, _ = bullet_plan()
-        with scratch_dir() as tmp:
-            write_plan(tmp, control)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(control, 0)
 
         root = Path(__file__).resolve().parent.parent
         marker = "### Internal design alternatives"
@@ -531,115 +464,43 @@ class TestDocumentedSyntax(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_documented_mixed_body_exits_0(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, DOCUMENTED_MIXED_BODY)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(DOCUMENTED_MIXED_BODY, 0)
 
 
-class TestSectionPresence(unittest.TestCase):
+class TestSectionPresence(GateCase):
     """The section heading itself."""
 
     def test_missing_section_exits_1(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-missing-section.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Alternatives Considered", result.stderr)
+        self.gate(fixture_text("plan-missing-section.md"), 1, "Alternatives Considered")
 
     def test_suffixed_heading_accepts_identical_bullet_body(self):
         exact, exact_entries = bullet_plan()
         suffixed, suffixed_entries = bullet_plan("## Alternatives Considered (REQ-10)")
         self.assertEqual(exact.split("\n\n", 1)[1], suffixed.split("\n\n", 1)[1])
         self.assertEqual(exact_entries, suffixed_entries)
-        with scratch_dir() as tmp:
-            write_plan(tmp, suffixed)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(suffixed, 0)
 
     def test_concatenated_heading_remains_missing(self):
         text, _ = bullet_plan("## Alternatives ConsideredFoo")
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(text, 1, "missing '## Alternatives Considered' section")
 
 
-class TestSectionBoundary(unittest.TestCase):
+class TestSectionBoundary(GateCase):
     """Which heading forms end the section body.
 
-    Donation is the dangerous direction: an entry written under a *later*
-    heading, counted as if it sat in this section, turns a one-alternative
-    plan into a passing two-alternative one. H1 and H2 end the section,
-    indented up to the three leading spaces CommonMark allows on an ATX
-    heading. H3 and deeper stay inside: `### Internal design alternatives`
-    is a documented in-section construct, so widening the boundary scan to
-    `#{1,6}` would truncate the body at that H3 and drop the `Decided by:`
-    line following it.
-
-    Each donation case asserts the *reason*, not merely the exit code. A
-    donated entry that happens to be uncited also exits 1 -- but names the
-    donated bullet, which leaves the boundary defect live behind a red
-    exit status.
-    """
+    H1 and H2 (up to three leading spaces) end it; entries after one must not be
+    donated to the section. H3 and deeper stay inside: `### Internal design
+    alternatives` is a documented in-section construct. Donation cases assert the
+    *reason*: an uncited donated entry also exits 1, but names the donated bullet."""
 
     def assert_does_not_donate(self, boundary):
-        with scratch_dir() as tmp:
-            write_plan(tmp, split_across_boundary(boundary))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
-        self.assertNotIn(SHAPE_ENTRIES[1][0], result.stderr)
+        self.gate(split_across_boundary(boundary), 1, "fewer than 2 named alternatives (found 1)", lacks=(SHAPE_ENTRIES[1][0],))
 
     def assert_stays_inside(self, boundary):
-        with scratch_dir() as tmp:
-            write_plan(tmp, split_across_boundary(boundary))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_h2_ends_the_section(self):
-        self.assert_does_not_donate("## Later Section")
-
-    def test_h1_ends_the_section(self):
-        self.assert_does_not_donate("# Later Section")
-
-    def test_indented_h2_ends_the_section(self):
-        self.assert_does_not_donate("   ## Later Section")
-
-    def test_indented_h1_ends_the_section(self):
-        self.assert_does_not_donate("   # Later Section")
-
-    def test_setext_h1_ends_the_section(self):
-        # A setext H1 is an H1; only its spelling differs. The ATX fix left this
-        # member of the same class live, and it was found by enumerating the
-        # boundary axis rather than by another report.
-        self.assert_does_not_donate("Later Section\n=============")
-
-    def test_thematic_break_does_not_end_the_section(self):
-        # `---` is a setext H2 underline AND a thematic break AND a frontmatter
-        # fence. Treating it as a boundary would false-BLOCK a plan that puts a
-        # horizontal rule between its alternatives, so `-` is never a boundary.
-        self.assert_stays_inside("---")
-
-    def test_bare_setext_rule_does_not_end_the_section(self):
-        # `===` with nothing above it is a horizontal rule, not a heading:
-        # CommonMark makes an underline a heading only under a paragraph. The
-        # first version of the setext boundary fired on the run alone, cut the
-        # section at the rule, and reported "fewer than 2 named alternatives
-        # (found 1)" on a plan that had two -- a false block whose diagnostic
-        # named neither the rule nor the truncation, on a gate that halts
-        # planning.
-        self.assert_stays_inside("===")
+        self.gate(split_across_boundary(boundary), 0)
 
     def test_a_truncating_heading_is_named_in_the_count_message(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, split_across_boundary("Timing table\n============"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
-        self.assertIn("the section ended at the heading 'Timing table'",
-                      result.stderr)
+        self.gate(split_across_boundary("Timing table\n============"), 1, "fewer than 2 named alternatives (found 1)", "the section ended at the heading 'Timing table'")
 
     def test_a_truncating_heading_is_named_rather_than_a_missing_field(self):
         # Same exit code, opposite instruction to the author. The
@@ -650,14 +511,8 @@ class TestSectionBoundary(unittest.TestCase):
         entries = "\n".join(
             f"- **{name}**: {prose} {citation} ({year})."
             for name, prose, citation, year in SHAPE_ENTRIES)
-        with scratch_dir() as tmp:
-            write_plan(tmp, f"## Alternatives Considered\n\n{entries}\n\n"
-                            f"Timing table\n============\n\n{SHAPE_DECISION}\n")
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no 'Decided by:' line", result.stderr)
-        self.assertIn("the section ended at the heading 'Timing table'",
-                      result.stderr)
+        self.gate(f"## Alternatives Considered\n\n{entries}\n\n"
+                            f"Timing table\n============\n\n{SHAPE_DECISION}\n", 1, "no 'Decided by:' line", "the section ended at the heading 'Timing table'")
 
     def test_a_boundary_is_not_blamed_when_the_field_is_simply_absent(self):
         # The note exists to stop a misdiagnosis. Firing it unconditionally
@@ -667,19 +522,43 @@ class TestSectionBoundary(unittest.TestCase):
         entries = "\n".join(
             f"- **{name}**: {prose} {citation} ({year})."
             for name, prose, citation, year in SHAPE_ENTRIES)
-        with scratch_dir() as tmp:
-            write_plan(tmp, f"## Alternatives Considered\n\n{entries}\n\n"
-                            "## Approach\n\nNothing relevant here.\n")
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no 'Decided by:' line", result.stderr)
-        self.assertNotIn("the section ended at the heading", result.stderr)
+        self.gate(f"## Alternatives Considered\n\n{entries}\n\n"
+                            "## Approach\n\nNothing relevant here.\n", 1, "no 'Decided by:' line", lacks=("the section ended at the heading",))
 
     def test_h3_does_not_end_the_section(self):
         self.assert_stays_inside("### Notes")
 
 
-class TestSupportedEntryShapes(unittest.TestCase):
+# One generated test per boundary form, so a failure names the form.
+# True: the form ends the section (a later entry must not be donated to it);
+# False: it does not (the plan must still pass).
+_BOUNDARIES = {
+    "h2_ends_the_section": ("## Later Section", True),
+    "h1_ends_the_section": ("# Later Section", True),
+    "indented_h2_ends_the_section": ("   ## Later Section", True),
+    "indented_h1_ends_the_section": ("   # Later Section", True),
+    # A setext H1 is an H1; only its spelling differs.
+    "setext_h1_ends_the_section": ("Later Section\n=============", True),
+    # `---` is a setext H2 underline, a thematic break and a frontmatter fence;
+    # treating it as a boundary would false-block a plan with a rule between
+    # its alternatives.
+    "thematic_break_does_not_end_the_section": ("---", False),
+    # `===` with no paragraph above is not a heading in CommonMark.
+    "bare_setext_rule_does_not_end_the_section": ("===", False),
+}
+
+
+def _boundary_test(boundary, ends):
+    def test(self):
+        (self.assert_does_not_donate if ends else self.assert_stays_inside)(boundary)
+    return test
+
+
+for _name, (_boundary, _ends) in _BOUNDARIES.items():
+    setattr(TestSectionBoundary, f"test_{_name}", _boundary_test(_boundary, _ends))
+
+
+class TestSupportedEntryShapes(GateCase):
     def test_table_accepts_same_semantics_as_bullets(self):
         bullets, _ = bullet_plan()
         table, _ = table_plan()
@@ -694,23 +573,11 @@ class TestSupportedEntryShapes(unittest.TestCase):
     def test_table_evidence_is_scoped_to_its_row(self):
         deficient = ("Uncited option", "Its proof is deliberately elsewhere.", "", "")
         text, _ = table_plan(entries=(deficient, SHAPE_ENTRIES[1]))
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("alternative 'Uncited option'", result.stderr)
-        self.assertIn("missing URL or doc-ref citation", result.stderr)
-        self.assertIn("no citation date", result.stderr)
+        self.gate(text, 1, "alternative 'Uncited option'", "missing URL or doc-ref citation", "no citation date")
 
     def test_present_section_without_supported_entries_has_distinct_message(self):
         text = f"## Alternatives Considered\n\nplain text only\n\n{SHAPE_DECISION}\n"
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("section found but no alternatives parsed", result.stderr)
-        self.assertIn("bullets", result.stderr)
-        self.assertIn("table", result.stderr)
+        self.gate(text, 1, "section found but no alternatives parsed", "bullets", "table")
 
     def test_one_table_row_excludes_bold_header_and_separator(self):
         only_entry = SHAPE_ENTRIES[:1]
@@ -719,11 +586,7 @@ class TestSupportedEntryShapes(unittest.TestCase):
             "| Rank | Mechanism | Evidence |",
             f"| Rank | **Not an alternative** | `{TODAY_YEAR}` |",
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_pipe_rows_without_separator_are_not_a_markdown_table(self):
         rows = "\n".join(
@@ -731,31 +594,19 @@ class TestSupportedEntryShapes(unittest.TestCase):
             for name, prose, citation, year in SHAPE_ENTRIES
         )
         text = f"## Alternatives Considered\n\n{rows}\n\n{SHAPE_DECISION}\n"
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("section found but no alternatives parsed", result.stderr)
+        self.gate(text, 1, "section found but no alternatives parsed")
 
     def test_bullet_control_remains_accepted(self):
         text, _ = bullet_plan()
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
 
-class TestBulletIndentationBound(unittest.TestCase):
-    """`BULLET_RE` and the framed table-row scan bound their leading
-    indentation to CommonMark's zero-to-three-space top-level range. Unbounded, either scan let a
-    four-space-indented sub-entry -- nested under an organizational
-    top-level bullet that names no mechanism of its own -- satisfy the
-    "at least two named alternatives" requirement, on a plan that named
-    exactly zero alternatives at the level the requirement is about.
-    `mask_indented_code_blocks` does not close this: it
-    deliberately never masks a line inside an open list item, because an
-    ordinary continuation paragraph under a bullet must stay readable.
-    """
+class TestBulletIndentationBound(GateCase):
+    """`BULLET_RE` and the table-row scan bound indentation to CommonMark's
+    zero-to-three-space top-level range, so four-space sub-entries under an
+    organizational bullet do not satisfy "at least two named alternatives".
+    `mask_indented_code_blocks` does not cover this: it never masks inside an
+    open list item."""
 
     def test_entries_stated_only_as_four_space_sub_bullets_are_not_top_level(self):
         text = (
@@ -765,11 +616,7 @@ class TestBulletIndentationBound(unittest.TestCase):
             f"    - **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
             "Decided by: performance -- QR is the stable first choice.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("section found but no alternatives parsed", result.stderr)
+        self.gate(text, 1, "section found but no alternatives parsed")
 
     def test_entries_stated_only_as_four_space_table_rows_are_not_top_level(self):
         text = (
@@ -781,11 +628,7 @@ class TestBulletIndentationBound(unittest.TestCase):
             f"    | 2 | **Pivoted LU**: baseline. | `https://scipy.org/doc` ({TODAY_YEAR}). |\n\n"
             "Decided by: performance -- QR is the stable first choice.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("section found but no alternatives parsed", result.stderr)
+        self.gate(text, 1, "section found but no alternatives parsed")
 
     def test_zero_to_three_space_indented_bullets_still_count(self):
         # CommonMark's own top-level range: a bullet indented up to three
@@ -796,10 +639,7 @@ class TestBulletIndentationBound(unittest.TestCase):
             f"   - **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
             "Decided by: performance -- QR is the stable first choice.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(text, 0)
 
     def test_a_compliant_top_level_entry_still_draws_citation_from_a_sub_bullet(self):
         # Negative case: a compliant top-level entry that carries an
@@ -814,22 +654,14 @@ class TestBulletIndentationBound(unittest.TestCase):
             f"- **Pivoted LU**: baseline. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
             "Decided by: performance -- QR is the stable first choice.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(text, 0)
 
 
-class TestCitationAndDate(unittest.TestCase):
+class TestCitationAndDate(GateCase):
     """Citation and recency-date requirements."""
 
     def test_uncited_undated_exits_1_names_both_issues(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-uncited.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("citation", result.stderr)
-        self.assertIn("date", result.stderr)
+        self.gate(fixture_text("plan-uncited.md"), 1, "citation", "date")
 
     def test_example_com_placeholder_url_exits_1(self):
         text = (
@@ -838,10 +670,7 @@ class TestCitationAndDate(unittest.TestCase):
             f"- **Option B**: a real source. `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — Option A is faster.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
+        self.gate(text, 1)
 
     def test_stale_only_year_exits_1(self):
         stale_year = TODAY_YEAR - 10
@@ -851,16 +680,12 @@ class TestCitationAndDate(unittest.TestCase):
             f"- **Option B**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — Option A was the original pick.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn(str(stale_year), result.stderr)
+        self.gate(text, 1, str(stale_year))
 
 
-class TestRecencyEdges(unittest.TestCase):
+class TestRecencyEdges(GateCase):
     def _run(self, year):
-        return run_plan(
+        return check(
             "## Alternatives Considered\n\n"
             f"- **A**: `https://numpy.org/doc/stable/` ({year}).\n"
             f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
@@ -877,7 +702,7 @@ class TestRecencyEdges(unittest.TestCase):
         self.assertEqual(self._run(TODAY_YEAR + 1).returncode, 1)
 
 
-class TestDecidedBy(unittest.TestCase):
+class TestDecidedBy(GateCase):
     """The ranked-criterion line."""
 
     def test_missing_decided_by_exits_1(self):
@@ -885,14 +710,10 @@ class TestDecidedBy(unittest.TestCase):
         stripped_lines = [
             line for line in compliant.splitlines() if "Decided by:" not in line
         ]
-        with scratch_dir() as tmp:
-            write_plan(tmp, "\n".join(stripped_lines) + "\n")
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Decided by", result.stderr)
+        self.gate("\n".join(stripped_lines) + "\n", 1, "Decided by")
 
 
-class TestEntryBoundary(unittest.TestCase):
+class TestEntryBoundary(GateCase):
     """An entry ends where its bullet does, not at the end of the section."""
 
     def test_decided_by_url_year_is_not_the_last_entrys_citation(self):
@@ -902,12 +723,10 @@ class TestEntryBoundary(unittest.TestCase):
             "- **B**: no source here.\n\n"
             f"Decided by: performance, see https://x.dev {TODAY_YEAR}\n"
         )
-        result = run_plan(text)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("alternative 'B'", result.stderr)
+        self.gate(text, 1, "alternative 'B'")
 
 
-class TestNonAlternativeBullets(unittest.TestCase):
+class TestNonAlternativeBullets(GateCase):
     """Reserved labels are not alternatives; duplicate names count once."""
 
     def test_reserved_label_bullet_is_not_an_alternative(self):
@@ -919,9 +738,7 @@ class TestNonAlternativeBullets(unittest.TestCase):
                     f"- **{label}**: `https://x.dev/y` ({TODAY_YEAR}).\n\n"
                     "Decided by: performance — A.\n"
                 )
-                result = run_plan(text)
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+                self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_duplicate_names_count_once_case_insensitively(self):
         text = (
@@ -930,14 +747,12 @@ class TestNonAlternativeBullets(unittest.TestCase):
             f"- **redis**: `https://redis.io/docs/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — Redis.\n"
         )
-        result = run_plan(text)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(text, 1, "fewer than 2 named alternatives (found 1)")
 
 
-class TestDecidedByBoundary(unittest.TestCase):
+class TestDecidedByBoundary(GateCase):
     def _run(self, decided):
-        return run_plan(
+        return check(
             "## Alternatives Considered\n\n"
             f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
             f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
@@ -968,7 +783,7 @@ class TestDecidedByBoundary(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
 
-class TestPlaceholderHostEvasion(unittest.TestCase):
+class TestPlaceholderHostEvasion(GateCase):
     def test_port_subdomain_userinfo_and_case_do_not_evade(self):
         for url in (
             "http://localhost:8080/x",
@@ -978,28 +793,21 @@ class TestPlaceholderHostEvasion(unittest.TestCase):
             "https://api.docs.example.com:443/x",
         ):
             with self.subTest(url=url):
-                result = run_plan(
-                    "## Alternatives Considered\n\n"
+                self.gate("## Alternatives Considered\n\n"
                     f"- **A**: {url} ({TODAY_YEAR}).\n"
                     f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
-                    "Decided by: performance — B.\n"
-                )
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertIn("placeholder", result.stderr)
+                    "Decided by: performance — B.\n", 1, "placeholder")
 
     def test_lookalike_host_is_not_a_placeholder(self):
-        result = run_plan(
-            "## Alternatives Considered\n\n"
+        self.gate("## Alternatives Considered\n\n"
             f"- **A**: https://notexample.com/x ({TODAY_YEAR}).\n"
             f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
-            "Decided by: performance — B.\n"
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
+            "Decided by: performance — B.\n", 0)
 
 
-class TestYearBelongsToCitation(unittest.TestCase):
+class TestYearBelongsToCitation(GateCase):
     def _run(self, entry_a):
-        return run_plan(
+        return check(
             "## Alternatives Considered\n\n"
             f"{entry_a}\n"
             f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
@@ -1029,7 +837,7 @@ class TestYearBelongsToCitation(unittest.TestCase):
                 self.assertIn("alternative 'A'", result.stderr)
 
 
-class TestPlaceholderCitations(unittest.TestCase):
+class TestPlaceholderCitations(GateCase):
     def test_placeholder_hosts_and_tokens_are_rejected(self):
         for cite in (
             "https://example.org/x",
@@ -1039,73 +847,43 @@ class TestPlaceholderCitations(unittest.TestCase):
             "`TODO`",
         ):
             with self.subTest(cite=cite):
-                result = run_plan(
-                    "## Alternatives Considered\n\n"
+                self.gate("## Alternatives Considered\n\n"
                     f"- **A**: {cite} ({TODAY_YEAR}).\n"
                     f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
-                    "Decided by: performance — B.\n"
-                )
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertIn("alternative 'A'", result.stderr)
+                    "Decided by: performance — B.\n", 1, "alternative 'A'")
 
 
-class TestMinimumCount(unittest.TestCase):
+class TestMinimumCount(GateCase):
     def test_one_alternative_exits_1(self):
         text = (
             "## Alternatives Considered\n\n"
             f"- **Only Option**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — only one considered.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2", result.stderr)
+        self.gate(text, 1, "fewer than 2")
 
     def test_two_alternatives_exits_0(self):
         text = COMPLIANT_ENTRY_TEMPLATE.format(year_a=TODAY_YEAR, year_b=TODAY_YEAR - 1)
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
 
-class TestExemption(unittest.TestCase):
+class TestExemption(GateCase):
     def test_exempt_plan_exits_0(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-exempt.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(fixture_text("plan-exempt.md"), 0)
 
 
-class TestFencedRegions(unittest.TestCase):
-    """A `## Alternatives Considered` inside a code fence is illustration, not
-    a decision record.
-
-    `extract_section_body` took the FIRST occurrence anywhere in the file, so a
-    plan whose only occurrence sat inside a ```markdown fence -- README ships
-    four such examples for authors to copy -- satisfied the blocking gate on
-    the example's text. Both directions are pinned: a fence-only heading must
-    NOT count, and a fence must not hide a real heading that follows it.
-    """
+class TestFencedRegions(GateCase):
+    """A `## Alternatives Considered` inside a code fence is illustration, not a
+    decision record. A fence-only heading must NOT count, and a fence must not
+    hide a real heading that follows it."""
 
     def test_fenced_only_heading_does_not_satisfy_the_gate(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-fenced-only.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(fixture_text("plan-fenced-only.md"), 1, "missing '## Alternatives Considered' section")
 
     def test_fenced_example_before_a_real_section_still_passes(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-fenced-then-real.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(fixture_text("plan-fenced-then-real.md"), 0)
 
     def test_fenced_entries_do_not_count_toward_the_minimum(self):
-        # Same root cause one level down: bullets inside a fence were counted
-        # as mechanism alternatives, so a single real entry plus a fenced
-        # example reached the two-alternative minimum.
         plan = (
             "## Alternatives Considered\n\n"
             f"- **Real mechanism**: prose. `real-doc` ({TODAY_YEAR}).\n\n"
@@ -1114,22 +892,14 @@ class TestFencedRegions(unittest.TestCase):
             "```\n\n"
             "Decided by: performance.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
+        self.gate(plan, 1, "fewer than 2 named alternatives (found 1)")
 
     def test_tilde_fence_is_skipped_too(self):
         plan = (
             "## Approach\n\n~~~markdown\n## Alternatives Considered\n\n"
             "N/A — no mechanism choice is made by this plan.\n~~~\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_unterminated_fence_fails_closed(self):
         # An unterminated fence blanks to EOF. The section then reads as
@@ -1138,28 +908,17 @@ class TestFencedRegions(unittest.TestCase):
             "## Approach\n\n```markdown\n## Alternatives Considered\n\n"
             "N/A — no mechanism choice is made by this plan.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
+        self.gate(plan, 1)
 
     def test_inline_backticks_are_not_mistaken_for_a_fence(self):
         # Doc-ref citations are backtick-delimited; only a line of three or
         # more opens a fence, so ordinary citations must survive untouched.
         text, _ = bullet_plan()
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(text, 0)
 
-    # FENCE_LINE_RE's three conditions -- the `^` anchor, the three-marker
-    # minimum, and the backtick info-string rule -- each transcribe a CommonMark
-    # requirement, and each was unpinned: all three could be removed and the
-    # whole suite stayed green (ponytail-2 F-Py-4). Every one of them fails in
-    # the same direction, which is why nothing caught them: a false opener
-    # blanks to EOF, so the section reads as truncated and a compliant plan is
-    # BLOCKED. A gate that halts planning on correct input is not the safe
-    # error. One case each, and each asserts the reason.
+    # Each FENCE_LINE_RE condition (anchor, three-marker minimum, info-string rule)
+    # fails the same way if dropped: a false opener blanks to EOF and a compliant
+    # plan is blocked. One case each, asserting the reason.
 
     def test_a_backtick_run_mid_line_does_not_open_a_fence(self):
         # CommonMark: a fence opener starts its line. Without the anchor, prose
@@ -1167,10 +926,7 @@ class TestFencedRegions(unittest.TestCase):
         text, _ = bullet_plan()
         plan = text.replace(SHAPE_DECISION,
                             "The marker is written ```\n\n" + SHAPE_DECISION)
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_a_two_marker_run_does_not_open_a_fence(self):
         # CommonMark: three or more. Strikethrough at the start of a line is
@@ -1180,10 +936,7 @@ class TestFencedRegions(unittest.TestCase):
         plan = text.replace(SHAPE_DECISION,
                             "~~An earlier approach~~ is not considered.\n\n"
                             + SHAPE_DECISION)
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_a_backtick_info_string_does_not_open_a_fence(self):
         # CommonMark: a backtick fence's info string may not contain a
@@ -1193,27 +946,16 @@ class TestFencedRegions(unittest.TestCase):
         plan = text.replace(SHAPE_DECISION,
                             "```code``` is how this plan writes it.\n\n"
                             + SHAPE_DECISION)
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
 
-class TestIndentedCodeBlocks(unittest.TestCase):
-    """A four-space indented code block is CommonMark's other invisible-on-
-    the-rendered-page construct. Fences
-    are already masked by `TestFencedRegions` above; this class pins the
-    indented form, reproducing the exact shape that review confirmed passes
-    at exit 0 on the shipped script.
-    """
+class TestIndentedCodeBlocks(GateCase):
+    """A four-space indented code block is invisible on the rendered page, like a
+    fence (see `TestFencedRegions`)."""
 
     def test_indented_alternatives_are_not_counted_as_prose(self):
-        # Reproduction: a real, column-0
-        # heading is found correctly, but its entries and Decided-by line
-        # sit four spaces in. CommonMark renders that as inert code, not
-        # list items -- BULLET_RE's unbounded indentation (out of
-        # scope here) still counts them today, so this exits 0 before the
-        # fix and must exit 1 after it.
+        # A real column-0 heading, but entries and Decided-by sit four spaces in:
+        # CommonMark renders inert code, so this must exit 1.
         plan = (
             "## Alternatives Considered\n\n"
             "Example of the required shape:\n\n"
@@ -1222,19 +964,11 @@ class TestIndentedCodeBlocks(unittest.TestCase):
             "    Decided by: performance -- QR is the stable first choice.\n\n"
             "That is all; this plan makes no real comparison.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn(
-            "section found but no alternatives parsed", result.stderr
-        )
+        self.gate(plan, 1, "section found but no alternatives parsed")
 
     def test_a_wholly_indented_heading_and_body_is_still_a_missing_section(self):
-        # Not a masking case: SECTION_HEADING_RE is anchored `^##` at
-        # column 0, so a heading indented four spaces was already
-        # invisible to it before this task's fix. Pinned so a future
-        # change to that anchor cannot silently start crediting it.
+        # SECTION_HEADING_RE is anchored `^##` at column 0, so an indented heading
+        # is invisible to it; pinned so a change to that anchor cannot credit it.
         plan = (
             "Some intro paragraph, not a list.\n\n"
             "    ## Alternatives Considered\n\n"
@@ -1242,11 +976,7 @@ class TestIndentedCodeBlocks(unittest.TestCase):
             f"    - **SciPy**: alternative. `https://scipy.org/doc` ({TODAY_YEAR}).\n\n"
             "    Decided by: performance.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_a_bullet_continuation_paragraph_is_not_treated_as_code(self):
         # Negative case: an ordinary continuation paragraph under a
@@ -1260,10 +990,7 @@ class TestIndentedCodeBlocks(unittest.TestCase):
             "    four spaces because it is still inside the list item.\n\n"
             + SHAPE_DECISION,
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_an_unrelated_indented_code_block_does_not_affect_a_compliant_section(self):
         text, _ = bullet_plan()
@@ -1272,18 +999,12 @@ class TestIndentedCodeBlocks(unittest.TestCase):
             "    $ pip install numpy scipy\n"
             "    $ python solve.py\n\n"
         ) + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
 
-class TestFrontmatterMasking(unittest.TestCase):
-    """Leading YAML frontmatter is CommonMark-invisible on the rendered
-    page the same way a fence or an indented code block is, but neither
-    mask covers it: a `## Alternatives Considered` heading declared only
-    inside the frontmatter block was still credited by the section scan
-    """
+class TestFrontmatterMasking(GateCase):
+    """Leading YAML frontmatter is invisible on the rendered page, so a section
+    declared only inside it must not be credited."""
 
     def test_a_section_declared_only_in_frontmatter_is_a_missing_section(self):
         plan = (
@@ -1295,11 +1016,7 @@ class TestFrontmatterMasking(unittest.TestCase):
             "---\n\n"
             "Real body text with no section of its own.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_frontmatter_beside_a_real_body_section_still_passes(self):
         text, _ = bullet_plan()
@@ -1312,17 +1029,11 @@ class TestFrontmatterMasking(unittest.TestCase):
             "  - another real requirement\n"
             "---\n\n"
         ) + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_a_document_without_frontmatter_is_unaffected(self):
         text, _ = bullet_plan()
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(text, 0)
 
     def test_an_unclosed_leading_dashes_line_is_not_treated_as_frontmatter(self):
         # First line is exactly `---`, but nothing that follows closes it
@@ -1332,60 +1043,29 @@ class TestFrontmatterMasking(unittest.TestCase):
         # scanned exactly as it was before this task's change.
         text, _ = bullet_plan()
         plan = "---\n\n" + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
 
-class TestHtmlComments(unittest.TestCase):
-    """An `## Alternatives Considered` inside an HTML comment renders nothing,
-    so it records nothing.
-
-    The same defect as the fenced one in the other syntax CommonMark keeps off
-    the page, and the more reachable of the two: the author who drops two
-    candidates late comments them out "to keep the history" rather than
-    deleting them. Every case asserts the REASON, because two of the three
-    already exited non-zero before the fix -- for the wrong reason, having
-    counted commented text as a decision record.
-    """
+class TestHtmlComments(GateCase):
+    """An `## Alternatives Considered` inside an HTML comment renders nothing, so it
+    records nothing. Every case asserts the REASON, since commented text could
+    also exit non-zero for the wrong one."""
 
     def test_commented_only_heading_does_not_satisfy_the_gate(self):
-        # Was exit 1 "fewer than 2 named alternatives (found 1)": the gate read
-        # the commented heading AND counted a commented bullet under it.
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-commented-only.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(fixture_text("plan-commented-only.md"), 1, "missing '## Alternatives Considered' section")
 
     def test_commented_entries_do_not_count_toward_the_minimum(self):
-        # The fail-open the release notes already claimed was closed: a real
-        # heading whose only entries were commented out exited 0.
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-commented-entries.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no alternatives parsed", result.stderr)
+        self.gate(fixture_text("plan-commented-entries.md"), 1, "no alternatives parsed")
 
     def test_commented_example_before_a_real_section_still_passes(self):
-        # Was exit 1 "found 1": the scan stopped at the commented heading and
-        # never reached the genuine section below it.
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-commented-then-real.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(fixture_text("plan-commented-then-real.md"), 0)
 
     def test_unterminated_comment_fails_closed(self):
         plan = (
             "## Approach\n\n<!--\n## Alternatives Considered\n\n"
             "N/A — no mechanism choice is made by this plan.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_a_comment_opener_inside_a_fence_is_code_not_a_comment(self):
         # Whichever construct opens first owns the span, as in CommonMark:
@@ -1393,20 +1073,14 @@ class TestHtmlComments(unittest.TestCase):
         # section that follows the fence.
         text, _ = bullet_plan()
         plan = "## Approach\n\n```markdown\n<!--\n```\n\n" + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_a_fence_opener_inside_a_comment_does_not_open_a_fence(self):
         # The mirror image: a ``` inside a comment must not leave a fence open
         # across the real section and blank it to EOF.
         text, _ = bullet_plan()
         plan = "## Approach\n\n<!--\n```\n-->\n\n" + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_a_backticked_comment_opener_does_not_open_a_comment(self):
         # A `<!--` written inside a single-backtick inline code span renders
@@ -1414,10 +1088,7 @@ class TestHtmlComments(unittest.TestCase):
         # the arrows, not a comment -- so it must not start a masked span.
         text, _ = bullet_plan()
         plan = "We discuss `<!--` markers here.\n\n" + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
     def test_an_unrelated_code_span_does_not_protect_a_real_opener_on_the_same_line(
         self,
@@ -1428,11 +1099,7 @@ class TestHtmlComments(unittest.TestCase):
         # same line -- that would turn the fix into a bypass.
         text, _ = bullet_plan()
         plan = "Uses `numpy`. <!--\n" + text + "-->\n"
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_an_unterminated_backtick_before_an_opener_still_masks_to_eof(self):
         # An unterminated backtick is not a code span -- CommonMark requires
@@ -1442,11 +1109,7 @@ class TestHtmlComments(unittest.TestCase):
         # EOF.
         text, _ = bullet_plan()
         plan = "`a <!--\n" + text
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing '## Alternatives Considered' section", result.stderr)
+        self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
     def test_a_protected_backtick_candidate_does_not_disturb_fence_precedence(self):
         # A skipped (backtick-protected) comment candidate earlier in the
@@ -1457,20 +1120,13 @@ class TestHtmlComments(unittest.TestCase):
             "We discuss `<!--` markers here.\n\n"
             "```markdown\n<!--\n```\n\n" + text
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, plan)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate(plan, 0)
 
 
-class TestCurrentPhaseResolution(unittest.TestCase):
-    """With no argument, the checker resolves its phase from the project's own
-    STATE.md.
-
-    The gate command is constant precisely so that no directory name is ever
-    spliced into the `sh -c` string gsd-core builds. That moves phase identity
-    onto this path, which must therefore fail CLOSED whenever it is unsure.
-    """
+class TestCurrentPhaseResolution(GateCase):
+    """With no argument the checker resolves its phase from the project's own
+    STATE.md. No directory name is spliced into the `sh -c` string, so this path
+    must fail CLOSED whenever it is unsure."""
 
     def build_project(self, root, phase_dir_name, current_phase, plan_text,
                       position="Phase: {phase} (Name) — READY TO EXECUTE"):
@@ -1486,6 +1142,25 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         write_plan(root / ".planning" / "phases" / phase_dir_name, plan_text,
                    name="11-01-PLAN.md")
 
+    def resolve_state(self, state, *dirs):
+        """Write a raw STATE.md and phase dirs `(name, plan_text_or_None)`, run the gate."""
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            (root / ".planning" / "phases").mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(state, encoding="utf-8")
+            for name, plan in dirs:
+                (root / ".planning" / "phases" / name).mkdir()
+                if plan is not None:
+                    write_plan(root / ".planning" / "phases" / name, plan, name="11-01-PLAN.md")
+            return self.run_no_arg(root)
+
+    def resolve(self, *args, **kw):
+        """Build a project via `build_project` and run the gate with no argument."""
+        with scratch_dir() as tmp:
+            root = Path(tmp)
+            self.build_project(root, *args, **kw)
+            return self.run_no_arg(root)
+
     def run_no_arg(self, cwd):
         return subprocess.run(
             [sys.executable, str(SCRIPT)],
@@ -1494,40 +1169,20 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         )
 
     def test_resolves_the_current_phase_and_reaches_its_verdict(self):
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "11",
-                               fixture_text("plan-missing-section.md"))
-            result = self.run_no_arg(root)
-        # Exit 1, naming the plan: proof it read THAT directory, not cwd.
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("11-01-PLAN.md", result.stderr)
+        self.expect(self.resolve("11-plain", "11",
+                               fixture_text("plan-missing-section.md")), 1, "11-01-PLAN.md")
 
     def test_apostrophe_in_the_phase_directory_name_is_accepted(self):
-        # The behaviour this fix exists to restore. Under the previous
-        # `'${PHASE_DIR}'` splice this name aborted the gate with exit 2
-        # before the checker ran at all.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-o'brien", "11",
-                               fixture_text("plan-compliant.md"))
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        # An apostrophe in the directory name must not break the gate invocation.
+        self.expect(self.resolve("11-o'brien", "11",
+                               fixture_text("plan-compliant.md")), 0)
 
     def test_zero_padded_current_phase_matches_an_unpadded_directory(self):
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "6-six", "06", fixture_text("plan-compliant.md"))
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.expect(self.resolve("6-six", "06", fixture_text("plan-compliant.md")), 0)
 
     def test_missing_current_phase_blocks(self):
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            (root / ".planning" / "phases").mkdir(parents=True)
-            (root / ".planning" / "STATE.md").write_text(
-                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n", encoding="utf-8")
-            result = self.run_no_arg(root)
+        result = self.resolve_state(
+            "---\ngsd_state_version: 1.0\nstatus: planning\n---\n")
         self.assertEqual(result.returncode, 2)
         self.assertIn("current_phase", result.stderr)
 
@@ -1536,45 +1191,24 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         # a traceback -- still non-zero, but exit 1 means "these plans are bad"
         # and nothing here was ever read. Only the shell suite touched this
         # path, and it does not reach this shape.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            (root / ".planning" / "phases" / "11-plain").mkdir(parents=True)
-            (root / ".planning" / "STATE.md").write_text(
-                "# Project State\n\ncurrent_phase: 11\n", encoding="utf-8")
-            write_plan(root / ".planning" / "phases" / "11-plain",
-                       fixture_text("plan-compliant.md"), name="11-01-PLAN.md")
-            result = self.run_no_arg(root)
+        result = self.resolve_state(
+            "# Project State\n\ncurrent_phase: 11\n",
+            ("11-plain", fixture_text("plan-compliant.md")))
         self.assertEqual(result.returncode, 2, result.stdout)
         self.assertIn("no YAML frontmatter block", result.stderr)
 
     def test_current_phase_in_prose_does_not_redirect_the_gate(self):
-        # Phase identity must come from the frontmatter, never from document
-        # content. Scanning the whole file let a `current_phase:` line in prose
-        # point the blocking gate at a DIFFERENT, compliant phase while the
-        # real one went uninspected -- a bypass in the very path that replaced
-        # the ${PHASE_DIR} splice.
+        # Phase identity comes from the frontmatter, never document content: a
+        # `current_phase:` line in prose must not point the gate at another phase.
         #
-        # The prose value and the `## Current Position` section agree with each
-        # other and disagree with the frontmatter, which carries no
-        # `current_phase` at all. That shape matters: a decoy the corroboration
-        # would reject anyway proves nothing about where the field is read
-        # from, and the earlier version of this case became exactly that when
-        # the corroboration landed. Here the only thing standing between the
-        # gate and phase 99 is the frontmatter-only scan.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            (root / ".planning" / "phases" / "11-real").mkdir(parents=True)
-            (root / ".planning" / "phases" / "99-decoy").mkdir(parents=True)
-            (root / ".planning" / "STATE.md").write_text(
-                "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
-                "\nprose that merely mentions:\n\ncurrent_phase: 99\n"
-                "\n## Current Position\n\nPhase: 99 (Decoy) — READY TO EXECUTE\n",
-                encoding="utf-8")
-            write_plan(root / ".planning" / "phases" / "11-real",
-                       fixture_text("plan-missing-section.md"), name="11-01-PLAN.md")
-            write_plan(root / ".planning" / "phases" / "99-decoy",
-                       fixture_text("plan-compliant.md"), name="99-01-PLAN.md")
-            result = self.run_no_arg(root)
+        # Prose and `## Current Position` agree with each other but not with the
+        # frontmatter (which has no `current_phase`), so only the frontmatter-only
+        # scan stands between the gate and phase 99.
+        result = self.resolve_state(
+            "---\ngsd_state_version: 1.0\nstatus: planning\n---\n"
+            "\nprose that merely mentions:\n\ncurrent_phase: 99\n"
+            "\n## Current Position\n\nPhase: 99 (Decoy) — READY TO EXECUTE\n",
+            ("11-real", fixture_text("plan-missing-section.md")), ("99-decoy", fixture_text("plan-compliant.md")))
         self.assertEqual(result.returncode, 2)
         self.assertIn("no `current_phase: <number>` field", result.stderr)
         self.assertNotIn("99-decoy", result.stderr)
@@ -1589,40 +1223,23 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertIn("expected exactly 1", result.stderr)
 
     def test_unmatched_current_phase_blocks(self):
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "12", fixture_text("plan-compliant.md"))
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("expected exactly 1", result.stderr)
+        self.expect(self.resolve("11-plain", "12", fixture_text("plan-compliant.md")), 2, "expected exactly 1")
 
     def test_dotted_current_phase_does_not_match_a_longer_sibling(self):
         # `10.1` must not resolve to `10.10`: the fractional part is compared
         # as text, so a truncated match cannot silently validate another phase.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "10.10-ten-ten", "10.1",
-                               fixture_text("plan-compliant.md"))
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("expected exactly 1", result.stderr)
+        self.expect(self.resolve("10.10-ten-ten", "10.1",
+                               fixture_text("plan-compliant.md")), 2, "expected exactly 1")
 
-    # Two witnesses, not one. gsd-core's step 13b writes the
-    # `## Current Position` `Phase:` line and re-derives `current_phase` from
-    # it, so it updates both or neither. On three measured section shapes it
-    # updates neither and still exits 0, and the surviving stale
-    # `current_phase` then pointed this gate at the PREVIOUS phase: it opened
-    # an old compliant directory, found nothing wrong, and printed a clean
-    # zero-byte pass while the phase actually planned went uninspected. Every
-    # case below asserts the refusal REASON, because the exit code alone
-    # cannot tell a real verdict from a gate that checked the wrong thing.
+    # Two witnesses, not one: `current_phase` and the `## Current Position`
+    # `Phase:` line must agree. Every case asserts the refusal REASON, since
+    # the exit code alone cannot tell a verdict from a gate that checked the
+    # wrong thing.
 
     def test_stale_frontmatter_under_a_non_canonical_position_label_blocks(self):
-        # The reproduction. `## Current Position` spelled `Current Phase:` is a
-        # section `plannedPhaseCore` cannot rewrite -- measured, it exits 0
-        # updating only `Last Activity Description` -- so both witnesses still
-        # name phase 11 after phase 99 was planned. Phase 11 is compliant and
-        # phase 99 is not, so a gate that trusts `current_phase` alone passes.
+        # `Current Phase:` is a section gsd-core cannot rewrite, so both witnesses
+        # still name phase 11 after phase 99 was planned; trusting `current_phase`
+        # alone would pass the compliant stale phase.
         with scratch_dir() as tmp:
             root = Path(tmp)
             self.build_project(root, "11-stale", "11",
@@ -1635,19 +1252,14 @@ class TestCurrentPhaseResolution(unittest.TestCase):
             result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2, result.stdout)
         self.assertIn("carries 0 `Phase: <number>` lines", result.stderr)
-        # No verdict was reached on either phase -- least of all a pass on the
-        # stale one, which is what the exit 0 used to mean.
         self.assertNotIn("11-01-PLAN.md", result.stderr)
 
     def test_current_position_disagreeing_with_the_frontmatter_blocks(self):
         # Half-applied transition: one witness moved, the other did not. The
         # gate cannot know which is fresh, so it blocks and says so.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "11",
+        result = self.resolve("11-plain", "11",
                                fixture_text("plan-compliant.md"),
                                position="Phase: 99 (Elsewhere) — READY TO EXECUTE")
-            result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2, result.stdout)
         self.assertIn("disagrees with itself", result.stderr)
 
@@ -1667,12 +1279,9 @@ class TestCurrentPhaseResolution(unittest.TestCase):
     def test_two_phase_lines_in_current_position_block(self):
         # gsd-core #3807 refuses to write a section carrying more than one
         # `Phase:` line; a reader of one cannot tell which is the fresh one.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "11",
+        result = self.resolve("11-plain", "11",
                                fixture_text("plan-compliant.md"),
                                position="Phase: {phase} (One)\nPhase: 99 (Two)")
-            result = self.run_no_arg(root)
         self.assertEqual(result.returncode, 2, result.stdout)
         self.assertIn("carries 2 `Phase: <number>` lines", result.stderr)
 
@@ -1680,14 +1289,9 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         # gsd-core preserves the author's `**Phase:**` styling when it rewrites
         # the line, so the bold form is a correctly-updated section. Refusing
         # it would block planning on formatting.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "11",
-                               fixture_text("plan-missing-section.md"),
-                               position="**Phase:** {phase} (Name) — READY TO EXECUTE")
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("11-01-PLAN.md", result.stderr)
+        self.expect(self.resolve(
+            "11-plain", "11", fixture_text("plan-missing-section.md"),
+            position="**Phase:** {phase} (Name) — READY TO EXECUTE"), 1, "11-01-PLAN.md")
 
     # The frontmatter parse used to take the FIRST of possibly several
     # `current_phase:` matches while the body parse already demanded exactly
@@ -1715,14 +1319,6 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertIn("current_phase", result.stderr)
         self.assertIn("2", result.stderr)
         self.assertNotIn("11-01-PLAN.md", result.stderr)
-
-    def test_a_single_frontmatter_current_phase_still_resolves(self):
-        # Regression pin: the exactly-one case, unaffected by the fix.
-        with scratch_dir() as tmp:
-            root = Path(tmp)
-            self.build_project(root, "11-plain", "11", fixture_text("plan-compliant.md"))
-            result = self.run_no_arg(root)
-        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_three_duplicate_current_phase_fields_names_the_exact_count(self):
         with scratch_dir() as tmp:
@@ -1803,7 +1399,7 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertNotIn(str(outside_dir), result.stderr)
 
 
-class TestFixtureYearsAreTemplated(unittest.TestCase):
+class TestFixtureYearsAreTemplated(GateCase):
     def test_no_fixture_hardcodes_a_recent_year(self):
         for path in FIXTURES_DIR.glob("*.md"):
             with self.subTest(fixture=path.name):
@@ -1817,7 +1413,7 @@ class TestFixtureYearsAreTemplated(unittest.TestCase):
             self.assertNotIn("(2024)", (Path(tmp) / "11-01-PLAN.md").read_text())
 
 
-class TestMultiPlanCoverage(unittest.TestCase):
+class TestMultiPlanCoverage(GateCase):
     """Every plan in the directory is checked, not just
     the first readdir match."""
 
@@ -1830,7 +1426,7 @@ class TestMultiPlanCoverage(unittest.TestCase):
         self.assertNotIn("11-01-PLAN.md", result.stderr)
 
 
-class TestDottedFilenames(unittest.TestCase):
+class TestDottedFilenames(GateCase):
     def test_dotted_phase_segment_matched(self):
         with scratch_dir() as tmp:
             copy_fixture_dir("dotted", tmp)
@@ -1838,26 +1434,17 @@ class TestDottedFilenames(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
-class TestEmptyDirectory(unittest.TestCase):
+class TestEmptyDirectory(GateCase):
     def test_no_plans_exits_0(self):
         with scratch_dir() as tmp:
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0)
 
 
-class TestMisnamedPlans(unittest.TestCase):
-    """A plan-shaped file PLAN_FILE_RE rejects is reported, never skipped.
-
-    Discovery answered two different questions with the same silence: "this
-    phase has no plans" and "this phase has a plan I refused to read". The
-    second is the dangerous one -- a phase directory holding only `23-PLAN.md`
-    exited 0 with no output, byte-identical to a compliant phase, while the
-    plan inside it had no `## Alternatives Considered` section at all.
-
-    The first still exits 0. That is a phase with nothing to check, and
-    blocking it would make the gate fire on every phase before its plans are
-    written.
-    """
+class TestMisnamedPlans(GateCase):
+    """A plan-shaped file PLAN_FILE_RE rejects is reported, never skipped: silence
+    would be byte-identical to a compliant phase. A phase with no plans at all
+    still exits 0 (nothing to check yet)."""
 
     def write(self, tmp, name, text=None):
         (Path(tmp) / name).write_text(
@@ -1890,10 +1477,8 @@ class TestMisnamedPlans(unittest.TestCase):
         self.assertIn("named like a plan but not", result.stderr)
 
     def test_sibling_phase_artifacts_are_not_plan_shaped(self):
-        # The bound in the other direction, and it is not decoration: the
-        # first pattern tried here carried re.IGNORECASE and blocked the phase
-        # on `notes-on-the-plan.md`. `PLAN` in capitals is GSD's artifact
-        # token; a lowercase `plan` is ordinary English in a filename.
+        # Case-sensitive on purpose: a lowercase `plan` is ordinary English in a
+        # filename (`notes-on-the-plan.md`); only `PLAN` is GSD's artifact token.
         with scratch_dir() as tmp:
             for name in ("23-SUMMARY.md", "23-CONTEXT.md", "23-RESEARCH.md",
                          "23-REVIEW-PONYTAIL.md", "23-BEADS-RECALL.md",
@@ -1919,9 +1504,7 @@ class TestMisnamedPlans(unittest.TestCase):
     def test_lowercase_phase_prefixed_plan_is_reported_as_misnamed(self):
         # `23-01-plan.md` reads as a plan to a human and to a
         # case-insensitive filesystem; silence would be a vacuous pass.
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-compliant.md"), name="23-01-plan.md")
-            result = run_check(tmp)
+        result = check(fixture_text("plan-compliant.md"), name="23-01-plan.md")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("23-01-plan.md:1: named like a plan but not", result.stderr)
 
@@ -1951,22 +1534,19 @@ class TestMisnamedPlans(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
 
-class TestBom(unittest.TestCase):
+class TestBom(GateCase):
     def test_bom_plan_with_heading_on_first_line_passes(self):
-        result = run_plan("\ufeff" + fixture_text("plan-compliant.md"))
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.gate("\ufeff" + fixture_text("plan-compliant.md"), 0)
 
     def test_bom_does_not_unmask_heading_inside_frontmatter(self):
         text = (
             "\ufeff---\nphase: 1\n## Alternatives Considered\n---\n\n"
             "# Plan\n"
         )
-        result = run_plan(text)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("missing '## Alternatives Considered'", result.stderr)
+        self.gate(text, 1, "missing '## Alternatives Considered'")
 
 
-class TestSectionHeadingIndent(unittest.TestCase):
+class TestSectionHeadingIndent(GateCase):
     BODY = (
         f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
         f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
@@ -1976,53 +1556,41 @@ class TestSectionHeadingIndent(unittest.TestCase):
     def test_up_to_three_leading_spaces_still_a_heading(self):
         for indent in ("", " ", "   "):
             with self.subTest(indent=len(indent)):
-                result = run_plan(f"{indent}## Alternatives Considered\n\n{self.BODY}")
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.gate(f"{indent}## Alternatives Considered\n\n{self.BODY}", 0)
 
     def test_four_spaces_is_not_a_heading(self):
-        result = run_plan(f"    ## Alternatives Considered\n\n{self.BODY}")
-        self.assertEqual(result.returncode, 1, result.stderr)
+        self.gate(f"    ## Alternatives Considered\n\n{self.BODY}", 1)
 
 
-class TestListMarkers(unittest.TestCase):
+class TestListMarkers(GateCase):
     def test_plus_and_ordered_markers_are_alternatives(self):
         for a, b in (("+", "+"), ("1.", "2."), ("1)", "2)")):
             with self.subTest(marker=a):
-                result = run_plan(
-                    "## Alternatives Considered\n\n"
+                self.gate("## Alternatives Considered\n\n"
                     f"{a} **Redis**: `https://redis.io/docs/` ({TODAY_YEAR}).\n"
                     f"{b} **Memcached**: `https://memcached.org/docs/` ({TODAY_YEAR}).\n\n"
-                    "Decided by: performance — Redis.\n"
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
+                    "Decided by: performance — Redis.\n", 0)
 
 
-class TestBorderlessTable(unittest.TestCase):
+class TestBorderlessTable(GateCase):
     def test_borderless_table_failure_says_unsupported(self):
-        result = run_plan(
-            "## Alternatives Considered\n\n"
+        self.gate("## Alternatives Considered\n\n"
             "Rank | Mechanism | Evidence\n--- | --- | ---\n"
             f"1 | **Redis** | `https://redis.io/docs/` ({TODAY_YEAR})\n"
             f"2 | **Memcached** | `https://memcached.org/docs/` ({TODAY_YEAR})\n\n"
-            "Decided by: performance — Redis.\n"
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("borderless tables are not supported", result.stderr)
+            "Decided by: performance — Redis.\n", 1, "borderless tables are not supported")
 
 
-class TestCommentOpenerInIndentedCode(unittest.TestCase):
+class TestCommentOpenerInIndentedCode(GateCase):
     def test_comment_opener_in_indented_code_masks_nothing_else(self):
-        result = run_plan(
-            "Example input:\n\n    <!-- sample\n\n"
+        self.gate("Example input:\n\n    <!-- sample\n\n"
             "## Alternatives Considered\n\n"
             f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
             f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
-            "Decided by: performance — A.\n"
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
+            "Decided by: performance — A.\n", 0)
 
 
-class TestDeepProjectRoot(unittest.TestCase):
+class TestDeepProjectRoot(GateCase):
     def test_phase_dir_deeper_than_ten_levels_still_finds_root(self):
         with scratch_dir() as root:
             root = Path(root)
@@ -2034,9 +1602,9 @@ class TestDeepProjectRoot(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
-class TestAllViolationsPerPlan(unittest.TestCase):
+class TestAllViolationsPerPlan(GateCase):
     def test_every_bad_entry_and_missing_decided_by_reported_together(self):
-        result = run_plan(
+        result = check(
             "## Alternatives Considered\n\n"
             "- **A**: no source.\n"
             "- **B**: no source either.\n"
@@ -2050,14 +1618,14 @@ class TestAllViolationsPerPlan(unittest.TestCase):
 
     def test_violations_per_plan_are_capped_at_five(self):
         bullets = "".join(f"- **Opt{i}**: no source.\n" for i in range(9))
-        result = run_plan(
+        result = check(
             f"## Alternatives Considered\n\n{bullets}\nDecided by: performance — x.\n"
         )
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(result.stderr.count("01-01-PLAN.md:"), 5, result.stderr)
 
 
-class TestUnreadablePlanPermission(unittest.TestCase):
+class TestUnreadablePlanPermission(GateCase):
     @unittest.skipIf(os.geteuid() == 0, "root bypasses file modes")
     def test_chmod_000_plan_exits_2_without_traceback(self):
         with scratch_dir() as tmp:
@@ -2073,7 +1641,7 @@ class TestUnreadablePlanPermission(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
 
-class TestSymlinkedPlan(unittest.TestCase):
+class TestSymlinkedPlan(GateCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:
             target = Path(elsewhere, "real.md")
@@ -2085,16 +1653,9 @@ class TestSymlinkedPlan(unittest.TestCase):
         self.assertIn("symlink", result.stderr)
 
 
-class TestEmptyPhaseDir(unittest.TestCase):
-    """An empty ${PHASE_DIR} must block, not silently pass.
-
-    gsd-core interpolates an omitted --phase-dir to the empty string
-    (check-command-router.cts:1240 -> gate-predicate-evaluator.cts:45), so the
-    gate can run `check-alternatives.py ""`. Python reads `Path("")` as
-    `Path(".")`, which is a directory, so before the guard the checker scanned
-    its own cwd -- the project root, holding no NN-NN-PLAN.md children -- and
-    exited 0. A blocking, fail-closed gate passed without reading one plan.
-    """
+class TestEmptyPhaseDir(GateCase):
+    """An empty ${PHASE_DIR} must block, not silently pass: `Path("")` is
+    `Path(".")`, so without the guard the checker scanned its own cwd and exited 0."""
 
     def test_empty_arg_rejects_before_reading_cwd_at_all(self):
         # A violating plan in cwd would have produced exit 1 -- a block, but
@@ -2108,23 +1669,13 @@ class TestEmptyPhaseDir(unittest.TestCase):
         self.assertNotIn("PLAN.md", result.stderr)
 
 
-class TestUnreadablePlanFiles(unittest.TestCase):
-    """Pins the exit codes README's "Failures and recovery" list claims.
-
-    Both paths reach main() from validate_plan()'s path.read_text(): a
-    decode failure is a UnicodeDecodeError, and every other OSError (a
-    directory named like a plan, a permission failure, a dangling link) is
-    also caught now. Both are re-raised as ValueError, and main()'s existing
-    `except ValueError -> return 2` maps both to the same
-    `check-alternatives.py: <path>: <reason>` contract -- one clean stderr
-    line, no raw traceback, either way.
-    """
+class TestUnreadablePlanFiles(GateCase):
+    """Pins the exit codes README's "Failures and recovery" list claims: decode
+    failures and other OSErrors (directory named like a plan, permissions,
+    dangling link) all map to exit 2 with one clean stderr line, no traceback."""
 
     def test_non_utf8_plan_names_the_file_and_the_remedy(self):
-        # The bare codec message named a byte offset and no path, so a phase
-        # holding twenty plans gave the author no way to tell which one to fix.
-        # Assert the contract -- offending path, and a remedy -- not the
-        # wording, so the message can be reworded without breaking this.
+        # Assert the contract (offending path and a remedy), not the wording.
         with scratch_dir() as tmp:
             plan = Path(tmp) / "01-01-PLAN.md"
             plan.write_bytes(b"\xff\xfe# plan\n")
@@ -2135,11 +1686,8 @@ class TestUnreadablePlanFiles(unittest.TestCase):
         self.assertIn("re-save", result.stderr)
 
     def test_directory_named_like_a_plan_exits_2(self):
-        # Discovery matches on the name, so a directory named NN-NN-PLAN.md
-        # is opened as a file. IsADirectoryError is now caught alongside the
-        # decode failure above and mapped to the same exit-2 contract: one
-        # clean stderr line naming the path, no Traceback, and still no
-        # remediation: line (this is a usage/IO error, not a plan violation).
+        # A directory named NN-NN-PLAN.md maps to the same exit-2 contract: one
+        # clean stderr line naming the path, no Traceback, no remediation line.
         with scratch_dir() as tmp:
             plan = Path(tmp) / "01-01-PLAN.md"
             plan.mkdir()
@@ -2150,22 +1698,15 @@ class TestUnreadablePlanFiles(unittest.TestCase):
         self.assertNotIn("remediation:", result.stderr)
 
 
-class TestPathSafety(unittest.TestCase):
+class TestPathSafety(GateCase):
     def test_dir_with_no_planning_ancestor_exits_2(self):
-        # Named for what it actually exercises. It never tested containment:
-        # find_project_root() raises here, before any containment check could
-        # run. See test_dotdot_path_matches_its_resolved_form below.
         result = run_check(Path(SCRIPT.anchor))
         self.assertEqual(result.returncode, 2)
         self.assertIn("could not locate a .planning/ ancestor", result.stderr)
 
     def test_dotdot_path_matches_its_resolved_form(self):
-        # The deleted confined() was unreachable, so removing it changed
-        # nothing observable. find_project_root() walks up from the RESOLVED
-        # phase_dir, so the root it derives is always an ancestor of that path
-        # and relative_to() could never raise -- a `..`-laden argument simply
-        # relocates the derived root with it. Pinned so a future containment
-        # check has to state a root the caller supplies independently.
+        # find_project_root() walks up from the RESOLVED phase_dir, so relative_to()
+        # can never raise; a `..`-laden argument just relocates the derived root.
         with scratch_dir() as tmp:
             write_plan(tmp, "# plan with no Alternatives Considered section\n")
             direct = run_check(tmp)
@@ -2179,14 +1720,11 @@ class TestPathSafety(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
 
 
-class TestFoundationalCitationPairing(unittest.TestCase):
+class TestFoundationalCitationPairing(GateCase):
     """at-least-one-in-window year, not none-outside-window."""
 
     def test_foundational_fixture_copy_exits_0(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-foundational.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(fixture_text("plan-foundational.md"), 0)
 
     def test_generated_pairing_with_live_year_exits_0(self):
         text = (
@@ -2197,33 +1735,21 @@ class TestFoundationalCitationPairing(unittest.TestCase):
             f"`https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — standard-library default path.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 0)
+        self.gate(text, 0)
 
     def test_canonical_years_only_exits_1(self):
-        """Mirror-image negative: strip the in-window year, leaving only the
-        1965/1985 canonical years -- must fail, pinning the at-least-one-rule
-        against a future 'reject any out-of-window year' regression. The
-        script reports the first offending entry (Kahan/1965) -- validation
-        is fail-fast per plan, matching the single-violation-per-plan shape
-        every other test in this suite already relies on."""
+        """Only canonical out-of-window years (1965/1985) must fail, pinning the
+        at-least-one-in-window rule against an "any out-of-window year" regression."""
         text = (
             "## Alternatives Considered\n\n"
             "- **Kahan summation**: `Kahan 1965 Communications of the ACM`, no in-window year.\n"
             "- **IEEE 754**: `IEEE 754-1985`, no in-window year.\n\n"
             "Decided by: performance — standard-library default path.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("1965", result.stderr)
-        self.assertIn("no citation dated within the last", result.stderr)
+        self.gate(text, 1, "1965", "no citation dated within the last")
 
 
-class TestRemediationOutput(unittest.TestCase):
+class TestRemediationOutput(GateCase):
     """the --force remediation line."""
 
     def test_remediation_names_phase_number_from_basename(self):
@@ -2247,27 +1773,10 @@ class TestRemediationOutput(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("/gsd-plan-phase <phase> --force", result.stderr)
 
-    def test_remediation_line_appears_exactly_once_across_two_violations(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-missing-section.md"), name="01-01-PLAN.md")
-            write_plan(tmp, fixture_text("plan-uncited.md"), name="01-02-PLAN.md")
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stderr.count("remediation:"), 1)
 
-
-class TestDiagnosticBounding(unittest.TestCase):
-    """every diagnostic the gate emits is bounded, and a
-    truncated span carries an explicit elision marker so a reader can tell
-    truncation from a value that was already short.
-
-    `check-alternatives.py:537-540` joined every four-digit year found in
-    one entry's whole span into the message with no cap; probed against the
-    shipped script, a plan whose first bullet
-    carried 2,000 out-of-window years produced 12,280 chars / 8,099 tokens
-    on a single stderr line. The heading echoed by `below_the_boundary` had
-    the same defect: an arbitrary, unbounded document line.
-    """
+class TestDiagnosticBounding(GateCase):
+    """Every diagnostic is bounded, and a truncated span carries an explicit
+    elision marker so a reader can tell truncation from a short value."""
 
     def test_found_years_list_truncated_to_five_distinct_values(self):
         # Seven distinct out-of-window years cited on one entry: only the
@@ -2282,9 +1791,7 @@ class TestDiagnosticBounding(unittest.TestCase):
             f"- **Current option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — historical record.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
+        result = check(text)
         self.assertEqual(result.returncode, 1, result.stderr)
         for y in years[:5]:
             self.assertIn(str(y), result.stderr)
@@ -2293,11 +1800,8 @@ class TestDiagnosticBounding(unittest.TestCase):
         self.assertIn("...[+2 more]", result.stderr)
 
     def test_pathological_multiline_entry_span_years_still_truncated(self):
-        # Reproduces the reported defect's actual shape: years spread across
-        # continuation lines under one bullet, so the entry's span -- from
-        # its own bullet to the next one -- is multi-line, not a single
-        # citation line. The fix must bound the message regardless of how
-        # the span grew, not merely how it looks in the common case.
+        # Years spread over continuation lines make the entry span multi-line;
+        # the message must stay bounded regardless.
         stale_years = "\n  ".join(
             " ".join(str(1910 + row * 5 + col) for col in range(5)) for row in range(6)
         )
@@ -2309,29 +1813,11 @@ class TestDiagnosticBounding(unittest.TestCase):
             f"- **Second option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — historical record.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("1910", result.stderr)
-        self.assertIn("...[+", result.stderr)
-        self.assertNotIn("1939", result.stderr)
+        self.gate(text, 1, "1910", "...[+", lacks=("1939",))
 
     def test_long_boundary_heading_is_truncated_with_a_marker(self):
         long_heading = "Timing table " + ("x" * 100)
-        with scratch_dir() as tmp:
-            write_plan(tmp, split_across_boundary(f"{long_heading}\n" + "=" * 20))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertNotIn(long_heading, result.stderr)
-        self.assertIn("...[truncated]", result.stderr)
-        # A meaningful prefix of the heading survives. Exactly how much
-        # depends on the line-level backstop, which may cut further
-        # into an already-bounded span when the rest of the message -- the
-        # fixed "fewer than 2 ... the section ended at ..." prose plus the
-        # plan path -- is itself long; the two bounds are independent, and
-        # the coarser one (200 chars, whole line) wins when they conflict.
-        self.assertIn(long_heading[:20], result.stderr)
+        self.gate(split_across_boundary(f"{long_heading}\n" + "=" * 20), 1, "...[truncated]", long_heading[:20], lacks=(long_heading,))
 
     def test_long_alternative_name_is_truncated_with_a_marker(self):
         long_name = ("Uncited mechanism with an extremely long descriptive name " * 3).strip()[:150]
@@ -2341,33 +1827,18 @@ class TestDiagnosticBounding(unittest.TestCase):
             f"- **Current option**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — a real reason.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn(f"alternative '{long_name[:80]}", result.stderr)
-        self.assertNotIn(long_name, result.stderr)
-        self.assertIn("...[truncated]", result.stderr)
+        self.gate(text, 1, f"alternative '{long_name[:80]}", "...[truncated]", lacks=(long_name,))
 
     def test_short_messages_carry_no_elision_marker(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-uncited.md"))
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1)
-        self.assertNotIn("...[truncated]", result.stderr)
-        self.assertNotIn("...[+", result.stderr)
+        self.gate(fixture_text("plan-uncited.md"), 1, lacks=("...[truncated]", "...[+",))
 
 
-class TestViolationLineShape(unittest.TestCase):
-    """Each violation reports as `<plan_path>:<line>: <reason>` -- the
-    shape the capability already documents for its other usage error -- and a run still emits exactly one remediation
-    line no matter how many violations there are or how long any one
-    diagnostic line would otherwise be."""
+class TestViolationLineShape(GateCase):
+    """Each violation reports as `<plan_path>:<line>: <reason>`, and a run emits
+    exactly one remediation line however many violations there are."""
 
     def test_missing_section_names_line_one(self):
-        with scratch_dir() as tmp:
-            write_plan(tmp, fixture_text("plan-missing-section.md"))
-            result = run_check(tmp)
+        result = check(fixture_text("plan-missing-section.md"))
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertRegex(
             result.stderr,
@@ -2382,9 +1853,7 @@ class TestViolationLineShape(unittest.TestCase):
             f"- **Option B**: cited current. `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
             "Decided by: performance — a real reason.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
+        result = check(text)
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertRegex(result.stderr, r"01-01-PLAN\.md:3: alternative 'Option A'")
 
@@ -2395,9 +1864,7 @@ class TestViolationLineShape(unittest.TestCase):
             "- **Option B**: no citation at all here.\n\n"
             "Decided by: performance — a real reason.\n"
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, text)
-            result = run_check(tmp)
+        result = check(text)
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertRegex(result.stderr, r"01-01-PLAN\.md:4: alternative 'Option B'")
 
@@ -2410,13 +1877,7 @@ class TestViolationLineShape(unittest.TestCase):
             i for i, line in enumerate(stripped_lines, 1)
             if line.startswith("## Alternatives Considered")
         )
-        with scratch_dir() as tmp:
-            write_plan(tmp, "\n".join(stripped_lines) + "\n")
-            result = run_check(tmp)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn(
-            f"01-01-PLAN.md:{expected_line}: no 'Decided by:' line", result.stderr
-        )
+        self.gate("\n".join(stripped_lines) + "\n", 1, f"01-01-PLAN.md:{expected_line}: no 'Decided by:' line")
 
     def test_misnamed_plan_names_a_line(self):
         with scratch_dir() as tmp:
