@@ -43,7 +43,7 @@ The project copy wins when both exist.
 
 ### What the Claude hooks do
 
-At startup, resume, clear, or compaction — and again on every `gsd-planner`, `gsd-executor` and `gsd-verifier` subagent spawn — the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed, so a global install can fire mid-session, not only at session start. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. Subagent spawns never install; they only print role banners. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
 A global install publishes those bytes to every project on the machine, so where a repository tracks the bundle, the hook installs only bytes that repository records as published. Where none tracks it, there is nothing to check against and the bytes install unverified. It reads that from the local `origin/HEAD` or `origin/main` ref; it does not contact the remote, so a session start never waits on the network and never fails offline. Anyone who can write that ref can therefore satisfy the check — the guard is aimed at running a plugin out of a development worktree by accident, not at an adversary with write access to your own repository. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. The bundle walk and `git` itself are checked before anything asks whether a repository tracks the bundle, so a plugin unpacked into a plain directory can hit either.
 
@@ -63,7 +63,7 @@ A marketplace install is tracked or not depending on how Claude Code caches the 
 
 Planner, executor, and verifier subagents receive role-specific banners. A normal session start uses the generic SOTA/numerics banner; calling the script directly with an unknown role falls back to that same text. Other subagent roles do not trigger this plugin's `SubagentStart` hook.
 
-Auto-install runs before the plugin reads `sota-numerics.enabled`. Disabling the capability silences its banners and turns off its GSD contributions and gate; it does not stop the install check on any of those triggers.
+Auto-install runs only after the plugin reads `sota-numerics.enabled` as true. Disabling the capability silences its banners, installs nothing, and turns off its GSD contributions and gate.
 
 The installer needs either `sha256sum` or `shasum` and a resolvable `gsd-tools` provider. Resolution checks `gsd-core/bin/gsd-tools.cjs` under the plugin root — the host-set plugin-root variable when one is present, otherwise the hook's own file location, never the invoking working directory (D-13) — then a `gsd-tools` command on `PATH`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd-tools.cjs`. If no hash tool exists, installation exits quietly. If no provider resolves or installation fails, the hook reports the error and leaves the hash state unwritten so a later session can retry. A missing provider defaults the banner setting to `true`; any other config-read failure prints a warning and suppresses the banner for that invocation.
 
@@ -92,7 +92,7 @@ The checker reads direct child files whose names match these shapes:
 10.1-02-PLAN.md
 ```
 
-Both numeric segments are required; the phase segment may contain one decimal point. Nested plans -- files below a subdirectory of the phase directory -- are not looked at, because the discovery walk does not recurse. A name that reads as a plan but does not match this shape, such as `draft-PLAN.md`, is not ignored: it is collected as misnamed and reported as a violation, so a plan a reader would recognise cannot fail silently. Every matching plan is checked in sorted order. A directory with no matching plans passes.
+Both numeric segments are required; the phase segment may contain one decimal point. Nested plans -- files below a subdirectory of the phase directory -- are not looked at, because the discovery walk does not recurse. A name that reads as a plan but does not match this shape, such as `draft-PLAN.md`, is not ignored: it is collected as misnamed and reported as a violation, so a plan a reader would recognise cannot fail silently. Every matching plan is checked in sorted order. A phase-numbered name in any case, such as `23-01-plan.md`, is reported as misnamed, and a symlinked plan file is reported instead of followed. A directory with no matching plans passes.
 
 Each matching plan needs a level-two heading named `Alternatives Considered`. Matching is case-insensitive. The heading may carry a suffix such as `(REQ-10)`, but another word cannot be joined directly to `Considered`. The section ends at the next level-one or level-two heading -- indented up to the three leading spaces CommonMark allows -- or at end of file. A setext level-one heading (a text line underlined with `=`) also ends it; a `---` underline does not, because it is also a thematic break. Level-three and deeper headings stay inside it, which is what lets the internal-alternatives marker below sit within the section. Fenced code blocks are ignored throughout: a heading, bullet, or table row inside a ``` fence does not count, so a plan that quotes an example -- as the fenced examples below do -- is not credited with the example's own content. An unterminated fence blanks the rest of the file, which blocks.
 
@@ -109,9 +109,9 @@ Use at least two bold-named bullets:
 Decided by: performance — QR is the stable first choice.
 ```
 
-`-` and `*` bullets both work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognised bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
+`-`, `*`, `+` and ordered-list (`1.`) markers all work. The parser requires the bold name; a colon after it is conventional but optional. A bullet's evidence normally runs until the next recognised bullet or the end of the section. The exact internal marker also ends a preceding mechanism span, and a peer level-three heading ends a span only after that marker activated internal scope; unrelated level-three headings on a no-marker path do not truncate evidence.
 
-A framed Markdown table also works when it has a header, a separator row, and bold-named body rows:
+A framed Markdown table (leading and trailing `|`; borderless tables are unsupported) also works when it has a header, a separator row, and bold-named body rows:
 
 ```markdown
 ## Alternatives Considered (REQ-10)
@@ -149,9 +149,9 @@ Internal entries need no external citation or date, do not count toward the two 
 Each parsed mechanism entry must contain:
 
 - an `http://` or `https://` URL, or a single-line backticked reference; the parser accepts 1–300 characters after the URL scheme or inside the backticks;
-- at least one four-digit year from the current year through six years earlier, counting both endpoints.
+- at least one four-digit year from the current year through six years earlier, counting both endpoints, in the same sentence as a citation.
 
-An older foundational year is allowed when the same entry also carries an in-window year. The checker rejects the exact URL authority strings `example.com`, `example.org`, `example.net`, and `localhost`, plus backticked references containing only `TODO` or `TBD`. The authority check includes a port, so `example.com:443` does not match `example.com`; this is a narrow placeholder filter, not URL verification.
+An older foundational year is allowed when the same entry also carries an in-window year. The checker rejects URLs whose host is `example.com`, `example.org`, `example.net`, or `localhost` (or a subdomain of one; the port is ignored), plus backticked references containing only `TODO`, `TBD`, `N/A`, `NONE`, or `?`. This is a narrow placeholder filter, not URL verification.
 
 The section also needs `Decided by:` followed by text beginning with one of these tokens:
 
@@ -161,7 +161,7 @@ The section also needs `Decided by:` followed by text beginning with one of thes
 - `ecosystem`
 - `maintenance`
 
-The criterion matcher has no trailing word boundary, so a longer string such as `performanceXYZ` also passes. The check is structural. It does not open URLs, prove that a source exists, link a year to a specific citation, judge the comparison, or confirm that the stated criterion really decided the choice.
+The criterion must end at a word boundary, so `performanceXYZ` fails. The check is structural. It does not open URLs, prove that a source exists, link a year to a specific citation, judge the comparison, or confirm that the stated criterion really decided the choice.
 
 ### No mechanism choice
 
@@ -175,7 +175,7 @@ The checker accepts a hyphen or em dash and stops validating that section once t
 
 ### Failures and recovery
 
-The checker reports one reason per failing plan, as `<plan_path>:<line>: <reason>` -- the
+The checker reports up to five reasons per failing plan, as `<plan_path>:<line>: <reason>` -- the
 line is the heading line for a section-level violation, or the entry's own line for a
 per-entry citation issue. Text quoted from a plan and `found: ...` lists
 are cut to a bounded length with an explicit `...[truncated]` or `...[+N more]` marker, so
@@ -192,7 +192,7 @@ Handled outcomes use these exit codes:
 - `1`: one or more plans violate the gate;
 - `2`: the phase directory could not be identified, or a matching plan file is not valid
   UTF-8 or could not be read. Identification fails when an explicitly passed path is empty or
-  is not an existing directory, when there is no `.planning` ancestor within ten levels, or --
+  is not an existing directory, when there is no `.planning` ancestor of the path, or --
   when no path is passed and the phase is resolved from `.planning/STATE.md` -- when that file
   is unreadable, has no YAML frontmatter, carries zero or more than one `current_phase` field,
   has no `## Current Position` section or that section carries any count of `Phase:` lines
