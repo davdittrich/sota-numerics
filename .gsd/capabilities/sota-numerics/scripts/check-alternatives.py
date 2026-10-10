@@ -552,9 +552,9 @@ def mask_fenced_regions(text):
     CommonMark's other invisible-on-the-page construct is the indented code
     block: four or more leading spaces, no delimiter at all (D-02). Fences
     above are masked by explicit open/close bytes; an indented block is
-    masked per line instead, by `mask_indented_code_blocks` below, run last
-    so a fenced or commented interior -- already blank -- cannot forge the
-    blank-line-before or list-marker state that scan reads.
+    masked per line instead, by `mask_indented_code_blocks` below, run
+    before fences and comments so a `<!--` or fence marker written inside an
+    indented code block cannot mask the document to EOF.
 
     Leading YAML frontmatter is masked first of all, by
     `mask_leading_frontmatter`, since it is a document-level boundary that
@@ -568,7 +568,7 @@ def mask_fenced_regions(text):
     EOF -- the same fail-closed direction as every other unterminated
     construct here.
     """
-    text = mask_leading_frontmatter(text)
+    text = mask_indented_code_blocks(mask_leading_frontmatter(text))
     spans = []
     pos = 0
     while True:
@@ -584,7 +584,7 @@ def mask_fenced_regions(text):
             pos = fence_close(text, fence)
             spans.append((fence.start(), pos))
     if not spans:
-        return mask_indented_code_blocks(text)
+        return text
     out = []
     prev = 0
     for span_start, span_end in spans:
@@ -592,7 +592,7 @@ def mask_fenced_regions(text):
         out.append(NON_NEWLINE_RE.sub(" ", text[span_start:span_end]))
         prev = span_end
     out.append(text[prev:])
-    return mask_indented_code_blocks("".join(out))
+    return "".join(out)
 
 
 def mask_indented_code_blocks(text):

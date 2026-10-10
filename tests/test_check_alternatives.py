@@ -1944,6 +1944,18 @@ class TestBorderlessTable(unittest.TestCase):
         self.assertIn("borderless tables are not supported", result.stderr)
 
 
+class TestCommentOpenerInIndentedCode(unittest.TestCase):
+    def test_comment_opener_in_indented_code_masks_nothing_else(self):
+        result = run_plan(
+            "Example input:\n\n    <!-- sample\n\n"
+            "## Alternatives Considered\n\n"
+            f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+            f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — A.\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:
