@@ -11,8 +11,13 @@ CAP_ID="${1:-}"
 
 # Absolute: the bundle hash only separates plugin roots if its paths are rooted.
 PLUGIN_ROOT="$(CDPATH= cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd)" || exit 0
-BUNDLE_DIR="$PLUGIN_ROOT/.gsd/capabilities/$CAP_ID"
-[ -d "$BUNDLE_DIR" ] || exit 0
+# The plugin root is the capability: `capability install` reads its
+# capability.json and copies the whole directory. Only these paths are what the
+# capability runs, so only they are hashed: an edit to tests or docs must not
+# reinstall. The trailing slash walks a directory even when it is a symlink.
+BUNDLE_DIR="$PLUGIN_ROOT"
+BUNDLE_PATHS=(capability.json fragments/ scripts/)
+[ -f "$BUNDLE_DIR/capability.json" ] || exit 0
 
 # Portable hash tool selection: macOS ships shasum, not sha256sum.
 if command -v sha256sum >/dev/null 2>&1; then
@@ -59,9 +64,9 @@ _bundle_records() {
   done
 }
 
-# Whole-bundle hash of what `capability install` would copy: file content
-# (bound to path), symlink target, and the path of everything else (an added
-# empty directory). Mode is not hashed: a chmod is a stale miss, not unsafe.
+# Hash of the BUNDLE_PATHS the install copies: file content (bound to path),
+# symlink target, and the path of everything else (an added empty directory).
+# A missing path fails the walk. Mode is not hashed: a chmod is a stale miss, not unsafe.
 # The stream is only hashed, never parsed, so it need only be injective: kind
 # tag, `_esc`, one record per entry.
 # `set -o pipefail` is load-bearing: without it an unreadable directory is
@@ -69,8 +74,9 @@ _bundle_records() {
 # complete (case J5). find's stderr is dropped so the refusal below reaches
 # the user.
 bundle_hash() {
-  local _list
-  _list="$(set -o pipefail; find "$BUNDLE_DIR/" -print0 2>/dev/null | _bundle_records)" || return 1
+  local _list _p _abs=()
+  for _p in "${BUNDLE_PATHS[@]}"; do _abs+=("$BUNDLE_DIR/$_p"); done
+  _list="$(set -o pipefail; find "${_abs[@]}" -print0 2>/dev/null | _bundle_records)" || return 1
   printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 

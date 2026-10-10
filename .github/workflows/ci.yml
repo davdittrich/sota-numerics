@@ -31,6 +31,9 @@ jobs:
       - name: capability auto-install guard test
         run: bash tests/test-capability-auto-install.sh
 
+      - name: capability install test
+        run: bash tests/test-capability-install.sh
+
       - name: gate script resolution test
         run: bash tests/test-gate-script-resolution.sh
 

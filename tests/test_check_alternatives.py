@@ -17,7 +17,7 @@ from pathlib import Path
 
 SCRIPT = (
     Path(__file__).resolve().parent.parent
-    / ".gsd" / "capabilities" / "sota-numerics" / "scripts" / "check-alternatives.py"
+    / "scripts" / "check-alternatives.py"
 )
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -453,7 +453,7 @@ class TestDocumentedSyntax(GateCase):
         )
         paths = (
             root / "README.md",
-            root / ".gsd/capabilities/sota-numerics/fragments/planner-sota.md",
+            root / "fragments/planner-sota.md",
         )
         missing = [
             str(path)

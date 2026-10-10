@@ -8,7 +8,7 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CAP_JSON="$REPO_ROOT/.gsd/capabilities/sota-numerics/capability.json"
+CAP_JSON="$REPO_ROOT/capability.json"
 
 # Record and continue so one broken case does not mask the rest of the run.
 FAILURES=0
@@ -69,7 +69,7 @@ SCRATCH="$(mktemp -d)"
 make_project "$SCRATCH" "11-plain" "11" || fail "case1: could not build fixture project"
 FAKE_HOME="$(mktemp -d)"
 mkdir -p "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts"
-cp "$REPO_ROOT/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py" \
+cp "$REPO_ROOT/scripts/check-alternatives.py" \
   "$FAKE_HOME/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
 
 ( cd "$SCRATCH" && GSD_HOME="$FAKE_HOME" bash -c "$GATE_CMD" )
@@ -269,7 +269,7 @@ mk7() {  # $1=cwd root $2=version $3=script source file
 }
 P7="$(mktemp -d)"; CANARY7="$P7/canary"
 printf 'import sys\nopen(r"%s", "w").write("local")\nsys.exit(0)\n' "$CANARY7" > "$P7/hostile.py"
-REAL7="$REPO_ROOT/$REL7"
+REAL7="$REPO_ROOT/scripts/check-alternatives.py"
 make_project "$P7/proj" "11-plain" "11"
 mk7 "$P7/proj" 0.2.0 "$P7/hostile.py"
 mk7 "$P7/home" 0.2.1 "$REAL7"

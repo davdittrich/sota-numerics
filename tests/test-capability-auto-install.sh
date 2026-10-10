@@ -191,12 +191,12 @@ PATH_OVERRIDE=""
 new_sandbox() {
   SB="$SANDBOX_ROOT/$1"
   ROOT="$SB/${2:-root}"
-  BUNDLE="$ROOT/.gsd/capabilities/$CAP_ID"
+  BUNDLE="$ROOT"
   PATH_OVERRIDE=""
   # git_init commits and clones run in this shell: keep them off the developer's
   # real HOME and global git config.
   export HOME="$SB/home" GIT_CONFIG_GLOBAL=/dev/null
-  mkdir -p "$BUNDLE/scripts" "$SB/home" "$SB/bin" "$ROOT/hooks"
+  mkdir -p "$BUNDLE/scripts" "$BUNDLE/fragments" "$SB/home" "$SB/bin" "$ROOT/hooks"
   # A plugin root ships hooks/gsd-tools.sh next to the hook, and the hook
   # sources it for the gsd_tools resolver. A sandbox root without it is a shape
   # that cannot occur in an installed plugin, so every root gets it; case L2
@@ -204,12 +204,13 @@ new_sandbox() {
   cp "$REPO_ROOT/hooks/gsd-tools.sh" "$ROOT/hooks/gsd-tools.sh"
   printf '{"id":"%s","version":"0.2.0"}\n' "$CAP_ID" > "$BUNDLE/capability.json"
   printf 'print("gate")\n' > "$BUNDLE/scripts/check.py"
+  printf 'advice\n' > "$BUNDLE/fragments/f.md"
   cat > "$SB/bin/gsd-tools" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GSD_TOOLS_LOG"
-# Like the real install: the global mirror directory appears (id = bundle basename).
+# Like the real install: the global mirror directory appears (id from the manifest).
 if [ "${1:-}" = capability ] && [ "${2:-}" = install ]; then
-  _m="${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
+  _m="${GSD_HOME:-$HOME}/.gsd/capabilities/$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$3/capability.json")"
   mkdir -p "$_m/scripts" && : > "$_m/capability.json" && : > "$_m/scripts/check-alternatives.py"
 fi
 exit 0
@@ -253,12 +254,12 @@ git_init() {
 # setting applies, so the hand-built shape is the shape under test. Call before
 # git_init. $1 is extra .gitmodules body, so a caller can commit `ignore = all`.
 vendor_submodule() {
-  mkdir -p "$BUNDLE/vendor"
-  printf 'v1\n' > "$BUNDLE/vendor/lib.py"
-  git -C "$BUNDLE/vendor" init -q
-  git -C "$BUNDLE/vendor" add -A
-  git "${GIT_ID[@]}" -C "$BUNDLE/vendor" commit -qm "vendor"
-  SUBMODULE_NAME=".gsd/capabilities/$CAP_ID/vendor"
+  mkdir -p "$BUNDLE/scripts/vendor"
+  printf 'v1\n' > "$BUNDLE/scripts/vendor/lib.py"
+  git -C "$BUNDLE/scripts/vendor" init -q
+  git -C "$BUNDLE/scripts/vendor" add -A
+  git "${GIT_ID[@]}" -C "$BUNDLE/scripts/vendor" commit -qm "vendor"
+  SUBMODULE_NAME="scripts/vendor"
   {
     printf '[submodule "%s"]\n\tpath = %s\n\turl = ./vendor\n' "$SUBMODULE_NAME" "$SUBMODULE_NAME"
     [ $# -gt 0 ] && printf '\t%s\n' "$1"
@@ -306,7 +307,7 @@ git -C "$ROOT" add -A
 git "${GIT_ID[@]}" -C "$ROOT" commit -qm "release"
 git -C "$ROOT" push -q origin HEAD:refs/heads/main
 git clone -q --depth 1 "file://$SB/origin" "$SB/cache"
-CACHE_BUNDLE="$SB/cache/.gsd/capabilities/$CAP_ID"
+CACHE_BUNDLE="$SB/cache"
 [ -f "$SB/cache/.git/shallow" ] &&
   [ "$(git -C "$SB/cache" rev-list --count HEAD)" = 1 ] ||
   fail "A2: precondition -- clone should be shallow with a single commit"
@@ -559,7 +560,7 @@ pass "J1: a status git could not answer is not an answer of clean"
 new_sandbox j2
 git_init "$ROOT"
 publish "$ROOT"
-git -C "$ROOT" update-index --assume-unchanged .gsd/capabilities/$CAP_ID/scripts/check.py
+git -C "$ROOT" update-index --assume-unchanged scripts/check.py
 printf 'UNPUBLISHED\n' >> "$BUNDLE/scripts/check.py"
 [ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
   fail "J2: precondition -- status should report this edited bundle as clean"
@@ -578,7 +579,7 @@ pass "J2: assume-unchanged entries refuse"
 new_sandbox j3
 git_init "$ROOT"
 publish "$ROOT"
-git -C "$ROOT" update-index --skip-worktree .gsd/capabilities/$CAP_ID/scripts/check.py
+git -C "$ROOT" update-index --skip-worktree scripts/check.py
 printf 'UNPUBLISHED\n' >> "$BUNDLE/scripts/check.py"
 [ -z "$(git -C "$BUNDLE" status --porcelain --ignored -- . 2>/dev/null)" ] ||
   fail "J3: precondition -- status should report this edited bundle as clean"
@@ -615,13 +616,13 @@ if [ "$(id -u)" -eq 0 ]; then echo "SKIP: J5 (root ignores chmod 000)"; else
 # and the hash computed from the truncated listing would have been written to
 # the sidecar as if it described the whole bundle.
 new_sandbox j5
-mkdir -p "$BUNDLE/private"
-printf 'UNPUBLISHED\n' > "$BUNDLE/private/secret"
-chmod 000 "$BUNDLE/private"
+mkdir -p "$BUNDLE/scripts/private"
+printf 'UNPUBLISHED\n' > "$BUNDLE/scripts/private/secret"
+chmod 000 "$BUNDLE/scripts/private"
 [ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)" ] ||
   fail "J5: precondition -- git should have nothing to say about this bundle"
 run_hook
-chmod 755 "$BUNDLE/private"
+chmod 755 "$BUNDLE/scripts/private"
 [ "$(installs)" = 0 ] || fail "J5: a bundle that could not be read in full was installed"
 err_has "could not be read in full" || fail "J5: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "J5: refusal wrote a sidecar holding a truncated bundle's hash"
@@ -643,7 +644,7 @@ new_sandbox j6
 vendor_submodule
 git_init "$ROOT"
 publish "$ROOT"
-printf 'UNPUBLISHED\n' > "$BUNDLE/vendor/lib.py"
+printf 'UNPUBLISHED\n' > "$BUNDLE/scripts/vendor/lib.py"
 git -C "$ROOT" config "submodule.$SUBMODULE_NAME.ignore" all
 [ "$(git -C "$ROOT" ls-files -s -- "$SUBMODULE_NAME" | cut -c1-6)" = "160000" ] ||
   fail "J6: precondition -- the bundle should hold a gitlink, not a directory of files"
@@ -667,7 +668,7 @@ new_sandbox j7
 vendor_submodule "ignore = all"
 git_init "$ROOT"
 publish "$ROOT"
-printf 'UNPUBLISHED\n' > "$BUNDLE/vendor/lib.py"
+printf 'UNPUBLISHED\n' > "$BUNDLE/scripts/vendor/lib.py"
 [ -n "$(git -C "$ROOT" ls-files -- .gitmodules)" ] ||
   fail "J7: precondition -- .gitmodules must be tracked, or this is just J6 again"
 [ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all -- . 2>/dev/null)" ] ||
@@ -717,7 +718,8 @@ publish "$ROOT"
 git -C "$ROOT" config core.sparseCheckout true
 printf '/hooks\n' > "$ROOT/.git/info/sparse-checkout"
 git -C "$ROOT" read-tree -mu HEAD 2>/dev/null
-mkdir -p "$BUNDLE"
+# The hash walk needs these directories to exist; their excluded files stay S.
+mkdir -p "$BUNDLE/scripts" "$BUNDLE/fragments"
 printf '{"id":"%s","version":"0.2.0"}\n' "$CAP_ID" > "$BUNDLE/capability.json"
 [ -z "$(git -c core.fsmonitor= -C "$BUNDLE" status --porcelain --ignored --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)" ] ||
   fail "J9: precondition -- status should report this partially-excluded bundle clean"
@@ -754,7 +756,7 @@ fi
 exec "$REAL_GIT" "\$@"
 EOF
 chmod +x "$SB/bin/git"
-( cd "$ROOT" && PATH="$SB/bin:$PATH" git ls-files --error-unmatch .gsd >/dev/null 2>&1 ) ||
+( cd "$ROOT" && PATH="$SB/bin:$PATH" git ls-files --error-unmatch capability.json >/dev/null 2>&1 ) ||
   fail "J10: precondition -- --error-unmatch must still answer, or this is not the tracked branch"
 run_hook
 [ "$(installs)" = 0 ] || fail "J10: a bundle whose index tags could not be read was installed"
@@ -822,11 +824,11 @@ new_sandbox i10b
 cat > "$SB/bin/gsd-tools" <<STUB
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
-mkdir -p "$BUNDLE/private" && chmod 000 "$BUNDLE/private"
+mkdir -p "$BUNDLE/scripts/private" && chmod 000 "$BUNDLE/scripts/private"
 exit 0
 STUB
 run_hook
-chmod 755 "$BUNDLE/private"
+chmod 755 "$BUNDLE/scripts/private"
 [ "$(installs)" = 1 ] || fail "I10b: precondition -- the install should have run"
 [ ! -f "$(sidecar)" ] || fail "I10b: an unverifiable bundle still got a sidecar"
 err_has "changed during" && fail "I10b: failed re-hash reported as a change (err: $(cat "$SB/err"))"
@@ -851,9 +853,9 @@ rm -f "$(sidecar)"
 # A bare relative CLAUDE_PLUGIN_ROOT is searched under CDPATH by `cd`, which also
 # prints the directory it chose; the root would then be the decoy (or two lines).
 new_sandbox i12
-mkdir -p "$SB/decoy/root/.gsd/capabilities/$CAP_ID"
+mkdir -p "$SB/decoy/root" && cp "$BUNDLE/capability.json" "$SB/decoy/root/"
 CDPATH="$SB/decoy" run_hook "$SB" root
-grep -qF -- "install $ROOT/.gsd/capabilities/$CAP_ID " "$SB/installs" ||
+grep -qF -- "install $ROOT --scope" "$SB/installs" ||
   fail "I12: CDPATH changed the plugin root (installs: $(cat "$SB/installs"))"
 pass "I12: CDPATH does not redirect the plugin root"
 
@@ -900,13 +902,13 @@ pass "I4: symlink drift inside the bundle defeats the fast path"
 # walk's raw output becomes byte-identical to the pre-deletion state even
 # though the bundle changed, and the sorted stream cannot tell them apart.
 new_sandbox i5
-printf 'hello\n' > "$BUNDLE/f"
-ln -s foo "$BUNDLE/z"
+printf 'hello\n' > "$BUNDLE/scripts/f"
+ln -s foo "$BUNDLE/scripts/z"
 run_hook
 [ "$(installs)" = 1 ] || fail "I5: precondition -- first run should install"
-FORGED_LINE="$("${HASH_CMD[@]}" "$BUNDLE/f")"
-rm -f "$BUNDLE/f"
-ln -sfn "$(printf 'foo\n%s' "$FORGED_LINE")" "$BUNDLE/z"
+FORGED_LINE="$("${HASH_CMD[@]}" "$BUNDLE/scripts/f")"
+rm -f "$BUNDLE/scripts/f"
+ln -sfn "$(printf 'foo\n%s' "$FORGED_LINE")" "$BUNDLE/scripts/z"
 run_hook
 [ "$(installs)" = 2 ] ||
   fail "I5: a symlink target forging a deleted file's digest line defeated the fast path"
