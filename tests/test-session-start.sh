@@ -434,6 +434,18 @@ echo "$OUT11" | grep -q 'SOTA-NUMERICS' || fail "case11: banner missing outside 
 [ -z "$ERR11" ] || fail "case11: stderr noise outside a GSD project: $ERR11"
 pass "case11: failing config-get without .planning/ is silent and stays enabled"
 
+# --- Case 12 (F10b): SubagentStart (role) invocations never install ---
+# Parallel subagent spawns would race gsd-core's install lock ("install failed");
+# only SessionStart installs.
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_stub_root 0
+for _r in planner executor verifier; do
+  CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" "$_r" >/dev/null 2>&1
+done
+[ ! -e "$STUB_ROOT/installs" ] || fail "case12: a role invocation ran the auto-install"
+run_and_cleanup
+pass "case12: role invocations skip the auto-install"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"

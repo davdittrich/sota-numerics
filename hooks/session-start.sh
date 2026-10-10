@@ -27,7 +27,11 @@ fi
 
 # Install only once the capability is known to be enabled: a user who switched
 # it off must not get a machine-wide install on every session start.
-bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
+# Only SessionStart (no role argument) installs: SubagentStart fires per spawn,
+# in parallel, and would race gsd-core's install lock.
+if [ -z "${1:-}" ]; then
+  bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
+fi
 
 ROLE="${1:-}"
 case "$ROLE" in
