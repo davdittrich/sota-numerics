@@ -1984,5 +1984,22 @@ class TestEntryEndsAtUnindentedParagraph(GateCase):
                   f"  https://numpy.org/doc/ ({TODAY_YEAR}).\n\n{_D}", 0)
 
 
+class TestExemptionIsExact(GateCase):
+    def test_exact_exemption_line_passes(self):
+        for line in ("N/A - no mechanism choice", "N/A — no mechanism choice.", "n/a-no mechanism choice  "):
+            with self.subTest(line=line):
+                self.gate(f"{_H}\n{line}\n", 0)
+
+    def test_extra_text_after_the_phrase_is_not_exempt(self):
+        self.gate(f"{_H}\nN/A - no mechanism choice review needed. Picked FFTW\n", 1)
+
+    def test_text_before_the_phrase_is_not_exempt(self):
+        self.gate(f"{_H}\nN/A - we made one; no mechanism choice review needed.\n", 1)
+
+    def test_more_content_in_the_section_is_not_exempt(self):
+        self.gate(f"{_H}\nN/A - no mechanism choice\n\nWe picked FFTW over MKL.\n", 1)
+        self.gate(f"{_H}\nN/A - no mechanism choice\nPicked FFTW\n", 1)
+
+
 if __name__ == "__main__":
     unittest.main()

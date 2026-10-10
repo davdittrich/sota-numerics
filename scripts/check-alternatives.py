@@ -127,7 +127,7 @@ H3_HEADING_RE = re.compile(r"^###(?:[ \t]+[^\n\r]*)?\r?$", re.MULTILINE)
 INTERNAL_HEADING_RE = re.compile(
     r"^### Internal design alternatives[ \t]*\r?$", re.MULTILINE
 )
-EXEMPTION_RE = re.compile(r"^N/A\s*[-—]\s*.{0,200}?no mechanism choice", re.IGNORECASE)
+EXEMPTION_RE = re.compile(r"N/A[ \t]*[-—][ \t]*no mechanism choice\.?", re.IGNORECASE)
 # Indentation bounded to CommonMark's zero-to-three-space top-level range
 # -- pinned by TestBulletIndentationBound.
 # A bold name is CommonMark strong emphasis: no whitespace just inside the
@@ -684,13 +684,17 @@ def below_the_boundary(boundary, *patterns):
 
 
 def is_exempt(body):
-    """True when body's first non-blank line reads `N/A - ... no mechanism
-    choice`, exempting a plan with no mechanism decision to justify."""
-    stripped = body.strip()
-    if not stripped:
-        return False
-    first_line = stripped.splitlines()[0]
-    return bool(EXEMPTION_RE.match(first_line))
+    """True when the section is exactly one `N/A - no mechanism choice` line,
+    exempting a plan with no mechanism decision to justify. Only blank lines
+    may accompany it, apart from a trailing `### Internal design alternatives`
+    part, whose entries are not mechanism choices."""
+    internal = INTERNAL_HEADING_RE.search(body)
+    lines = [
+        line.strip()
+        for line in (body[: internal.start()] if internal else body).splitlines()
+        if line.strip()
+    ]
+    return len(lines) == 1 and bool(EXEMPTION_RE.fullmatch(lines[0]))
 
 
 def split_entries(body):
