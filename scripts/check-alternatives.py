@@ -34,6 +34,7 @@ derives `block` purely from this script's process exit code -- no JSON
 `GATE_RESULT` is printed here.
 """
 import argparse
+import bisect
 import datetime
 import re
 import sys
@@ -215,6 +216,7 @@ HTML_COMMENT_CLOSE = "-->"
 # text?), not citation matching.
 INLINE_CODE_SPAN_RE = re.compile(r"`[^`\n]{1,300}`")
 NON_NEWLINE_RE = re.compile(r"[^\n]")
+BLANK_LINE_RE = re.compile(r"\n[ \t]*\n")
 
 # CommonMark list markers at zero-to-three-space indentation: a bullet
 # (-, +, *) or an ordered marker (1-9 digits then . or )), each followed
@@ -475,27 +477,51 @@ def next_comment_opener(text, pos):
     that candidate; an unrelated span elsewhere on the line must not protect
     a different, uncovered candidate.
 
+    A `\\<!--` is literal text, and a `<!--` that does not start its line
+    opens an inline comment, which cannot cross a blank line: with no `-->`
+    before the paragraph ends it is no comment and masks nothing. A `<!--`
+    that starts a line (up to three spaces in) is an HTML block and masks
+    to its `-->` or, unterminated, to EOF.
+
     Residual, documented rather than fixed: CommonMark permits an inline
     code span to cross a line break. This scan only looks at the candidate's
     own line, so a `<!--` protected only by a multi-line code span is still
     masked to EOF -- the same fail-closed direction as every other
     unterminated construct this module masks.
     """
+    line_end = line_start = -1
+    starts = ends = ()
+    para_end = -1
     while True:
         cand = text.find(HTML_COMMENT_OPEN, pos)
         if cand < 0:
             return -1
-        line_start = text.rfind("\n", 0, cand) + 1
-        line_end = text.find("\n", cand)
-        if line_end < 0:
-            line_end = len(text)
-        line, offset_in_line = text[line_start:line_end], cand - line_start
-        if not any(
-            m.start() <= offset_in_line < m.end()
-            for m in INLINE_CODE_SPAN_RE.finditer(line)
-        ):
-            return cand
         pos = cand + len(HTML_COMMENT_OPEN)
+        n = cand - 1
+        while n >= 0 and text[n] == "\\":
+            n -= 1
+        if (cand - 1 - n) % 2:
+            continue
+        if cand >= line_end:
+            line_start = text.rfind("\n", 0, cand) + 1
+            line_end = text.find("\n", cand)
+            if line_end < 0:
+                line_end = len(text)
+            spans = [(m.start(), m.end()) for m in INLINE_CODE_SPAN_RE.finditer(text, line_start, line_end)]
+            starts = [a for a, _ in spans]
+            ends = [b for _, b in spans]
+        k = bisect.bisect_right(starts, cand) - 1
+        if k >= 0 and cand < ends[k]:
+            continue
+        if cand - line_start <= 3 and not text[line_start:cand].strip():
+            return cand
+        if cand < para_end:
+            continue
+        blank = BLANK_LINE_RE.search(text, cand)
+        para_end = blank.start() if blank else len(text)
+        close = text.find(HTML_COMMENT_CLOSE, pos)
+        if 0 <= close < para_end:
+            return cand
 
 
 # A plan's own leading YAML frontmatter block, distinct from

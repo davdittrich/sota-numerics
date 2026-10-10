@@ -1097,19 +1097,17 @@ class TestHtmlComments(GateCase):
         # inside a span. An unrelated span earlier on the line must not act
         # as a blanket exemption for a real, unprotected opener later on the
         # same line -- that would turn the fix into a bypass.
-        text, _ = bullet_plan()
-        plan = "Uses `numpy`. <!--\n" + text + "-->\n"
+        plan = f"Uses `numpy`. <!--\n{_H}{_A}{_B}-->\n"
         self.gate(plan, 1, "missing '## Alternatives Considered' section")
 
-    def test_an_unterminated_backtick_before_an_opener_still_masks_to_eof(self):
+    def test_an_unterminated_backtick_before_an_opener_is_not_a_code_span(self):
         # An unterminated backtick is not a code span -- CommonMark requires
         # a matching closing run of the same length on the same line here --
-        # so the fail-closed residual from mask_fenced_regions' own
-        # docstring still applies: the opener is unprotected and masks to
-        # EOF.
+        # so the opener is unprotected. It is also unterminated mid-paragraph,
+        # so it is no comment and hides nothing.
         text, _ = bullet_plan()
         plan = "`a <!--\n" + text
-        self.gate(plan, 1, "missing '## Alternatives Considered' section")
+        self.gate(plan, 0)
 
     def test_a_protected_backtick_candidate_does_not_disturb_fence_precedence(self):
         # A skipped (backtick-protected) comment candidate earlier in the
@@ -2045,6 +2043,43 @@ class TestIndentedH3(GateCase):
 
     def test_an_indented_internal_heading_scopes_the_entries_after_it(self):
         self.gate(f"{_H}\n{_A}{_B}\n{self.MARKER}\n\n- **Local**: no citation.\n\n{_D}", 0)
+
+
+class TestCommentOpenerForms(GateCase):
+    def test_an_escaped_opener_is_literal_text(self):
+        self.gate(f"Write \\<!-- to start a comment.\n\n{_H}\n{_A}{_B}\n{_D}", 0)
+
+    def test_an_unterminated_opener_mid_paragraph_does_not_cross_a_blank_line(self):
+        self.gate(f"Text <!-- never closed\n\n{_H}\n{_A}{_B}\n{_D}", 0)
+
+    def test_a_terminated_opener_mid_paragraph_still_hides_its_span(self):
+        self.gate(f"{_H}\n{_A}{_B}- **Other**: x. <!-- https://numpy.org/doc/ ({TODAY_YEAR}) -->\n\n{_D}",
+                  1, "alternative 'Other'", "missing URL or doc-ref citation")
+
+    def test_a_line_start_unterminated_opener_still_masks_to_eof(self):
+        self.gate(f"<!-- never closed\n\n{_H}\n{_A}{_B}\n{_D}", 1, "missing")
+
+    def test_many_openers_in_code_spans_scan_in_linear_time(self):
+        import time
+        plan = "## Approach\n\n" + "`<!--` " * 40000 + f"\n\n{_H}\n{_A}{_B}\n{_D}"
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            start = time.monotonic()
+            result = run_check(tmp)
+            elapsed = time.monotonic() - start
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 2)
+
+    def test_many_unterminated_inline_openers_scan_in_linear_time(self):
+        import time
+        plan = "## Approach\n\n" + "x <!-- " * 40000 + f"\n\n{_H}\n{_A}{_B}\n{_D}"
+        with scratch_dir() as tmp:
+            write_plan(tmp, plan)
+            start = time.monotonic()
+            result = run_check(tmp)
+            elapsed = time.monotonic() - start
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 2)
 
 
 if __name__ == "__main__":
