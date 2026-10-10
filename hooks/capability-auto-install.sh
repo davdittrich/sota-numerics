@@ -20,7 +20,7 @@ CAP_ID="${1:-}"
 # plugin roots serving one capability id from sharing a fast path, and it can
 # only do that if the paths it covers are rooted. A relative CLAUDE_PLUGIN_ROOT
 # would make the hash identical for every root.
-PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd)" || exit 0
+PLUGIN_ROOT="$(CDPATH= cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd)" || exit 0
 BUNDLE_DIR="$PLUGIN_ROOT/.gsd/capabilities/$CAP_ID"
 [ -d "$BUNDLE_DIR" ] || exit 0
 
@@ -108,7 +108,7 @@ _bundle_records() {
 # `find: Permission denied`.
 bundle_hash() {
   local _list
-  _list="$(set -o pipefail; find "$BUNDLE_DIR" -print0 2>/dev/null | _bundle_records)" || return 1
+  _list="$(set -o pipefail; find "$BUNDLE_DIR/" -print0 2>/dev/null | _bundle_records)" || return 1
   printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
@@ -135,7 +135,7 @@ OLD_HASH=""
 # a racing attacker could still swap a regular file for a link between
 # them, the same unclosable window already recorded on the write side and
 # for the same reason -- no shell offers O_NOFOLLOW.
-[ ! -L "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
+[ ! -L "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
 if ! NEW_HASH="$(bundle_hash)"; then
   echo "capability-auto-install: the $CAP_ID bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope" >&2
   exit 0
@@ -143,7 +143,9 @@ fi
 
 # Fast path: an unchanged bundle exits silently and never spawns node, which
 # is what keeps this affordable on every SessionStart.
-[ "$NEW_HASH" = "$OLD_HASH" ] && exit 0
+# The sidecar only says which bytes the mirror held when it was written; a mirror
+# since deleted must be repaired, so the fast path also requires it to exist.
+[ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID" ] && exit 0
 
 # Fail closed: every question below is asked through git, and a git that cannot
 # answer is not an answer of "safe". `command -v` alone misses a
@@ -283,14 +285,16 @@ fi
 # message below read this constant so the two cannot drift.
 INSTALL_TIMEOUT=60
 
+# -k 5: a child that ignores SIGTERM is SIGKILLed 5s later instead of hanging
+# the session.
 # `timeout` is coreutils and not POSIX -- macOS ships neither unless the user
 # installed coreutils, in which case it is named `gtimeout`. An empty
 # _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
 # host with neither.
 if command -v timeout >/dev/null 2>&1; then
-  _TIMEOUT=(timeout "$INSTALL_TIMEOUT")
+  _TIMEOUT=(timeout -k 5 "$INSTALL_TIMEOUT")
 elif command -v gtimeout >/dev/null 2>&1; then
-  _TIMEOUT=(gtimeout "$INSTALL_TIMEOUT")
+  _TIMEOUT=(gtimeout -k 5 "$INSTALL_TIMEOUT")
 else
   _TIMEOUT=()
 fi
@@ -311,7 +315,12 @@ INSTALL_STATUS=$?
 # Both failure branches below break this repo's silent `|| true` convention and
 # write no STATE_FILE: the path is unattended, so silence would leave a
 # capability permanently inactive, and the next session must retry.
-if [ "$INSTALL_STATUS" -eq 0 ]; then
+# Re-hash after the install: the publication guard above judged the bytes as
+# they were then. If they moved while the install ran, the mirror is not
+# described by NEW_HASH, so record nothing and let the next session retry.
+if [ "$INSTALL_STATUS" -eq 0 ] && [ "$(bundle_hash)" != "$NEW_HASH" ]; then
+  echo "capability-auto-install: the $CAP_ID bundle changed during the install; not recording it as installed" >&2
+elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
   # Unlink before writing so the redirection below always creates a fresh

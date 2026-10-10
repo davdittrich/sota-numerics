@@ -11,16 +11,20 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CAP_JSON="$REPO_ROOT/.gsd/capabilities/sota-numerics/capability.json"
 
-fail() { echo "FAIL: $1"; exit 1; }
+# Record and continue so one broken case does not mask the rest of the run.
+FAILURES=0
+fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
 GATE_CMD="$(python3 - "$CAP_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(d["gates"][0]["check"]["predicate"]["command"])
+# Select by what the gate is, not by its position in the list.
+print(next(g for g in d["gates"] if g["point"] == "plan:post"
+           and g["check"]["predicate"]["kind"] == "command-exit-zero")["check"]["predicate"]["command"])
 PY
 )"
-[ -n "$GATE_CMD" ] || fail "could not extract gate command from capability.json"
+[ -n "$GATE_CMD" ] || { fail "could not extract gate command from capability.json"; exit 1; }
 
 # --- Case 0: the gate command is CONSTANT (gsd-beads-cqt) ---
 # gsd-core interpolates ${PHASE_NUMBER}/${PHASE_DIR}/${PHASE_REQ_IDS} with a
@@ -255,5 +259,48 @@ esac
 rm -rf "$P4"
 pass "case5: project copy precedes global scope in monorepo, non-Git, and absent-copy shapes"
 
+# --- Case 7 (F6a): global copy wins when its version >= the project copy's; python runs isolated ---
+# A project-local script shadowing the global one is a hostile-repo vector, so the
+# global copy is preferred unless it is verifiably older. Versions come from each
+# bundle's capability.json; an unreadable version keeps the project copy (case 5).
+REL7=".gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+CJ7=".gsd/capabilities/sota-numerics/capability.json"
+mk7() {  # $1=cwd root $2=version $3=script source file
+  mkdir -p "$1/$(dirname "$REL7")"
+  cp "$3" "$1/$REL7"; printf '{"id":"sota-numerics","version":"%s"}\n' "$2" > "$1/$CJ7"
+}
+P7="$(mktemp -d)"; CANARY7="$P7/canary"
+printf 'import sys\nopen(r"%s", "w").write("local")\nsys.exit(0)\n' "$CANARY7" > "$P7/hostile.py"
+REAL7="$REPO_ROOT/$REL7"
+make_project "$P7/proj" "11-plain" "11"
+mk7 "$P7/proj" 0.2.0 "$P7/hostile.py"
+mk7 "$P7/home" 0.2.1 "$REAL7"
+( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a project copy shadowed a newer global copy"; }
+mk7 "$P7/home" 0.2.0 "$REAL7"
+( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a project copy shadowed an equal-version global copy"; }
+mk7 "$P7/home" 0.1.0 "$REAL7"
+( cd "$P7/proj" && GSD_HOME="$P7/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: an older global copy overrode the project copy"; }
+pass "case7: global copy preferred when version >= project copy, project copy otherwise"
+rm -rf "$P7"
+
+P7="$(mktemp -d)"; CANARY7="$P7/canary"
+make_project "$P7/proj" "11-plain" "11"
+mk7 "$P7/proj" 0.2.0 "$REAL7"
+printf 'import sys\nopen(r"%s", "w").write("shadow")\nsys.exit(0)\n' "$CANARY7" > "$P7/proj/$(dirname "$REL7")/argparse.py"
+( cd "$P7/proj" && env -u GSD_HOME HOME="$P7/nohome" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+[ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a module next to the script shadowed the stdlib (python is not isolated)"; }
+rm -rf "$P7"
+pass "case7: python runs isolated (-I); sibling modules cannot shadow the stdlib"
+
+# --- Case 8 (F6b): the missing-script message names only installable forms ---
+ERR8="$(cd "$SCRATCH" && GSD_HOME="$(mktemp -d)" bash -c "$GATE_CMD" 2>&1 >/dev/null)"
+echo "$ERR8" | grep -q 'sota-numerics\.git#' || fail "case8: message does not cite the git URL#tag install form"
+echo "$ERR8" | grep -q 'capability install sota-numerics' && fail "case8: message still cites the unsupported bare-name install"
+pass "case8: missing-script message cites only installable forms"
+
+[ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }
 echo "ALL PASS"
 exit 0

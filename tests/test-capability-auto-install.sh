@@ -109,7 +109,9 @@ CAP_ID="sota-numerics"
 # undoes, without which the sandbox cannot be removed on the way out.
 FAILURES=0
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
-pass() { echo "PASS: $1"; }
+# A PASS line only if no fail() ran since the previous pass/case boundary.
+_PASS_MARK=0
+pass() { [ "$FAILURES" -eq "$_PASS_MARK" ] && echo "PASS: $1"; _PASS_MARK=$FAILURES; }
 
 if command -v sha256sum >/dev/null 2>&1; then HASH_CMD=(sha256sum)
 elif command -v shasum >/dev/null 2>&1; then HASH_CMD=(shasum -a 256)
@@ -155,6 +157,10 @@ REAL_GSD_BEFORE="$(real_gsd_state)"
 # variable (which is exactly how a missing python3 used to skip it), or an
 # `exit` some future case adds mid-file. It also decides the suite's status, so
 # a leak is red even if every case passed.
+# Limit, stated rather than implied: I0 digests only the sota-numerics mirror and
+# its sidecar under the real GSD_HOME. A leak into any other path under the real
+# HOME (other ids, ~/.claude, ~/.gitconfig) is not detected; the sandbox HOME and
+# GIT_CONFIG_GLOBAL exports in new_sandbox are what keep those out.
 SANDBOX_ROOT="$(mktemp -d)"
 check_containment() {
   if [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ]; then
@@ -164,7 +170,7 @@ check_containment() {
   echo "FAIL: I0: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
   exit 1
 }
-trap '_rc=$?; rm -rf "$SANDBOX_ROOT" 2>/dev/null; check_containment "$_rc"' EXIT
+trap '_rc=$?; chmod -R u+rwX "$SANDBOX_ROOT" 2>/dev/null; rm -rf "$SANDBOX_ROOT" 2>/dev/null; check_containment "$_rc"' EXIT
 
 # TMPDIR decides where the sandbox lands, and a sandbox inside a checkout is not
 # a sandbox: the hook's git commands would discover that repository, which both
@@ -187,6 +193,9 @@ new_sandbox() {
   ROOT="$SB/${2:-root}"
   BUNDLE="$ROOT/.gsd/capabilities/$CAP_ID"
   PATH_OVERRIDE=""
+  # git_init commits and clones run in this shell: keep them off the developer's
+  # real HOME and global git config.
+  export HOME="$SB/home" GIT_CONFIG_GLOBAL=/dev/null
   mkdir -p "$BUNDLE/scripts" "$SB/home" "$SB/bin" "$ROOT/hooks"
   # A plugin root ships hooks/gsd-tools.sh next to the hook, and the hook
   # sources it for the gsd_tools resolver. A sandbox root without it is a shape
@@ -198,6 +207,8 @@ new_sandbox() {
   cat > "$SB/bin/gsd-tools" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GSD_TOOLS_LOG"
+# Like the real install: the global mirror directory appears (id = bundle basename).
+[ "${1:-}" = capability ] && [ "${2:-}" = install ] && mkdir -p "${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
 exit 0
 STUB
   chmod +x "$SB/bin/gsd-tools"
@@ -261,6 +272,12 @@ publish() {
   git -C "$1" push -q origin HEAD:refs/heads/main
   git -C "$1" fetch -q origin
 }
+
+# --- N1 (F25): the sandbox hides the developer's git identity and config from git_init ---
+new_sandbox n1
+[ "$HOME" = "$SB/home" ] && [ "${GIT_CONFIG_GLOBAL:-}" = /dev/null ] ||
+  fail "N1: new_sandbox left HOME/GIT_CONFIG_GLOBAL pointing outside the sandbox (HOME=$HOME)"
+pass "N1: sandbox git runs with a sandbox HOME and no global git config"
 
 # --- A: bundle with no repository anywhere above it ---
 # Not the marketplace shape -- that is a git clone, see A2. This is the
@@ -431,6 +448,7 @@ run_hook
 err_has "git is unusable" || fail "H2: wrong refusal (err: $(cat "$SB/err"))"
 pass "H2: absent git fails closed"
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: H3 (root ignores chmod 000)"; else
 # --- H3: git runs, but will not open the repository that tracks the bundle ---
 # `ls-files --error-unmatch` answers 128 both for "no repository" and for "a
 # repository I refuse to read", and the second must not be read as the first.
@@ -449,7 +467,9 @@ chmod 755 "$ROOT/.git"
 err_has "git cannot read the repository" || fail "H3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "H3: refusal wrote the sidecar, making the miss permanent"
 pass "H3: a repository git refuses to open fails closed"
+fi
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: H4 (root ignores chmod 000)"; else
 # --- H4: git opens the repository but cannot read its index ---
 # Distinct from H3 and not reachable by testing `rev-parse --show-toplevel`:
 # discovery succeeds here, so a --show-toplevel gate routes this case into the
@@ -470,6 +490,7 @@ chmod 644 "$ROOT/.git/index"
 err_has "git cannot read the repository" || fail "H4: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "H4: refusal wrote the sidecar, making the miss permanent"
 pass "H4: a repository whose index git cannot read fails closed"
+fi
 
 # --- H5: a readable .git that git still refuses to open ---
 # The dubious-ownership shape -- .git is perfectly readable, git just declines
@@ -582,6 +603,7 @@ run_hook
 err_has "uncommitted or ignored" || fail "J4: wrong refusal (err: $(cat "$SB/err"))"
 pass "J4: status configured to hide untracked bytes does not hide them from the guard"
 
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: J5 (root ignores chmod 000)"; else
 # --- J5: part of the bundle cannot be read at all ---
 # Nothing above can see this: an unreadable directory holds no tracked entry, so
 # `ls-files` has nothing to say about it, and `status` -- even with
@@ -603,6 +625,7 @@ err_has "could not be read in full" || fail "J5: wrong refusal (err: $(cat "$SB/
 grep -q "Permission denied" "$SB/err" &&
   fail "J5: find's own error reached the user's stderr instead of a refusal"
 pass "J5: a bundle that cannot be read in full refuses"
+fi
 
 # --- J6: a submodule inside the bundle, told to report itself clean ---
 # `status` walks into a submodule and reports its worktree as dirty, unless it
@@ -743,6 +766,65 @@ run_hook
 [ "$(installs)" = 1 ] || fail "I1: unchanged bundle reinstalled ($(installs) installs in 2 runs)"
 pass "I1: unchanged bundle takes the hash fast path"
 
+# --- I8 (F14): a deleted mirror is repaired even though the sidecar still matches ---
+new_sandbox i8
+run_hook
+[ "$(installs)" = 1 ] || fail "I8: precondition -- first run should install"
+rm -rf "$SB/home/.gsd/capabilities/$CAP_ID"
+run_hook
+[ "$(installs)" = 2 ] || fail "I8: a deleted mirror was not reinstalled ($(installs) installs)"
+pass "I8: the fast path requires the mirror directory to exist"
+
+# --- I9 (F15): a symlinked bundle directory is walked, so edits inside it are drift ---
+new_sandbox i9
+mv "$BUNDLE" "$SB/real-bundle"
+ln -s "$SB/real-bundle" "$BUNDLE"
+run_hook
+[ "$(installs)" = 1 ] || fail "I9: precondition -- first run should install"
+printf 'print("edited")\n' > "$SB/real-bundle/scripts/check.py"
+run_hook
+[ "$(installs)" = 2 ] || fail "I9: an edit behind a symlinked bundle directory did not change the hash"
+pass "I9: a symlinked bundle directory is hashed through, not as a bare link"
+
+# --- I10 (F16): a bundle that changes while the install runs is not recorded as installed ---
+# The clean-check ran before the install; an edit in between means the mirror may
+# hold bytes the sidecar hash does not describe, so the sidecar must not be written.
+new_sandbox i10
+cat > "$SB/bin/gsd-tools" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
+printf 'raced\n' >> "$BUNDLE/scripts/check.py"
+exit 0
+STUB
+run_hook
+[ "$(installs)" = 1 ] || fail "I10: precondition -- the install should have run"
+[ ! -f "$(sidecar)" ] || fail "I10: a bundle edited during the install still got a sidecar"
+err_has "changed during" || fail "I10: no warning (err: $(cat "$SB/err"))"
+pass "I10: a bundle that changed during the install leaves no sidecar"
+
+# --- I11 (F19a): a FIFO at the sidecar path must not hang the hook ---
+# `-r` is true for a FIFO and `cat` then blocks forever on SessionStart.
+new_sandbox i11
+mkdir -p "$SB/home/.gsd"
+mkfifo "$(sidecar)"
+( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
+  GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" CLAUDE_PLUGIN_ROOT="$ROOT" \
+  timeout -k 2 10 bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err"
+[ "$?" -eq 0 ] || fail "I11: a FIFO at the sidecar path hung or broke the hook"
+[ "$(installs)" = 1 ] || fail "I11: a FIFO sidecar should read as no recorded hash and install ($(installs) installs)"
+pass "I11: a FIFO at the sidecar path is read as no recorded hash"
+rm -f "$(sidecar)"
+
+# --- I12 (F19c): CDPATH must not redirect or pollute the plugin root ---
+# A bare relative CLAUDE_PLUGIN_ROOT is searched under CDPATH by `cd`, which also
+# prints the directory it chose; the root would then be the decoy (or two lines).
+new_sandbox i12
+mkdir -p "$SB/decoy/root/.gsd/capabilities/$CAP_ID"
+CDPATH="$SB/decoy" run_hook "$SB" root
+grep -qF -- "install $ROOT/.gsd/capabilities/$CAP_ID " "$SB/installs" ||
+  fail "I12: CDPATH changed the plugin root (installs: $(cat "$SB/installs"))"
+pass "I12: CDPATH does not redirect the plugin root"
+
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop
@@ -871,15 +953,15 @@ TIMEOUT_LOG="$SB/timeout-calls"
 : > "$TIMEOUT_LOG"
 cat > "$SB/bin/timeout" <<STUB
 #!/usr/bin/env bash
-printf '%s\n' "\$1" >> "$TIMEOUT_LOG"
+printf '%s\n' "\${*:1:3}" >> "$TIMEOUT_LOG"
 exit 124
 STUB
 chmod +x "$SB/bin/timeout"
 run_hook
 [ "$(wc -l < "$TIMEOUT_LOG" | tr -d ' ')" = 1 ] ||
   fail "L3: the timeout stub was not called exactly once"
-grep -qE '^[0-9]+$' "$TIMEOUT_LOG" ||
-  fail "L3: timeout was not called with a bare numeric bound (log: $(cat "$TIMEOUT_LOG"))"
+grep -qE '^-k [0-9]+ [0-9]+$' "$TIMEOUT_LOG" ||
+  fail "L3: timeout was not called with a kill grace (-k) and a numeric bound (log: $(cat "$TIMEOUT_LOG"))"
 [ "$(installs)" = 0 ] || fail "L3: the real install stub ran despite the timeout kill"
 err_has "exceeded" || fail "L3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "L3: a killed install wrote the sidecar"
@@ -901,6 +983,40 @@ run_hook
 [ "$(installs)" = 1 ] || fail "L4: a host with no timeout binary did not install ($(installs) installs)"
 [ -f "$(sidecar)" ] || fail "L4: a host with no timeout binary wrote no sidecar"
 pass "L4: a host with no timeout or gtimeout still installs, unbounded"
+
+# --- M1 (F21a): a failing install reports it and records no sidecar ---
+new_sandbox m1
+printf '#!/usr/bin/env bash\nexit 1\n' > "$SB/bin/gsd-tools"
+run_hook
+err_has "capability install failed" || fail "M1: no failure message (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "M1: a failed install wrote the sidecar"
+pass "M1: an install exiting 1 reports 'install failed' and leaves no sidecar"
+
+# --- M2 (F21c): a malformed capability id installs nothing ---
+for _id in '../x' 'A' '' 'a/b'; do
+  new_sandbox m2
+  ( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
+    GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK" "$_id" ) >"$SB/out" 2>"$SB/err"
+  [ "$(installs)" = 0 ] || fail "M2: id '$_id' reached the install"
+  [ ! -d "$SB/home/.gsd" ] || fail "M2: id '$_id' wrote under GSD_HOME"
+done
+pass "M2: ids failing ^[a-z][a-z0-9-]*\$ never install"
+
+# --- M3 (F21h): the shasum and gtimeout fallback rungs work ---
+new_sandbox m3
+mkdir -p "$SB/rungs"
+for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/rungs/$_t"
+done
+ln -sf "$SB/bin/gsd-tools" "$SB/rungs/gsd-tools"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
+chmod +x "$SB/rungs/gtimeout"
+PATH_OVERRIDE="$SB/rungs"
+run_hook
+[ "$(installs)" = 1 ] || fail "M3: no sha256sum + gtimeout host did not install (err: $(cat "$SB/err"))"
+[ "$(cat "$SB/gtimeout-calls" 2>/dev/null)" = "-k 5" ] || fail "M3: gtimeout was not used with -k 5 (got: $(cat "$SB/gtimeout-calls" 2>&1))"
+[ -f "$(sidecar)" ] || fail "M3: shasum rung wrote no sidecar"
+pass "M3: shasum hashing and the gtimeout rung install"
 
 # --- D0: every refusal the hook emits is documented in README's table ---
 # Forward direction only (hook -> README): that is the direction that

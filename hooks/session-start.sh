@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -u
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-
-bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/.." && pwd)}"
 
 if [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ]; then
   . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
   ENABLED="$(gsd_tools config-get sota-numerics.enabled --default true 2>/dev/null)"; ENABLED_STATUS=$?
   if [ "$ENABLED_STATUS" -eq 127 ]; then
+    ENABLED=true
+  elif [ "$ENABLED_STATUS" -ne 0 ] && [ ! -d .planning ]; then
+    # Outside a GSD project config-get has nothing to read and may fail; absent
+    # configuration means enabled, so stay on and stay quiet.
     ENABLED=true
   elif [ "$ENABLED_STATUS" -ne 0 ]; then
     echo "sota-numerics: gsd_tools config-get sota-numerics.enabled failed (exit $ENABLED_STATUS); disabling advisory banner" >&2
@@ -21,6 +23,14 @@ ENABLED="$(printf '%s' "$ENABLED" | tr -d '"')"
 
 if [ "$ENABLED" != "true" ]; then
   exit 0
+fi
+
+# Install only once the capability is known to be enabled: a user who switched
+# it off must not get a machine-wide install on every session start.
+# Only SessionStart (no role argument) installs: SubagentStart fires per spawn,
+# in parallel, and would race gsd-core's install lock.
+if [ -z "${1:-}" ]; then
+  bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
 fi
 
 ROLE="${1:-}"
@@ -44,6 +54,14 @@ case "$ROLE" in
   *) FRAMING='SOTA/efficiency/numerical-stability steering: prefer mathematically correct, precision-preserving, well-cited mechanism choices.' ;;
 esac
 
-printf 'SOTA-NUMERICS -- advisory steering (plan:post also carries a blocking Alternatives Considered gate)\n%s\n' "$FRAMING"
+BANNER="$(printf 'SOTA-NUMERICS -- advisory steering (plan:post also carries a blocking Alternatives Considered gate)\n%s\n' "$FRAMING")"
+if [ -n "${1:-}" ]; then
+  # SubagentStart injects context only through hookSpecificOutput.additionalContext;
+  # JSON-escape backslash, double quote and newline.
+  _J="${BANNER//\\/\\\\}"; _J="${_J//\"/\\\"}"; _J="${_J//$'\n'/\\n}"
+  printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' "$_J"
+else
+  printf '%s\n' "$BANNER"
+fi
 
 exit 0

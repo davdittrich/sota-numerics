@@ -369,6 +369,113 @@ if [ -n "$MANIFEST_ROLES" ]; then
   pass "case8: hooks.json's manifest role tokens each reproduce their cases-3a-3c banner"
 fi
 
+# --- Stub plugin root: session-start.sh + gsd-tools.sh real, auto-install a recorder ---
+# mk_stub_root <install-exit-status>; sets STUB_ROOT inside SCRATCH. The stub logs its
+# argv to $STUB_ROOT/installs so a case can count installs and see their arguments.
+mk_stub_root() {
+  STUB_ROOT="$SCRATCH/plugin"
+  mkdir -p "$STUB_ROOT/hooks"
+  cp "$REPO_ROOT/hooks/session-start.sh" "$REPO_ROOT/hooks/gsd-tools.sh" "$STUB_ROOT/hooks/"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/installs"\nexit %s\n' "$STUB_ROOT" "${1:-0}" \
+    > "$STUB_ROOT/hooks/capability-auto-install.sh"
+}
+
+# --- Case 9 (F13): enabled=false must not install anything ---
+# The install is a machine-wide mutation; a user who switched the capability off
+# must not get it re-installed on every session start.
+mk_scratch '{"sota-numerics": {"enabled": false}}'
+mk_stub_root 0
+CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/null 2>&1
+[ ! -e "$STUB_ROOT/installs" ] || fail "case9: enabled=false still ran the auto-install"
+run_and_cleanup
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_stub_root 0
+CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/null 2>&1
+[ -e "$STUB_ROOT/installs" ] || fail "case9: enabled=true did not run the auto-install"
+run_and_cleanup
+pass "case9: auto-install runs only when the capability is enabled"
+
+# --- Case 10 (F17): the global gsd-core rung beats PATH; a relative PATH entry never runs ---
+# A `gsd-tools` found through PATH can be a repo-local file (PATH=./bin or "."),
+# so the absolute ${CLAUDE_CONFIG_DIR:-$HOME/.claude} rung is tried first and a
+# PATH hit is accepted only when it is an absolute path.
+H10="$(mktemp -d)"; D10="$(mktemp -d)"
+mkdir -p "$H10/.claude/gsd-core/bin"
+printf 'process.stdout.write("global");\n' > "$H10/.claude/gsd-core/bin/gsd-tools.cjs"
+printf '#!/usr/bin/env bash\necho path-stub\n' > "$D10/gsd-tools"; chmod +x "$D10/gsd-tools"
+OUT10="$(cd "$D10" && HOME="$H10" PATH="$D10:$PATH" bash -c 'unset CLAUDE_PLUGIN_ROOT CLAUDE_CONFIG_DIR; . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"; gsd_tools x')"
+[ "$OUT10" = global ] || fail "case10: a PATH gsd-tools shadowed the global gsd-core rung (got '$OUT10')"
+rm -rf "$H10/.claude"
+OUT10="$(cd "$D10" && HOME="$H10" PATH=".:$PATH" bash -c 'unset CLAUDE_PLUGIN_ROOT CLAUDE_CONFIG_DIR; . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"; gsd_tools x' 2>/dev/null)"
+S10=$?
+[ "$OUT10" != path-stub ] || fail "case10: a gsd-tools reached through a relative PATH entry was executed"
+rm -rf "$H10" "$D10"
+pass "case10: global rung first; relative PATH hits are ignored"
+
+# mk_failing_tools <exit-status> -- a PATH-first gsd-tools whose every call fails; sets FAIL_DIR
+mk_failing_tools() {
+  FAIL_DIR="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "gsd-tools: boom" >&2\nexit %s\n' "$1" > "$FAIL_DIR/gsd-tools"
+  chmod +x "$FAIL_DIR/gsd-tools"
+}
+
+# --- Case 11 (F19d): a failing config-get outside a GSD project is not noise ---
+# With no .planning/ there is nothing to configure: the capability stays enabled
+# and the hook says nothing on stderr.
+mk_scratch ""
+rmdir "$SCRATCH/.planning"
+mk_failing_tools 1
+mk_stub_root 0   # recorder in place of the real auto-install, whose refusals also reach stderr
+ERR11="$(CLAUDE_PLUGIN_ROOT="$STUB_ROOT" PATH="$FAIL_DIR:$PATH" bash "$STUB_ROOT/hooks/session-start.sh" 2>&1 >"$SCRATCH/out11")"
+OUT11="$(cat "$SCRATCH/out11")"
+rm -rf "$FAIL_DIR"
+run_and_cleanup
+echo "$OUT11" | grep -q 'SOTA-NUMERICS' || fail "case11: banner missing outside a GSD project"
+[ -z "$ERR11" ] || fail "case11: stderr noise outside a GSD project: $ERR11"
+pass "case11: failing config-get without .planning/ is silent and stays enabled"
+
+# --- Case 12 (F10b): SubagentStart (role) invocations never install ---
+# Parallel subagent spawns would race gsd-core's install lock ("install failed");
+# only SessionStart installs.
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_stub_root 0
+for _r in planner executor verifier; do
+  CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" "$_r" >/dev/null 2>&1
+done
+[ ! -e "$STUB_ROOT/installs" ] || fail "case12: a role invocation ran the auto-install"
+run_and_cleanup
+pass "case12: role invocations skip the auto-install"
+
+# --- Case 13 (F20): role invocations emit SubagentStart hookSpecificOutput JSON ---
+# SubagentStart only documents hookSpecificOutput.additionalContext; plain stdout is
+# not injected. SessionStart (no role) keeps plain stdout.
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+for _r in planner executor verifier; do
+  OUT13="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT" "$_r")"
+  echo "$OUT13" | python3 -c '
+import json, sys
+o = json.load(sys.stdin)["hookSpecificOutput"]
+assert o["hookEventName"] == "SubagentStart", o
+assert "SOTA-NUMERICS" in o["additionalContext"], o
+' 2>/dev/null || fail "case13: $_r did not emit SubagentStart additionalContext JSON (got: $OUT13)"
+done
+OUT13="$(CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$SCRIPT")"
+case "$OUT13" in "SOTA-NUMERICS"*) ;; *) fail "case13: SessionStart output is no longer plain text (got: $OUT13)" ;; esac
+run_and_cleanup
+pass "case13: role invocations emit additionalContext JSON; SessionStart stays plain"
+
+# --- Case 14 (F21b): config-get failing inside a GSD project disables the banner and says why ---
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_failing_tools 3
+mk_stub_root 0
+ERR14="$(CLAUDE_PLUGIN_ROOT="$STUB_ROOT" PATH="$FAIL_DIR:$PATH" bash "$STUB_ROOT/hooks/session-start.sh" 2>&1 >"$SCRATCH/out14")"
+OUT14="$(cat "$SCRATCH/out14")"
+rm -rf "$FAIL_DIR"
+run_and_cleanup
+[ -z "$OUT14" ] || fail "case14: banner printed despite a failing config-get: $OUT14"
+echo "$ERR14" | grep -qF 'config-get sota-numerics.enabled failed (exit 3)' || fail "case14: stderr does not name the failure (got: $ERR14)"
+pass "case14: config-get exit 3 suppresses the banner and reports on stderr"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
