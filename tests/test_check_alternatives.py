@@ -1850,32 +1850,39 @@ class TestMisnamedPlans(unittest.TestCase):
         # Still exactly one remediation line, however many violations.
         self.assertEqual(result.stderr.count("remediation:"), 1)
 
-    def test_lowercase_plan_suffix_is_invisible_not_merely_misnamed(self):
-        """Pins the half of NOTES.md section 7's decision that IS observable
-        on Linux (gsd-beads-25vc.21.3 item 3). `23-01-plan.md` matches
-        neither PLAN_FILE_RE nor PLAN_SHAPED_RE (both case-sensitive), so the
-        gate sees no plan here at all -- not a misnamed one it reports, one
-        it never discovers. If a case fold is ever added to either regex,
-        or to discovery, this case is the one that reopens NOTES.md
-        section 7's decision.
+    def test_lowercase_phase_prefixed_plan_is_reported_as_misnamed(self):
+        # `23-01-plan.md` reads as a plan to a human and to a
+        # case-insensitive filesystem; silence would be a vacuous pass.
+        with scratch_dir() as tmp:
+            write_plan(tmp, fixture_text("plan-compliant.md"), name="23-01-plan.md")
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("23-01-plan.md:1: named like a plan but not", result.stderr)
 
-        Two SEPARATE scratch directories, not one: on a case-insensitive
-        filesystem two differently-cased names resolve to the same file, and
-        a single directory holding both would step on the very bug this
-        case is pinning.
-        """
-        with scratch_dir() as tmp_lower:
-            write_plan(tmp_lower, fixture_text("plan-missing-section.md"),
-                       name="23-01-plan.md")
-            lower_result = run_check(tmp_lower)
-        with scratch_dir() as tmp_upper:
-            write_plan(tmp_upper, fixture_text("plan-missing-section.md"),
-                       name="23-01-PLAN.md")
-            upper_result = run_check(tmp_upper)
-        self.assertEqual(lower_result.returncode, 0, lower_result.stderr)
-        self.assertEqual(lower_result.stderr, "")
-        self.assertEqual(upper_result.returncode, 1, upper_result.stdout)
-        self.assertIn("missing '## Alternatives Considered'", upper_result.stderr)
+    def test_zero_plan_implicit_phase_exits_0_with_one_stderr_note(self):
+        with scratch_dir() as root:
+            root = Path(root)
+            phase = root / ".planning" / "phases" / "11-empty"
+            phase.mkdir(parents=True)
+            (root / ".planning" / "STATE.md").write_text(
+                "---\ngsd_state_version: 1.0\ncurrent_phase: 11\n---\n"
+                "\n## Current Position\n\nPhase: 11 (Name)\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT)], capture_output=True, text=True,
+                timeout=15, cwd=str(root),
+                env={**os.environ, "TMPDIR": str(PLAN_TMPDIR)},
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(result.stderr.strip().splitlines()), 1, result.stderr)
+        self.assertIn("no plan files", result.stderr)
+
+    def test_zero_plan_explicit_phase_stays_silent(self):
+        with scratch_dir() as tmp:
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
 
 
 class TestSymlinkedPlan(unittest.TestCase):

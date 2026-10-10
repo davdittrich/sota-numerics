@@ -88,7 +88,12 @@ PLAN_FILE_RE = re.compile(r"^\d+(?:\.\d+)?-\d+-PLAN\.md$")
 # the one answer a blocking gate must not give about it. A phase holding only
 # `23-PLAN.md` used to exit 0 with no output, byte-identical to a compliant
 # phase, because the name missed the plan index by one field.
-PLAN_SHAPED_RE = re.compile(r"(?:^|-)PLAN\.md$")
+#
+# One case-insensitive exception: a phase-numbered name (`23-01-plan.md`,
+# `23-Plan.md`) is flagged in any case. It reads as a plan to a human and to a
+# case-insensitive filesystem; ordinary-English names like
+# `notes-on-the-plan.md` still stay out.
+PLAN_SHAPED_RE = re.compile(r"(?:^|-)PLAN\.md$|(?i:^\d+(?:\.\d+)?(?:-\d+)?-plan\.md$)")
 MISNAMED_PLAN_REASON = (
     "named like a plan but not `<phase>-<NN>-PLAN.md`, so no plan reader --"
     " this gate included -- will ever open it; rename it or remove it"
@@ -972,6 +977,13 @@ def main(argv=None):
         return 2
 
     if not violations:
+        if args.phase_dir is None and not any(
+            PLAN_SHAPED_RE.search(p.name) for p in phase_dir_arg.iterdir()
+        ):
+            print(
+                elide_line(f"check-alternatives.py: no plan files in {phase_dir_arg}; nothing checked"),
+                file=sys.stderr,
+            )
         return 0
 
     # Only these two shapes interpolate plan-document text, so only these go
