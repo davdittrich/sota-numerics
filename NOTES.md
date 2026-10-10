@@ -39,6 +39,8 @@ planted at the top of that enclosing repository would run in the project's place
 `tests/test-gate-script-resolution.sh` pins a repository enclosing the working directory,
 carrying a hostile copy at the same relative path, and proves the gate never reaches it.
 
+The project rung runs `./.gsd/capabilities/sota-numerics/scripts/check-alternatives.py` from the project at `plan:post`. A repository you do not trust can supply that script and a high `capability.json` version, so the gate runs its code. The trust boundary is the project's own code, the same as any project command gsd runs. To prefer the global copy, remove the project copy.
+
 `${CLAUDE_PLUGIN_ROOT}` is used at no rung: it is a variable this capability does not set, so
 it would leave the lookup dependent on the host, where the project root is an anchor gsd-core
 itself establishes.
