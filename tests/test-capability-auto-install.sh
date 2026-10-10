@@ -198,6 +198,8 @@ new_sandbox() {
   cat > "$SB/bin/gsd-tools" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GSD_TOOLS_LOG"
+# Like the real install: the global mirror directory appears (id = bundle basename).
+[ "${1:-}" = capability ] && [ "${2:-}" = install ] && mkdir -p "${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
 exit 0
 STUB
   chmod +x "$SB/bin/gsd-tools"
@@ -742,6 +744,15 @@ run_hook
 run_hook
 [ "$(installs)" = 1 ] || fail "I1: unchanged bundle reinstalled ($(installs) installs in 2 runs)"
 pass "I1: unchanged bundle takes the hash fast path"
+
+# --- I8 (F14): a deleted mirror is repaired even though the sidecar still matches ---
+new_sandbox i8
+run_hook
+[ "$(installs)" = 1 ] || fail "I8: precondition -- first run should install"
+rm -rf "$SB/home/.gsd/capabilities/$CAP_ID"
+run_hook
+[ "$(installs)" = 2 ] || fail "I8: a deleted mirror was not reinstalled ($(installs) installs)"
+pass "I8: the fast path requires the mirror directory to exist"
 
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
