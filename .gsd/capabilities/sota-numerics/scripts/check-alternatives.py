@@ -38,6 +38,7 @@ import datetime
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 RECENCY_WINDOW_YEARS = 6
 MIN_ALTERNATIVES = 2
@@ -141,7 +142,6 @@ DECIDED_BY_RE = re.compile(
 ENTRY_END_RE = re.compile(r"\n(?=[ \t]*[-*]?[ \t]*\*{0,2}Decided by:)", re.IGNORECASE)
 # Bold labels that introduce prose about an alternative, not an alternative.
 RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by"}
-HOST_RE = re.compile(r"^https?://([^/\s]{1,255})")
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD)\s*$", re.IGNORECASE)
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
@@ -758,8 +758,11 @@ def entry_placeholder_violation(entry_text):
     """True when an entry cites a known placeholder host (e.g. example.com)
     or a bare TODO/TBD doc-ref instead of a real citation."""
     for url_m in URL_RE.finditer(entry_text):
-        host_m = HOST_RE.match(url_m.group(0))
-        if host_m and host_m.group(1).lower() in PLACEHOLDER_HOSTS:
+        try:
+            host = (urlsplit(url_m.group(0)).hostname or "").rstrip(".")
+        except ValueError:
+            continue
+        if any(host == h or host.endswith("." + h) for h in PLACEHOLDER_HOSTS):
             return True
     for ref_m in DOC_REF_RE.finditer(entry_text):
         if PLACEHOLDER_TEXT_RE.match(ref_m.group(0).strip("`")):

@@ -932,6 +932,35 @@ class TestDecidedByBoundary(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestPlaceholderHostEvasion(unittest.TestCase):
+    def test_port_subdomain_userinfo_and_case_do_not_evade(self):
+        for url in (
+            "http://localhost:8080/x",
+            "https://www.example.com/docs",
+            "https://user@example.org/x",
+            "https://EXAMPLE.NET./x",
+            "https://api.docs.example.com:443/x",
+        ):
+            with self.subTest(url=url):
+                result = run_plan(
+                    "## Alternatives Considered\n\n"
+                    f"- **A**: {url} ({TODAY_YEAR}).\n"
+                    f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
+                    "Decided by: performance — B.\n"
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("placeholder", result.stderr)
+
+    def test_lookalike_host_is_not_a_placeholder(self):
+        result = run_plan(
+            "## Alternatives Considered\n\n"
+            f"- **A**: https://notexample.com/x ({TODAY_YEAR}).\n"
+            f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — B.\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestMinimumCount(unittest.TestCase):
     def test_one_alternative_exits_1(self):
         text = (
