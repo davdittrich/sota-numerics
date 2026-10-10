@@ -919,6 +919,17 @@ class TestDecidedByBoundary(unittest.TestCase):
             f"{decided}\n"
         )
 
+    def test_each_of_the_five_criteria_is_accepted(self):
+        for criterion in ("performance", "simplicity", "LOC", "ecosystem", "maintenance"):
+            with self.subTest(criterion=criterion):
+                result = self._run(f"Decided by: {criterion} — reason.")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unlisted_criterion_is_rejected(self):
+        result = self._run("Decided by: vibes — reason.")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("no 'Decided by:' line", result.stderr)
+
     def test_criterion_must_be_a_whole_word(self):
         for value in ("LOCKED in", "performances", "ecosystems"):
             with self.subTest(value=value):
