@@ -23,7 +23,10 @@ which "is always `blocking: false`" — this capability is the first to actually
 ## 3. Script path resolution and the missing-script guard
 
 Write `_SN` for `.gsd/capabilities/sota-numerics`. The gate
-command keys on the global manifest: if `${GSD_HOME:-$HOME}/$_SN/capability.json` exists it
+command first blocks unless `${GSD_HOME:-$HOME}` is absolute (gsd-core finds the global install
+via passwd even with `HOME` unset, so an empty or relative base must not fall through to the
+project copy). It then keys on the global manifest: if any entry exists at
+`${GSD_HOME:-$HOME}/$_SN/capability.json` (even a dangling symlink or a directory) it
 runs the global script and blocks if that script is missing; otherwise it runs `./$_SN`'s
 script. gsd-core runs the check command at the runtime project root with the parent process's
 environment inherited, so the project rung needs no Git at all. The version comparison that

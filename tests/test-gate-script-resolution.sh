@@ -89,16 +89,32 @@ rm -rf "$EMPTY_HOME"
 echo "$ERR" | grep -q "gate script not found at project or global scope" || fail "case2: missing message text"
 pass "case2: script missing at both scopes exits 1 with clear message"
 
-# --- Case 2b: HOME and GSD_HOME both unset -> ${GSD_HOME:-$HOME} expands to
-# the empty string, so the third rung becomes the root-anchored
-# /.gsd/capabilities/sota-numerics/scripts/check-alternatives.py. `sh -c` has no `set -u`, so this is
-# unexercised elsewhere; still fail-closed (exit 1), but pin it so a future
-# rewrite that assumes one of the two is always set stays honest. ---
-ERR2B="$(cd "$SCRATCH" && env -u HOME -u GSD_HOME bash -c "$GATE_CMD" 2>&1 >/dev/null)"
-STATUS2B=$?
-[ "$STATUS2B" -eq 1 ] || fail "case2b: HOME and GSD_HOME both unset did not exit 1 (exit $STATUS2B)"
-echo "$ERR2B" | grep -q "gate script not found at project or global scope" || fail "case2b: missing message text"
-pass "case2b: HOME and GSD_HOME both unset still fails closed with the same message"
+# --- Case 2b: no absolute global base -> block, never run the project copy ---
+# gsd-core finds the global install through os.homedir() (passwd) even when
+# HOME is unset or empty, so a shell that then checks /.gsd/... sees no global
+# manifest and would fall through to a repo-planted project script. Same for a
+# relative GSD_HOME (`.`), which resolves against the project itself. Each
+# variant plants a hostile project copy that leaves a canary and exits 0, so
+# only "canary absent AND rc != 0" proves the gate failed closed.
+P2B="$(mktemp -d)"; CANARY2B="$P2B/canary"
+make_project "$P2B/proj" "11-plain" "11" || fail "case2b: could not build fixture project"
+mkdir -p "$P2B/proj/.gsd/capabilities/sota-numerics/scripts"
+printf 'import sys\nopen(r"%s", "w").write("pwned")\nsys.exit(0)\n' "$CANARY2B" \
+  > "$P2B/proj/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+for v in unset empty relative; do
+  rm -f "$CANARY2B"
+  case "$v" in
+    unset)    ERR2B="$(cd "$P2B/proj" && env -u HOME -u GSD_HOME sh -c "$GATE_CMD" 2>&1 >/dev/null)" ;;
+    empty)    ERR2B="$(cd "$P2B/proj" && env -u GSD_HOME HOME= sh -c "$GATE_CMD" 2>&1 >/dev/null)" ;;
+    relative) ERR2B="$(cd "$P2B/proj" && GSD_HOME=. sh -c "$GATE_CMD" 2>&1 >/dev/null)" ;;
+  esac
+  rc=$?
+  [ ! -e "$CANARY2B" ] || fail "case2b/$v: the project copy ran without an absolute global base"
+  [ "$rc" -ne 0 ] || fail "case2b/$v: the gate did not block (exit 0)"
+  echo "$ERR2B" | grep -q "no absolute GSD_HOME/HOME" || fail "case2b/$v: missing no-absolute-base message"
+done
+rm -rf "$P2B"
+pass "case2b: HOME unset/empty or relative GSD_HOME blocks; a planted project copy never runs"
 
 # --- Case 6: a checker copy inside a repository enclosing the working
 # directory is never executed ---
@@ -336,6 +352,30 @@ printf 'import sys\nopen(r"%s", "w").write("shadow")\nsys.exit(0)\n' "$CANARY7" 
 [ ! -e "$CANARY7" ] || { rm -rf "$P7"; fail "case7: a module next to the script shadowed the stdlib (python is not isolated)"; }
 rm -rf "$P7"
 pass "case7: python runs isolated (-I); sibling modules cannot shadow the stdlib"
+
+# --- Case 9: any global manifest entry counts as installed ---
+# `[ -f ]` is false for a dangling symlink or a directory, so a half-removed
+# global install would fall through to the project copy. Any entry at the
+# manifest path selects global scope; the missing global script then blocks.
+P9="$(mktemp -d)"; CANARY9="$P9/canary"
+make_project "$P9/proj" "11-plain" "11" || fail "case9: could not build fixture project"
+mkdir -p "$P9/proj/.gsd/capabilities/sota-numerics/scripts"
+printf 'import sys\nopen(r"%s", "w").write("pwned")\nsys.exit(0)\n' "$CANARY9" \
+  > "$P9/proj/.gsd/capabilities/sota-numerics/scripts/check-alternatives.py"
+G9="$P9/home/.gsd/capabilities/sota-numerics"
+for v in dangling-symlink directory; do
+  rm -rf "$P9/home" "$CANARY9"; mkdir -p "$G9"
+  case "$v" in
+    dangling-symlink) ln -s "$P9/nowhere.json" "$G9/capability.json" ;;
+    directory)        mkdir "$G9/capability.json" ;;
+  esac
+  ( cd "$P9/proj" && GSD_HOME="$P9/home" sh -c "$GATE_CMD" ) >/dev/null 2>&1
+  rc=$?
+  [ ! -e "$CANARY9" ] || fail "case9/$v: a global manifest $v fell through to the project copy"
+  [ "$rc" -ne 0 ] || fail "case9/$v: the gate did not block (exit 0)"
+done
+rm -rf "$P9"
+pass "case9: a dangling-symlink or directory global manifest blocks; the project copy never runs"
 
 # --- Case 8: the missing-script message names only installable forms ---
 ERR8="$(cd "$SCRATCH" && GSD_HOME="$(mktemp -d)" bash -c "$GATE_CMD" 2>&1 >/dev/null)"

@@ -39,7 +39,7 @@ The GSD capability itself declares support for every GSD runtime. Automatic star
 1. `<project>/.gsd/capabilities/sota-numerics`
 2. `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics`
 
-When the global location holds a `capability.json`, the gate runs only the global script; if that script is missing, the gate blocks with the not-found error and never falls back to the project copy. The project copy runs only when no global `capability.json` exists. A repository cannot outrank a global install by shipping its own copy, whatever version it claims.
+The base `${GSD_HOME:-$HOME}` must be absolute, or the gate blocks. When the global location holds any `capability.json` entry (even a dangling symlink or a directory), the gate runs only the global script; if that script is missing, the gate blocks with the not-found error and never falls back to the project copy. The project copy runs only when no global `capability.json` exists. A repository cannot outrank a global install by shipping its own copy, whatever version it claims.
 
 Shortcut: a development checkout with a newer project copy now loses to a stale global install; reinstall globally (`--scope global`) to test it. Upgrade when gsd exposes a consent-bound path to a project-scope capability.
 
