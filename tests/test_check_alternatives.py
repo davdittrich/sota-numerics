@@ -1505,7 +1505,7 @@ class TestMisnamedPlans(GateCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("23-01-plan.md:1: named like a plan but not", result.stderr)
 
-    def test_zero_plan_implicit_phase_exits_0_with_one_stderr_note(self):
+    def test_zero_plan_implicit_phase_exits_2_with_one_stderr_note(self):
         with scratch_dir() as root:
             root = Path(root)
             phase = root / ".planning" / "phases" / "11-empty"
@@ -1520,7 +1520,7 @@ class TestMisnamedPlans(GateCase):
                 timeout=15, cwd=str(root),
                 env={**os.environ, "TMPDIR": str(PLAN_TMPDIR)},
             )
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 2, result.stderr)
         self.assertEqual(len(result.stderr.strip().splitlines()), 1, result.stderr)
         self.assertIn("no plan files", result.stderr)
 

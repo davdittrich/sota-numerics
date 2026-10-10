@@ -3,6 +3,8 @@
 ## 0.2.1 (unreleased)
 
 Gate:
+- A STATE-resolved phase with no plan files now exits `2` instead of `0`.
+- `engines.gsd` floor raised to `>=1.16.0`, the only verified release.
 
 - A plan with several violations reports up to five of them in one run, not one per re-run.
 - A citation needs a four-digit year anywhere in the entry text outside URLs and backticked references; placeholder hosts (including subdomains) and `TODO`/`TBD`/`N/A` references are rejected.

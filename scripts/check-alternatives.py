@@ -1040,6 +1040,7 @@ def main(argv=None):
                 elide_line(f"check-alternatives.py: no plan files in {phase_dir_arg}; nothing checked"),
                 file=sys.stderr,
             )
+            return 2
         return 0
 
     # Only these two shapes interpolate plan-document text, so only these go

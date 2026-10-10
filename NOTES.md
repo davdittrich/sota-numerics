@@ -155,12 +155,11 @@ gate and leaves this one running. gsd-core states the rule in step 13e: an empty
 `activeHooks` list is the only reason to skip the step silently.
 
 Earlier gsd-core releases tied the skip to the gap-analysis toggle (upstream #3606), so
-the capability's `engines.gsd` floor of `>=1.10.0` was not re-verified for this behaviour.
-Re-check before relying on the gate under that floor.
+the capability's `engines.gsd` floor is `>=1.16.0`, the only release verified.
 
 ## 6a. Known limits and their rationale
 
-The gate checks structure, not meaning, and stays a line-oriented scan rather than a Markdown parser. Hidden HTML blocks are read as text because modelling every CommonMark HTML block kind buys nothing against an author who wants to hide text from a reviewer in plain sight. NFKC folding covers compatibility forms (full-width, ligatures) and not cross-script lookalikes, which need a confusables table; the effect is two entries counted where a reader sees one. A symlinked phase directory is refused so the gate never validates a tree outside `.planning/phases/`. Setext section headings are unsupported because the section must be found by one anchored line scan. A zero-plan phase resolved from STATE.md has nothing to check, so it exits `0` (see §6 for the ordering coupling that makes it name the phase just planned).
+The gate checks structure, not meaning, and stays a line-oriented scan rather than a Markdown parser. Hidden HTML blocks are read as text because modelling every CommonMark HTML block kind buys nothing against an author who wants to hide text from a reviewer in plain sight. NFKC folding covers compatibility forms (full-width, ligatures) and not cross-script lookalikes, which need a confusables table; the effect is two entries counted where a reader sees one. A symlinked phase directory is refused so the gate never validates a tree outside `.planning/phases/`. Setext section headings are unsupported because the section must be found by one anchored line scan. A zero-plan phase resolved from STATE.md blocks with exit `2`: `plan:post` runs after planning, so an empty phase means STATE.md named the wrong phase (see §6) or the planner wrote nothing.
 
 ## 7. Case-insensitive filesystems: no divergence between this gate and gsd-core
 

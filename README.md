@@ -188,7 +188,7 @@ The checker accepts a hyphen or em dash. Any other text in the section, apart fr
 - Names that differ by cross-script lookalikes (Cyrillic `е` for Latin `e`) stay distinct; NFKC does not fold them.
 - A symlinked phase directory exits `2`.
 - The section heading is ATX only (`## Alternatives Considered`); a setext heading is not found.
-- A STATE-resolved phase with no plan files exits `0` with a note on stderr; the neighbouring phase is not checked.
+- A STATE-resolved phase with no plan files exits `2` with a note on stderr, since `plan:post` runs after planning and an empty phase means the wrong phase was named or nothing was planned. An explicit phase directory with no plans still exits `0`.
 
 ### Failures and recovery
 
@@ -244,7 +244,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
-- gsd-core 1.10.0 or newer (verified against gsd-core 1.16.0).
+- gsd-core 1.16.0 or newer (the version it was verified against).
 - Git is not needed for the gate or for the hooks' provider resolution: the gate's project copy resolves relative to the project root and a global-only install resolves under `${GSD_HOME:-$HOME}`, and `gsd-tools.sh` anchors to the plugin root rather than the working directory. Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
