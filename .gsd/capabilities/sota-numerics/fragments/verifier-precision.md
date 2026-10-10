@@ -1,4 +1,4 @@
-Numerical-stability and efficiency review for verification is advisory only — this capability declares no gate at execute:wave:post, so everything below is a finding, not a blocker.
+Report each item below as a finding; this capability declares no gate at execute:wave:post.
 Confirm the mechanism the plan justified in its Alternatives Considered section is the mechanism that actually shipped — flag a divergence even if the code works.
 Flag silent scope or precision reductions: a formula quietly simplified, an edge case quietly dropped, a stable algorithm quietly swapped for an unstable shortcut.
 Flag hardcoded constants standing in for a value that should be derived from first principles or measured, and superlative performance or overhead claims ("zero overhead", "negligible error") that no benchmark in the diff backs up.
