@@ -781,6 +781,19 @@ run_hook
 err_has "changed during" || fail "I10: no warning (err: $(cat "$SB/err"))"
 pass "I10: a bundle that changed during the install leaves no sidecar"
 
+# --- I11 (F19a): a FIFO at the sidecar path must not hang the hook ---
+# `-r` is true for a FIFO and `cat` then blocks forever on SessionStart.
+new_sandbox i11
+mkdir -p "$SB/home/.gsd"
+mkfifo "$(sidecar)"
+( cd "$ROOT" && PATH="$SB/bin:$PATH" HOME="$SB/home" GSD_HOME="$SB/home" GSD_TOOLS_LOG="$SB/installs" \
+  GIT_CEILING_DIRECTORIES="$SANDBOX_ROOT" CLAUDE_PLUGIN_ROOT="$ROOT" \
+  timeout -k 2 10 bash "$HOOK" "$CAP_ID" ) >"$SB/out" 2>"$SB/err"
+[ "$?" -eq 0 ] || fail "I11: a FIFO at the sidecar path hung or broke the hook"
+[ "$(installs)" = 1 ] || fail "I11: a FIFO sidecar should read as no recorded hash and install ($(installs) installs)"
+pass "I11: a FIFO at the sidecar path is read as no recorded hash"
+rm -f "$(sidecar)"
+
 # --- I3: two plugin roots serving one id reinstall, relative root and all ---
 # One capability id owns one global mirror and therefore one sidecar. The two
 # roots hold byte-identical bundles, so only the absolute paths in the hash stop

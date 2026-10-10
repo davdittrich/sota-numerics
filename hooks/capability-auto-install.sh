@@ -135,7 +135,7 @@ OLD_HASH=""
 # a racing attacker could still swap a regular file for a link between
 # them, the same unclosable window already recorded on the write side and
 # for the same reason -- no shell offers O_NOFOLLOW.
-[ ! -L "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
+[ ! -L "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
 if ! NEW_HASH="$(bundle_hash)"; then
   echo "capability-auto-install: the $CAP_ID bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope" >&2
   exit 0
