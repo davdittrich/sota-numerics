@@ -369,6 +369,32 @@ if [ -n "$MANIFEST_ROLES" ]; then
   pass "case8: hooks.json's manifest role tokens each reproduce their cases-3a-3c banner"
 fi
 
+# --- Stub plugin root: session-start.sh + gsd-tools.sh real, auto-install a recorder ---
+# mk_stub_root <install-exit-status>; sets STUB_ROOT inside SCRATCH. The stub logs its
+# argv to $STUB_ROOT/installs so a case can count installs and see their arguments.
+mk_stub_root() {
+  STUB_ROOT="$SCRATCH/plugin"
+  mkdir -p "$STUB_ROOT/hooks"
+  cp "$REPO_ROOT/hooks/session-start.sh" "$REPO_ROOT/hooks/gsd-tools.sh" "$STUB_ROOT/hooks/"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/installs"\nexit %s\n' "$STUB_ROOT" "${1:-0}" \
+    > "$STUB_ROOT/hooks/capability-auto-install.sh"
+}
+
+# --- Case 9 (F13): enabled=false must not install anything ---
+# The install is a machine-wide mutation; a user who switched the capability off
+# must not get it re-installed on every session start.
+mk_scratch '{"sota-numerics": {"enabled": false}}'
+mk_stub_root 0
+CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/null 2>&1
+[ ! -e "$STUB_ROOT/installs" ] || fail "case9: enabled=false still ran the auto-install"
+run_and_cleanup
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mk_stub_root 0
+CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/null 2>&1
+[ -e "$STUB_ROOT/installs" ] || fail "case9: enabled=true did not run the auto-install"
+run_and_cleanup
+pass "case9: auto-install runs only when the capability is enabled"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"

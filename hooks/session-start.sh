@@ -3,8 +3,6 @@ set -u
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
-
 if [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ]; then
   . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
   ENABLED="$(gsd_tools config-get sota-numerics.enabled --default true 2>/dev/null)"; ENABLED_STATUS=$?
@@ -22,6 +20,10 @@ ENABLED="$(printf '%s' "$ENABLED" | tr -d '"')"
 if [ "$ENABLED" != "true" ]; then
   exit 0
 fi
+
+# Install only once the capability is known to be enabled: a user who switched
+# it off must not get a machine-wide install on every session start.
+bash "$PLUGIN_ROOT/hooks/capability-auto-install.sh" sota-numerics || true
 
 ROLE="${1:-}"
 case "$ROLE" in
