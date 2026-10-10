@@ -985,6 +985,7 @@ TIMEOUT_LOG="$SB/timeout-calls"
 : > "$TIMEOUT_LOG"
 cat > "$SB/bin/timeout" <<STUB
 #!/usr/bin/env bash
+case "\$*" in *" true") exit 0 ;; esac
 printf '%s\n' "\${*:1:3}" >> "$TIMEOUT_LOG"
 exit 124
 STUB
@@ -1007,6 +1008,22 @@ run_hook
 err_has "exceeded" || fail "L3b: exit 137 not reported as a timeout kill (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "L3b: a killed install wrote the sidecar"
 pass "L3b: exit 137 is reported like exit 124"
+
+# --- L3c (R-G): a `timeout` that rejects -k still bounds the install ---
+new_sandbox l3c
+cat > "$SB/bin/timeout" <<STUB
+#!/usr/bin/env bash
+[ "\${1:-}" = -k ] && { echo "timeout: invalid option -- k" >&2; exit 125; }
+printf '%s\n' "\$1" >> "$SB/timeout-calls"
+shift
+exec "\$@"
+STUB
+chmod +x "$SB/bin/timeout"
+run_hook
+[ "$(installs)" = 1 ] || fail "L3c: a timeout without -k blocked the install (err: $(cat "$SB/err"))"
+[ "$(cat "$SB/timeout-calls" 2>/dev/null)" = 60 ] || fail "L3c: install did not run under bare 'timeout 60' (calls: $(cat "$SB/timeout-calls" 2>&1))"
+[ -f "$(sidecar)" ] || fail "L3c: no sidecar after a successful install"
+pass "L3c: a timeout rejecting -k falls back to a bare bound"
 
 # --- L4: a host with no `timeout` (or `gtimeout`) still installs, unbounded ---
 # Restricted PATH built the way H2 builds one, naming only what this path
@@ -1050,7 +1067,7 @@ for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/rungs/$_t"
 done
 ln -sf "$SB/bin/gsd-tools" "$SB/rungs/gsd-tools"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
+printf '#!/usr/bin/env bash\ncase "$*" in *" true") exit 0;; esac\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
 chmod +x "$SB/rungs/gtimeout"
 PATH_OVERRIDE="$SB/rungs"
 run_hook

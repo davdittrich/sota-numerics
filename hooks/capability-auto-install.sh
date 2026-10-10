@@ -294,13 +294,15 @@ INSTALL_TIMEOUT=60
 # installed coreutils, in which case it is named `gtimeout`. An empty
 # _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
 # host with neither.
-if command -v timeout >/dev/null 2>&1; then
-  _TIMEOUT=(timeout -k 5 "$INSTALL_TIMEOUT")
-elif command -v gtimeout >/dev/null 2>&1; then
-  _TIMEOUT=(gtimeout -k 5 "$INSTALL_TIMEOUT")
-else
-  _TIMEOUT=()
-fi
+# -k is GNU; busybox and old BSD builds reject it, so probe before using it and
+# fall back to a bare bound rather than failing every install with exit 125.
+_TIMEOUT=()
+for _t in timeout gtimeout; do
+  command -v "$_t" >/dev/null 2>&1 || continue
+  if "$_t" -k 1 1 true >/dev/null 2>&1; then _TIMEOUT=("$_t" -k 5 "$INSTALL_TIMEOUT")
+  else _TIMEOUT=("$_t" "$INSTALL_TIMEOUT"); fi
+  break
+done
 
 # gsd_tools is a shell function, so it cannot be the direct argument of
 # `timeout`; run it inside `bash -c` on this program string instead. $1 and
