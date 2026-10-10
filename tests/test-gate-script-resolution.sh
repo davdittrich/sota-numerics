@@ -11,16 +11,20 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CAP_JSON="$REPO_ROOT/.gsd/capabilities/sota-numerics/capability.json"
 
-fail() { echo "FAIL: $1"; exit 1; }
+# Record and continue so one broken case does not mask the rest of the run.
+FAILURES=0
+fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }
 
 GATE_CMD="$(python3 - "$CAP_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(d["gates"][0]["check"]["predicate"]["command"])
+# Select by what the gate is, not by its position in the list.
+print(next(g for g in d["gates"] if g["point"] == "plan:post"
+           and g["check"]["predicate"]["kind"] == "command-exit-zero")["check"]["predicate"]["command"])
 PY
 )"
-[ -n "$GATE_CMD" ] || fail "could not extract gate command from capability.json"
+[ -n "$GATE_CMD" ] || { fail "could not extract gate command from capability.json"; exit 1; }
 
 # --- Case 0: the gate command is CONSTANT (gsd-beads-cqt) ---
 # gsd-core interpolates ${PHASE_NUMBER}/${PHASE_DIR}/${PHASE_REQ_IDS} with a
@@ -297,5 +301,6 @@ echo "$ERR8" | grep -q 'sota-numerics\.git#' || fail "case8: message does not ci
 echo "$ERR8" | grep -q 'capability install sota-numerics' && fail "case8: message still cites the unsupported bare-name install"
 pass "case8: missing-script message cites only installable forms"
 
+[ "$FAILURES" -eq 0 ] || { echo "$FAILURES FAILED"; exit 1; }
 echo "ALL PASS"
 exit 0
