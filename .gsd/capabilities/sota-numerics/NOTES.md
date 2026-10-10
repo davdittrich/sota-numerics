@@ -150,24 +150,17 @@ pass, with nothing to notice. The upstream fix is unchanged — pass the phase d
 argv element, tracked as `gsd-beads-g72`. Until then the coupling is real and this is where
 it is written down.
 
-### Residual: the same step can be turned off, which silently disables this gate
+### Residual: `workflow.post_planning_gaps` does not gate this capability
 
-This is a second, larger coupling than the ordering one above. Step 13e's own opening
-sentence is: "Proactive, non-blocking coverage report gated on `workflow.post_planning_gaps`
-(default `true`)." Step 13e is not only the gap-analysis capability's coverage report — it
-is the *only* dispatch point for every `plan:post` gate any capability registers, this one
-included. A project that sets `workflow.post_planning_gaps` to `false` never reaches step
-13e at all, so this gate — declared blocking, `onError: "halt"`, sold in `plugin.json` and
-`capability.json` as enforcing "on every plan in a phase" — never runs. There is no verdict,
-no error, and nothing an operator turning that key off would see: `render-hooks plan:post`
-still lists the gate as registered, but registration is not dispatch.
+Verified against gsd-core 1.16.0. Step 13e (`plan:post`) dispatches every registered
+`plan:post` hook. The `workflow.post_planning_gaps` key (default `true`) is a `when`
+condition on the first-party `gap-analysis` gate only, so setting it to `false` skips that
+gate and leaves this one running. gsd-core states the rule in step 13e: an empty
+`activeHooks` list is the only reason to skip the step silently.
 
-The key belongs to a different capability (`gap-analysis`), not to `sota-numerics`, so
-nothing in this bundle can detect or refuse that state. The upstream fix is to decouple
-`plan:post` gate/step/contribution dispatch from `gap-analysis`'s own report toggle, tracked
-as `gsd-beads-h1pb`, alongside the ordering coupling above (`gsd-beads-g72`). Until then:
-default is `true`, so a project that never touches `workflow.post_planning_gaps` is
-unaffected, and this is where the exception is written down.
+Earlier gsd-core releases tied the skip to the gap-analysis toggle (upstream #3606), so
+the capability's `engines.gsd` floor of `>=1.10.0` was not re-verified for this behaviour.
+Re-check before relying on the gate under that floor.
 
 ## 7. The case-insensitive-filesystem residual: verified against gsd-core 1.13.0, not a live divergence (gsd-beads-25vc.21.3 item 3)
 

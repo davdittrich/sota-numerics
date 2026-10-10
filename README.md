@@ -229,7 +229,7 @@ If the gate script is absent from both project and global scope, the gate exits 
 
 - Bash. The hooks use Bash arrays and `[[ ... ]]`; they are not POSIX `sh` scripts.
 - Python 3. The checker uses only the standard library and launches no child processes.
-- gsd-core 1.10.0 or newer.
+- gsd-core 1.10.0 or newer (verified against gsd-core 1.16.0).
 - Git is not needed for the gate or for the hooks' provider resolution: the gate's project copy resolves relative to the project root and a global-only install resolves under `${GSD_HOME:-$HOME}` (D-14), and `gsd-tools.sh` anchors to the plugin root rather than the working directory (D-13). Claude's automatic global install does need it, to show the bundle is already published, and refuses to install when Git cannot answer.
 - `sha256sum` or `shasum`, plus one of the three `gsd-tools` resolution paths described above, for Claude's automatic global install.
 
