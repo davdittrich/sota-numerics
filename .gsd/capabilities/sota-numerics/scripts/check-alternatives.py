@@ -94,6 +94,10 @@ MISNAMED_PLAN_REASON = (
     " this gate included -- will ever open it; rename it or remove it"
 )
 
+SYMLINK_PLAN_REASON = (
+    "plan file is a symlink and is not followed; replace it with the real file"
+)
+
 # Anchored single-line scans with no nested quantifiers, so no crafted
 # PLAN.md body can trigger catastrophic regex backtracking (ReDoS). The H3
 # heading scan below is intentionally uncapped but still linear.
@@ -894,6 +898,9 @@ def check_alternatives(phase_dir_arg):
     violations = []
     plans, misnamed = discover_plan_files(resolved_phase_dir)
     for plan_path in plans:
+        if plan_path.is_symlink():
+            violations.append((plan_path, 1, SYMLINK_PLAN_REASON))
+            continue
         result = validate_plan(plan_path)
         if result is not None:
             line, reason = result

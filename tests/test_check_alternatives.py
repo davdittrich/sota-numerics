@@ -1846,6 +1846,18 @@ class TestMisnamedPlans(unittest.TestCase):
         self.assertIn("missing '## Alternatives Considered'", upper_result.stderr)
 
 
+class TestSymlinkedPlan(unittest.TestCase):
+    def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
+        with scratch_dir() as tmp, scratch_dir() as elsewhere:
+            target = Path(elsewhere, "real.md")
+            target.write_text(fixture_text("plan-compliant.md"), encoding="utf-8")
+            (Path(tmp) / "01-01-PLAN.md").symlink_to(target)
+            result = run_check(tmp)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("01-01-PLAN.md:1:", result.stderr)
+        self.assertIn("symlink", result.stderr)
+
+
 class TestEmptyPhaseDir(unittest.TestCase):
     """An empty ${PHASE_DIR} must block, not silently pass.
 
