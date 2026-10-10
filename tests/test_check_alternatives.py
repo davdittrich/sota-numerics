@@ -852,6 +852,25 @@ class TestCitationAndDate(unittest.TestCase):
         self.assertIn(str(stale_year), result.stderr)
 
 
+class TestRecencyEdges(unittest.TestCase):
+    def _run(self, year):
+        return run_plan(
+            "## Alternatives Considered\n\n"
+            f"- **A**: `https://numpy.org/doc/stable/` ({year}).\n"
+            f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            "Decided by: performance — B.\n"
+        )
+
+    def test_six_years_old_passes(self):
+        self.assertEqual(self._run(TODAY_YEAR - 6).returncode, 0)
+
+    def test_seven_years_old_fails(self):
+        self.assertEqual(self._run(TODAY_YEAR - 7).returncode, 1)
+
+    def test_future_year_fails(self):
+        self.assertEqual(self._run(TODAY_YEAR + 1).returncode, 1)
+
+
 class TestDecidedBy(unittest.TestCase):
     """The ranked-criterion line."""
 
