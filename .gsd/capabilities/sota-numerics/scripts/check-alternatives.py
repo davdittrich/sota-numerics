@@ -20,7 +20,7 @@ whatever the plan document contains (D-07).
 
 Exit 2 = usage/IO error. Any of five conditions raises it. The phase_dir
 argument is empty, missing, or not a directory. The phase_dir has no
-`.planning/` ancestor within 10 levels. A discovered plan file is not valid
+`.planning/` ancestor. A discovered plan file is not valid
 UTF-8. A discovered plan file could not be read at all; a plan-shaped name
 that names a directory is the usual cause. No phase_dir was given, and the
 STATE.md the phase resolves from carries a frontmatter `current_phase` and a
@@ -280,7 +280,7 @@ def line_number(text, offset):
 def find_project_root(start):
     """Walk up from `start` to the nearest ancestor containing `.planning/`."""
     current = start.resolve()
-    for _ in range(10):
+    while True:
         if (current / ".planning").is_dir():
             return current
         if current.parent == current:

@@ -1956,6 +1956,18 @@ class TestCommentOpenerInIndentedCode(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class TestDeepProjectRoot(unittest.TestCase):
+    def test_phase_dir_deeper_than_ten_levels_still_finds_root(self):
+        with scratch_dir() as root:
+            root = Path(root)
+            (root / ".planning").mkdir()
+            deep = root.joinpath(*[f"d{i}" for i in range(14)])
+            deep.mkdir(parents=True)
+            write_plan(deep, fixture_text("plan-compliant.md"))
+            result = run_check(deep)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:
