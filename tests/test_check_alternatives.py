@@ -1900,6 +1900,24 @@ class TestBom(unittest.TestCase):
         self.assertIn("missing '## Alternatives Considered'", result.stderr)
 
 
+class TestSectionHeadingIndent(unittest.TestCase):
+    BODY = (
+        f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+        f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+        "Decided by: performance — A.\n"
+    )
+
+    def test_up_to_three_leading_spaces_still_a_heading(self):
+        for indent in ("", " ", "   "):
+            with self.subTest(indent=len(indent)):
+                result = run_plan(f"{indent}## Alternatives Considered\n\n{self.BODY}")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_four_spaces_is_not_a_heading(self):
+        result = run_plan(f"    ## Alternatives Considered\n\n{self.BODY}")
+        self.assertEqual(result.returncode, 1, result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:

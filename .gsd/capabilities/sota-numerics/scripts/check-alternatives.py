@@ -107,7 +107,7 @@ SYMLINK_PLAN_REASON = (
 # PLAN.md body can trigger catastrophic regex backtracking (ReDoS). The H3
 # heading scan below is intentionally uncapped but still linear.
 SECTION_HEADING_RE = re.compile(
-    r"^##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
+    r"^[ \t]{0,3}##[ \t]+Alternatives Considered\b[^\n]{0,200}$", re.IGNORECASE | re.MULTILINE
 )
 # H1/H2 end the section (fail-closed: bounding early only shrinks the body).
 # H3 stays inside it (`### Internal design alternatives`) -- pinned by
