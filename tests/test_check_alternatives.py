@@ -2041,6 +2041,22 @@ class TestAllViolationsPerPlan(unittest.TestCase):
         self.assertEqual(result.stderr.count("01-01-PLAN.md:"), 5, result.stderr)
 
 
+class TestUnreadablePlanPermission(unittest.TestCase):
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses file modes")
+    def test_chmod_000_plan_exits_2_without_traceback(self):
+        with scratch_dir() as tmp:
+            plan = Path(tmp) / "01-01-PLAN.md"
+            write_plan(tmp, fixture_text("plan-compliant.md"))
+            plan.chmod(0)
+            try:
+                result = run_check(tmp)
+            finally:
+                plan.chmod(0o600)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(str(plan), result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
 class TestSymlinkedPlan(unittest.TestCase):
     def test_symlink_named_like_a_plan_is_a_violation_not_followed(self):
         with scratch_dir() as tmp, scratch_dir() as elsewhere:
