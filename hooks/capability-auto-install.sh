@@ -343,8 +343,9 @@ elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
-elif [ "$INSTALL_STATUS" -eq 124 ] && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
-  # Guarded on the wrapper actually being in use: an install that genuinely
+elif { [ "$INSTALL_STATUS" -eq 124 ] || [ "$INSTALL_STATUS" -eq 137 ]; } && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
+  # 137 is the -k SIGKILL of a child that ignored SIGTERM. Guarded on the wrapper
+  # actually being in use: an install that genuinely
   # exits 124 on a host with no `timeout`/`gtimeout` must not be mislabelled
   # as a kill this hook performed. No refusal tail on this message -- D0
   # selects on that tail, and a killed install is a failure, not a refusal.

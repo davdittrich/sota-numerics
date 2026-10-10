@@ -981,6 +981,15 @@ err_has "exceeded" || fail "L3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "L3: a killed install wrote the sidecar"
 pass "L3: a killed install is reported on stderr and leaves no sidecar"
 
+# --- L3b (R-E): a SIGKILLed install (exit 137) gets the same timeout message ---
+new_sandbox l3b
+printf '#!/usr/bin/env bash\nexit 137\n' > "$SB/bin/timeout"
+chmod +x "$SB/bin/timeout"
+run_hook
+err_has "exceeded" || fail "L3b: exit 137 not reported as a timeout kill (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "L3b: a killed install wrote the sidecar"
+pass "L3b: exit 137 is reported like exit 124"
+
 # --- L4: a host with no `timeout` (or `gtimeout`) still installs, unbounded ---
 # Restricted PATH built the way H2 builds one, naming only what this path
 # actually needs and no timeout binary. This is the case that fails loudly if
