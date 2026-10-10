@@ -59,7 +59,7 @@ A global install publishes those bytes to every project on the machine, so where
 | Neither `origin/HEAD` nor `origin/main` exists to prove publication. | `sota-numerics bundle has no origin/HEAD or origin/main to prove it is published` | Add the remote and fetch it. |
 | The bundle's `HEAD` is not an ancestor of that ref. | `sota-numerics bundle HEAD is not published (not an ancestor of <ref>)` | Push. |
 
-Whether a marketplace install is tracked depends on the host. Claude Code has materialised plugin caches both as depth-1 git clones and as plain directories, and both forms exist side by side in a single cache today. A plain directory has no repository over it, so the check does not apply: those bytes install trusted rather than verified, and the protection a marketplace consumer gets in that form is whatever the host's own cache integrity provides, not this check. A clone is tracked, so the check applies — and it passes: the clone is clean, and its `HEAD` is the published tip it was cloned from. The plugin host's own `.in_use/` and `.orphaned_at` bookkeeping sits at the plugin root, three directories above the bundle, and the uncommitted-or-ignored test is scoped to the bundle, so it never sees them. Either way the capability installs; a marketplace consumer installs nothing by hand.
+A marketplace install is tracked or not depending on how Claude Code caches the plugin. A plain directory has no repository over it, so the check does not apply: those bytes install trusted rather than verified, and the protection a marketplace consumer gets in that form is whatever the host's own cache integrity provides, not this check. A clone is tracked, so the check applies — and it passes: the clone is clean, and its `HEAD` is the published tip it was cloned from. Either way the capability installs; a marketplace consumer installs nothing by hand.
 
 Planner, executor, and verifier subagents receive role-specific banners. A normal session start uses the generic SOTA/numerics banner; calling the script directly with an unknown role falls back to that same text. Other subagent roles do not trigger this plugin's `SubagentStart` hook.
 
@@ -177,11 +177,9 @@ The checker accepts a hyphen or em dash and stops validating that section once t
 
 The checker reports one reason per failing plan, as `<plan_path>:<line>: <reason>` -- the
 line is the heading line for a section-level violation, or the entry's own line for a
-per-entry citation issue. Any document-derived text quoted in a message (an alternative's
-name, or the heading that ended a section) is bounded to 80 characters, and a `found: ...`
-list is bounded to its first 5 distinct values; either carries an explicit `...[truncated]`
-or `...[+N more]` marker when it was cut. No single stderr line exceeds 200 characters,
-whatever the plan document contains. The checker checks every matching plan in the
+per-entry citation issue. Text quoted from a plan and `found: ...` lists
+are cut to a bounded length with an explicit `...[truncated]` or `...[+N more]` marker, so
+no stderr line exceeds 200 characters whatever the plan contains. The checker checks every matching plan in the
 directory, then prints one recovery command:
 
 ```text

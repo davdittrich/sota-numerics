@@ -114,11 +114,10 @@ verdicts, not a gate that failed to find anything.
 | phase directory name | exit | side effect |
 | --- | --- | --- |
 | `11-a'; touch PWNED; :'b` | 0 | none |
-| `11-o'$(touch PWNED)'brien` | 0 | none |
-| ``11-x'`touch PWNED`'y`` | 0 | none |
-| `11-r'\|touch PWNED\|\|:'s` | 0 | none |
 | `11-t'>canary.txt;:'u` | 0 | none; `canary.txt` intact |
 | `11-o'brien` | 0 | none |
+
+The `$(...)`, backtick and `|`-pipe variants also exit `0` with no side effect.
 
 `11-o'brien` exiting `0` is a behaviour change: it exited `2` before. The apostrophe
 limitation is fixed, not documented away. A hostile name with a non-compliant plan still
@@ -134,15 +133,11 @@ phase just planned.
 
 Every failure path is fail-closed, and `main()` maps each raise to exit `2`. Measured:
 
-| condition | exit |
-| --- | --- |
-| no `.planning/STATE.md` | 2 |
-| STATE.md with no `current_phase` | 2 |
-| `current_phase` not matching `^\d+(\.\d+)?$` (traversal, metacharacters) | 2 |
-| `current_phase` matching 0 directories | 2 |
-| `current_phase` matching 2 directories | 2 |
+Each of these exits `2`: no `.planning/STATE.md`; STATE.md with no `current_phase`; a
+`current_phase` not matching `^\d+(\.\d+)?$` (traversal, metacharacters); a `current_phase`
+matching zero or two directories.
 
-Do not oversell that. Fail-closed covers the cases where the phase cannot be identified. It
+Fail-closed covers the cases where the phase cannot be identified. It
 does not cover the case where it is identified *wrongly*: if that 13b/13e ordering ever
 changed, `current_phase` would name a different phase and the gate would check that one and
 pass, with nothing to notice. The upstream fix is unchanged — pass the phase directory as an
