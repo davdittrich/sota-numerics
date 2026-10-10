@@ -10,8 +10,8 @@
 #
 # The rows below, in the order the hook evaluates them, are exhaustive over the
 # hook's OWN control flow and nothing more. They branch on
-# `git ls-files --error-unmatch`, whose three exit codes are exhaustive by
-# construction -- 0, 1, and everything else -- and each of those three is then
+# `git ls-files -- <bundle paths>`, whose three outcomes are exhaustive by
+# construction -- a listing, an empty listing, a failure -- and each of those three is then
 # split on conditions that are complementary, so every execution of the hook
 # lands in exactly one row. That claim is provable by reading the script, and it
 # is the only exhaustiveness claim this file makes.
@@ -360,6 +360,44 @@ run_hook
 [ "$(installs)" = 1 ] || fail "D: published bundle did not install (err: $(cat "$SB/err"))"
 [ -f "$(sidecar)" ] || fail "D: successful install did not write the hash sidecar"
 pass "D: tracked, clean, published bundle installs"
+
+# --- S1: the guard and the hash see only capability.json, fragments/, scripts/ ---
+# The plugin root is the bundle, so it also holds tests, docs and CI. Those are
+# not what the capability runs: dirt there must not refuse, and edits there
+# must not reinstall.
+new_sandbox s1
+mkdir -p "$ROOT/tests" && printf 'case\n' > "$ROOT/tests/t.sh" && printf 'doc\n' > "$ROOT/README.md"
+git_init "$ROOT"
+publish "$ROOT"
+printf 'edited\n' >> "$ROOT/README.md"
+printf 'new\n' > "$ROOT/tests/untracked.sh"
+run_hook
+[ "$(installs)" = 1 ] || fail "S1: dirt outside the bundle paths refused the install (err: $(cat "$SB/err"))"
+printf 'again\n' >> "$ROOT/tests/t.sh"
+run_hook
+[ "$(installs)" = 1 ] || fail "S1: an edit outside the bundle paths reinstalled ($(installs) installs)"
+pass "S1: files outside capability.json, fragments/, scripts/ neither refuse nor reinstall"
+
+# --- S2: an edit under fragments/ is drift ---
+new_sandbox s2
+run_hook
+printf 'changed advice\n' > "$BUNDLE/fragments/f.md"
+run_hook
+[ "$(installs)" = 2 ] || fail "S2: a fragment edit did not change the bundle hash ($(installs) installs)"
+pass "S2: a fragment edit reinstalls"
+
+# --- S3: a partly tracked bundle is tracked ---
+# `ls-files --error-unmatch` with several pathspecs exits 1 when any one is
+# unmatched, which would read an untracked scripts/ as "nothing tracks the
+# bundle" and install it unchecked.
+new_sandbox s3
+git_init "$ROOT" capability.json fragments hooks
+publish "$ROOT"
+[ -z "$(git -C "$ROOT" ls-files -- scripts)" ] || fail "S3: precondition -- scripts/ should be untracked"
+run_hook
+[ "$(installs)" = 0 ] || fail "S3: a bundle with untracked scripts/ was installed"
+err_has "uncommitted or ignored" || fail "S3: wrong refusal (err: $(cat "$SB/err"))"
+pass "S3: a partly tracked bundle is guarded, its untracked part refused"
 
 # --- K1: publication is proved against a local ref, never against the remote ---
 # The limit of row 7, written where it can be executed rather than trusted.

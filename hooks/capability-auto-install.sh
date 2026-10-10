@@ -117,9 +117,12 @@ fi
 # Ownership, not enclosure: only a repository that *tracks* the bundle speaks
 # for its bytes (README "What the Claude hooks do").
 #
-# `ls-files --error-unmatch` exits 0 tracked (apply the publication checks),
-# 1 untracked (guard does not apply), 128 git did not answer -- never read as
-# "untracked". The eleven rows are enumerated in the tests header.
+# TRACKED is 0 when the repository tracks any BUNDLE_PATHS entry (apply the
+# publication checks), 1 when it answered and tracks none (guard does not
+# apply), 128 when git did not answer -- never read as "untracked". Not
+# `--error-unmatch`: with several pathspecs it exits 1 when any one is
+# unmatched, so a partly tracked bundle would skip the checks (case S3). The
+# rows are enumerated in the tests header.
 #
 # unverifiable_repo() decides the 128 case: `--git-dir` succeeding means a
 # repository exists and did not answer; otherwise walk the ancestors -- an
@@ -143,7 +146,11 @@ unverifiable_repo() {
 }
 
 TRACKED=0
-git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1 || TRACKED=$?
+if ! _LS="$(git -C "$BUNDLE_DIR" ls-files -- "${BUNDLE_PATHS[@]}" 2>/dev/null)"; then
+  TRACKED=128
+elif [ -z "$_LS" ]; then
+  TRACKED=1
+fi
 if [ "$TRACKED" -eq 0 ]; then
   # `status` reads the index, which `update-index --assume-unchanged` and
   # `--skip-worktree` silence, so an edit would report clean and the sidecar
@@ -153,7 +160,7 @@ if [ "$TRACKED" -eq 0 ]; then
   #
   # Capture the status before the output: piping into `grep` takes grep's
   # status and hides a failed `ls-files` (case J10).
-  if ! INDEX_TAGS="$(git -C "$BUNDLE_DIR" ls-files -v -- . 2>/dev/null)"; then
+  if ! INDEX_TAGS="$(git -C "$BUNDLE_DIR" ls-files -v -- "${BUNDLE_PATHS[@]}" 2>/dev/null)"; then
     echo "capability-auto-install: git could not list the index entries for the $CAP_ID bundle, so whether the index hides edits cannot be determined; refusing to install it at global scope" >&2
     exit 0
   fi
@@ -168,7 +175,7 @@ if [ "$TRACKED" -eq 0 ]; then
   # The exit status is read before the output: empty output from a `status` that
   # failed is indistinguishable from empty output from a clean tree (case J1).
   if ! DIRTY="$(git -c core.fsmonitor= -C "$BUNDLE_DIR" status --porcelain --ignored \
-                    --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)"; then
+                    --untracked-files=all --ignore-submodules=none -- "${BUNDLE_PATHS[@]}" 2>/dev/null)"; then
     echo "capability-auto-install: git could not report the state of the $CAP_ID bundle, so its contents cannot be verified; refusing to install it at global scope" >&2
     exit 0
   fi

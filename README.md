@@ -41,9 +41,17 @@ The GSD capability itself declares support for every GSD runtime. Automatic star
 
 The project copy wins when both exist.
 
+Without the Claude plugin, install the capability directly; the repository root is the bundle:
+
+```bash
+gsd capability install https://github.com/davdittrich/sota-numerics.git#<tag>
+```
+
+gsd-core copies the whole checkout into the global capability directory, so the repository must stay free of symlinks.
+
 ### What the Claude hooks do
 
-At startup, resume, clear, or compaction, the plugin checks the whole capability bundle's hash. It installs the bundle at global GSD scope only when that hash changed. Subagent spawns never install; they only print role banners. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
+At startup, resume, clear, or compaction, the plugin hashes the capability bundle: `capability.json`, `fragments/` and `scripts/` at the plugin root. Edits elsewhere in the repository (tests, docs, CI) neither trigger a reinstall nor fail the published check below. It installs the bundle at global GSD scope only when that hash changed. Subagent spawns never install; they only print role banners. The same hook prints a short steering banner when the capability is enabled and its config lookup succeeds.
 
 A global install publishes those bytes to every project on the machine, so where a repository tracks the bundle, the hook installs only bytes that repository records as published. Where none tracks it, there is nothing to check against and the bytes install unverified. It reads that from the local `origin/HEAD` or `origin/main` ref; it does not contact the remote, so a session start never waits on the network and never fails offline. Anyone who can write that ref can therefore satisfy the check — the guard is aimed at running a plugin out of a development worktree by accident, not at an adversary with write access to your own repository. Every refusal names its reason on stderr, installs nothing, and leaves the recorded hash unwritten, so a later session retries. The bundle walk and `git` itself are checked before anything asks whether a repository tracks the bundle, so a plugin unpacked into a plain directory can hit either.
 

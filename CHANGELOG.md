@@ -14,8 +14,13 @@ Gate:
 - The project-root search has no ten-ancestor cap.
 - A borderless table gets a message saying only framed tables are supported; a long path is shortened before the failure reason is.
 
+Layout:
+
+- The capability bundle (`capability.json`, `fragments/`, `scripts/`, `NOTES.md`) moved from `.gsd/capabilities/sota-numerics/` to the repository root, so `gsd capability install <repo>.git#<tag>` installs it. The installed path, `${GSD_HOME:-$HOME}/.gsd/capabilities/sota-numerics/`, is unchanged.
+
 Hooks:
 
+- The auto-install hash and the published check cover only `capability.json`, `fragments/` and `scripts/`; a partly tracked bundle is still checked. Existing installs reinstall once, because the hashed paths changed.
 - The auto-install runs only on `SessionStart` and only when the capability is enabled, so parallel subagent spawns no longer race the install lock and a disabled capability is never installed.
 - `SubagentStart` banners reach the subagent as `hookSpecificOutput.additionalContext`.
 - A failing `config-get` outside a GSD project counts as enabled and prints nothing.
