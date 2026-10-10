@@ -395,6 +395,23 @@ CLAUDE_PLUGIN_ROOT="$STUB_ROOT" bash "$STUB_ROOT/hooks/session-start.sh" >/dev/n
 run_and_cleanup
 pass "case9: auto-install runs only when the capability is enabled"
 
+# --- Case 10 (F17): the global gsd-core rung beats PATH; a relative PATH entry never runs ---
+# A `gsd-tools` found through PATH can be a repo-local file (PATH=./bin or "."),
+# so the absolute ${CLAUDE_CONFIG_DIR:-$HOME/.claude} rung is tried first and a
+# PATH hit is accepted only when it is an absolute path.
+H10="$(mktemp -d)"; D10="$(mktemp -d)"
+mkdir -p "$H10/.claude/gsd-core/bin"
+printf 'process.stdout.write("global");\n' > "$H10/.claude/gsd-core/bin/gsd-tools.cjs"
+printf '#!/usr/bin/env bash\necho path-stub\n' > "$D10/gsd-tools"; chmod +x "$D10/gsd-tools"
+OUT10="$(cd "$D10" && HOME="$H10" PATH="$D10:$PATH" bash -c 'unset CLAUDE_PLUGIN_ROOT CLAUDE_CONFIG_DIR; . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"; gsd_tools x')"
+[ "$OUT10" = global ] || fail "case10: a PATH gsd-tools shadowed the global gsd-core rung (got '$OUT10')"
+rm -rf "$H10/.claude"
+OUT10="$(cd "$D10" && HOME="$H10" PATH=".:$PATH" bash -c 'unset CLAUDE_PLUGIN_ROOT CLAUDE_CONFIG_DIR; . "'"$REPO_ROOT"'/hooks/gsd-tools.sh"; gsd_tools x' 2>/dev/null)"
+S10=$?
+[ "$OUT10" != path-stub ] || fail "case10: a gsd-tools reached through a relative PATH entry was executed"
+rm -rf "$H10" "$D10"
+pass "case10: global rung first; relative PATH hits are ignored"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"
