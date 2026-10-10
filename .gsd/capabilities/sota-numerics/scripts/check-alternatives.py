@@ -245,6 +245,19 @@ def elide_line(s, width=STDERR_LINE_WIDTH):
     return s[: width - len(ELISION_MARKER)] + ELISION_MARKER
 
 
+def format_violation(plan_path, line, reason, width=STDERR_LINE_WIDTH):
+    """`<plan_path>:<line>: <reason>`, shortening the directory part from the
+    left when the line would exceed `width`, so the reason survives a long path."""
+    tail = f"{plan_path.name}:{line}: {reason}"
+    room = width - len(tail) - 5
+    parent = str(plan_path.parent)
+    if len(parent) + 1 + len(tail) <= width:
+        return f"{parent}/{tail}"
+    if room < 1:
+        return tail
+    return f".../{parent[-room:]}/{tail}"
+
+
 def line_number(text, offset):
     """The 1-indexed line number of `offset` within `text` (D-08: every
     violation names the line it is about, not only the file)."""
@@ -939,7 +952,7 @@ def main(argv=None):
     # surrounding fixed prose plus a long phase-directory path can still push
     # one line past 200 on its own.
     for plan_path, line, reason in violations:
-        print(elide_line(f"{plan_path}:{line}: {reason}"), file=sys.stderr)
+        print(elide_line(format_violation(plan_path, line, reason)), file=sys.stderr)
     phase_label = phase_label_from_dirname(phase_dir_arg)
     print(
         elide_line(

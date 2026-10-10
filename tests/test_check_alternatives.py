@@ -2122,6 +2122,20 @@ class TestViolationLineShape(unittest.TestCase):
         for line in result.stderr.splitlines():
             self.assertLessEqual(len(line), 200, line)
 
+    def test_long_path_is_elided_not_the_reason(self):
+        with scratch_dir() as tmp:
+            deep = Path(tmp, "a" * 60, "b" * 60, "c" * 60)
+            deep.mkdir(parents=True)
+            write_plan(deep, fixture_text("plan-missing-section.md"))
+            result = run_check(deep)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "01-01-PLAN.md:1: missing '## Alternatives Considered' section",
+            result.stderr,
+        )
+        for line in result.stderr.splitlines():
+            self.assertLessEqual(len(line), 200, line)
+
     def test_remediation_line_appears_exactly_once_with_line_numbers(self):
         with scratch_dir() as tmp:
             write_plan(tmp, fixture_text("plan-missing-section.md"), name="01-01-PLAN.md")
