@@ -152,6 +152,15 @@ elif [ -z "$_LS" ]; then
   TRACKED=1
 fi
 if [ "$TRACKED" -eq 0 ]; then
+  # gsd-core rejects symlinks, and a committed link passes every check below
+  # (git compares the link, not its target). Each path is tested bare as well:
+  # find on `fragments/` follows a symlinked top-level directory.
+  _LINKS="$(for _p in "${BUNDLE_PATHS[@]}"; do [ -L "$BUNDLE_DIR/${_p%/}" ] && echo "$_p"; done
+            find "${BUNDLE_PATHS[@]/#/$BUNDLE_DIR/}" -type l -print -quit 2>/dev/null)"
+  if [ -n "$_LINKS" ]; then
+    echo "capability-auto-install: the $CAP_ID bundle contains a symlink, which gsd-core rejects; refusing to install it at global scope" >&2
+    exit 0
+  fi
   # `status` reads the index, which `update-index --assume-unchanged` and
   # `--skip-worktree` silence, so an edit would report clean and the sidecar
   # make the miss permanent (cases J2, J3). `ls-files -v` tags a plain entry H;
