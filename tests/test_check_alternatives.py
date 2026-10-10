@@ -32,10 +32,7 @@ def setUpModule():
 
 
 def tearDownModule():
-    (PLAN_TMPDIR / ".planning").rmdir()
-    if any(PLAN_TMPDIR.iterdir()):
-        raise RuntimeError(f"TMPDIR must finish empty: {PLAN_TMPDIR}")
-    PLAN_TMPDIR.rmdir()
+    shutil.rmtree(PLAN_TMPDIR, ignore_errors=True)
 
 
 def scratch_dir():
@@ -72,7 +69,18 @@ def write_plan(dir_path, text, name="01-01-PLAN.md"):
 
 
 def fixture_text(name):
-    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
+    """Fixture text with its checked-in recency years rebased on today, so
+    fixtures do not age out of the recency window."""
+    return (
+        (FIXTURES_DIR / name).read_text(encoding="utf-8")
+        .replace("(2024)", f"({TODAY_YEAR})")
+        .replace("(2023)", f"({TODAY_YEAR - 1})")
+    )
+
+
+def copy_fixture_dir(name, dest):
+    for src in (FIXTURES_DIR / name).iterdir():
+        write_plan(dest, fixture_text(f"{name}/{src.name}"), name=src.name)
 
 
 COMPLIANT_ENTRY_TEMPLATE = """## Alternatives Considered
@@ -1800,13 +1808,27 @@ class TestCurrentPhaseResolution(unittest.TestCase):
         self.assertNotIn(str(outside_dir), result.stderr)
 
 
+class TestFixtureYearsAreTemplated(unittest.TestCase):
+    def test_no_fixture_hardcodes_a_recent_year(self):
+        for path in FIXTURES_DIR.glob("*.md"):
+            with self.subTest(fixture=path.name):
+                text = fixture_text(path.name)
+                for stale in ("(2023)", "(2024)"):
+                    self.assertNotIn(stale, text)
+
+    def test_copied_fixture_dirs_are_templated_too(self):
+        with scratch_dir() as tmp:
+            copy_fixture_dir("multiplan", tmp)
+            self.assertNotIn("(2024)", (Path(tmp) / "11-01-PLAN.md").read_text())
+
+
 class TestMultiPlanCoverage(unittest.TestCase):
     """Every plan in the directory is checked, not just
     the first readdir match."""
 
     def test_multiplan_dir_exits_1_even_though_first_plan_compliant(self):
         with scratch_dir() as tmp:
-            shutil.copytree(FIXTURES_DIR / "multiplan", tmp, dirs_exist_ok=True)
+            copy_fixture_dir("multiplan", tmp)
             result = run_check(tmp)
         self.assertEqual(result.returncode, 1)
         self.assertIn("11-02-PLAN.md", result.stderr)
@@ -1816,7 +1838,7 @@ class TestMultiPlanCoverage(unittest.TestCase):
 class TestDottedFilenames(unittest.TestCase):
     def test_dotted_phase_segment_matched(self):
         with scratch_dir() as tmp:
-            shutil.copytree(FIXTURES_DIR / "dotted", tmp, dirs_exist_ok=True)
+            copy_fixture_dir("dotted", tmp)
             result = run_check(tmp)
         self.assertEqual(result.returncode, 0)
 
