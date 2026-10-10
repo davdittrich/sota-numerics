@@ -910,6 +910,28 @@ class TestNonAlternativeBullets(unittest.TestCase):
         self.assertIn("fewer than 2 named alternatives (found 1)", result.stderr)
 
 
+class TestDecidedByBoundary(unittest.TestCase):
+    def _run(self, decided):
+        return run_plan(
+            "## Alternatives Considered\n\n"
+            f"- **A**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n"
+            f"- **B**: `https://docs.scipy.org/doc/scipy/` ({TODAY_YEAR}).\n\n"
+            f"{decided}\n"
+        )
+
+    def test_criterion_must_be_a_whole_word(self):
+        for value in ("LOCKED in", "performances", "ecosystems"):
+            with self.subTest(value=value):
+                result = self._run(f"Decided by: {value}")
+                self.assertEqual(result.returncode, 1, result.stderr)
+
+    def test_bold_criterion_value_is_accepted(self):
+        for line in ("Decided by: **performance** — fast.", "**Decided by:** **LOC** — small."):
+            with self.subTest(line=line):
+                result = self._run(line)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class TestMinimumCount(unittest.TestCase):
     def test_one_alternative_exits_1(self):
         text = (

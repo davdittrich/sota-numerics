@@ -132,8 +132,8 @@ URL_RE = re.compile(r"https?://[^\s)>\]]{1,300}")
 DOC_REF_RE = re.compile(r"`[^`\n]{1,300}`")
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 DECIDED_BY_RE = re.compile(
-    r"(?:^|\n)[ \t]*[-*]?[ \t]*\*{0,2}Decided by:\*{0,2}[ \t]*"
-    r"(?:performance|simplicity|LOC|ecosystem|maintenance)",
+    r"(?:^|\n)[ \t]*[-*]?[ \t]*\*{0,2}Decided by:\*{0,2}[ \t]*\*{0,2}"
+    r"(?:performance|simplicity|LOC|ecosystem|maintenance)\b",
     re.IGNORECASE,
 )
 # Where a bullet entry stops short of the next bullet: a `Decided by:` line,
