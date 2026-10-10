@@ -993,6 +993,26 @@ class TestYearBelongsToCitation(unittest.TestCase):
                 self.assertIn("alternative 'A'", result.stderr)
 
 
+class TestPlaceholderCitations(unittest.TestCase):
+    def test_placeholder_hosts_and_tokens_are_rejected(self):
+        for cite in (
+            "https://example.org/x",
+            "http://localhost/x",
+            "HTTPS://EXAMPLE.COM/x",
+            "`TBD`",
+            "`TODO`",
+        ):
+            with self.subTest(cite=cite):
+                result = run_plan(
+                    "## Alternatives Considered\n\n"
+                    f"- **A**: {cite} ({TODAY_YEAR}).\n"
+                    f"- **B**: `https://numpy.org/doc/stable/` ({TODAY_YEAR}).\n\n"
+                    "Decided by: performance — B.\n"
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("alternative 'A'", result.stderr)
+
+
 class TestMinimumCount(unittest.TestCase):
     def test_one_alternative_exits_1(self):
         text = (
