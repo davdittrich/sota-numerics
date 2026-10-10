@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+Gate:
+
+- A plan with several violations reports up to five of them in one run, not one per re-run.
+- A citation needs a four-digit year in its own sentence; placeholder hosts (including subdomains) and `TODO`/`TBD`/`N/A` references are rejected.
+- `Decided by:` accepts a bold value and requires the criterion to end at a word boundary.
+- Bold-named entries accept `+` and ordered-list markers; an entry ends at its `Decided by:` line; reserved-label bullets are ignored and duplicate names collapse.
+- Indented code is masked before HTML comments and fences; the section heading may carry 0-3 leading spaces.
+- A UTF-8 BOM no longer hides plan or STATE.md content.
+- A phase-numbered plan in any case (`23-01-plan.md`) is reported as misnamed; a symlinked plan file is reported, not followed.
+- The project-root search has no ten-ancestor cap.
+- A borderless table gets a message saying only framed tables are supported; a long path is shortened before the failure reason is.
+
+Hooks:
+
+- The auto-install runs only on `SessionStart` and only when the capability is enabled, so parallel subagent spawns no longer race the install lock and a disabled capability is never installed.
+- `SubagentStart` banners reach the subagent as `hookSpecificOutput.additionalContext`.
+- A failing `config-get` outside a GSD project counts as enabled and prints nothing.
+- The install timeout has a kill grace, so a child ignoring SIGTERM cannot hang the session.
+- The sidecar is read only when it is a regular file and is not recorded when the bundle changed during the install; a deleted global mirror is repaired; a symlinked bundle directory is hashed through.
+- `CDPATH` is cleared around `cd`; the absolute global gsd-core path is tried before `PATH`, and relative `PATH` hits are ignored.
+- The gate prefers the global script when its version is at least the project copy's, and runs `python3 -I`.
+- Known residual: the provenance check runs on git's view of the bundle, so a `.gitattributes` clean filter can make the installed worktree bytes differ from the bytes checked.
+
+Docs:
+
+- NOTES and README state that `workflow.post_planning_gaps` gates only the first-party gap-analysis hook in gsd-core 1.16.0, so this gate still runs when it is `false`.
+- README states the CWM and Olausson et al. results as those papers report them.
+
 ## 0.2.0
 
 **The gate's rules for what a plan must contain are unchanged; how it finds and
