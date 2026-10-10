@@ -144,8 +144,11 @@ fi
 # Fast path: an unchanged bundle exits silently and never spawns node, which
 # is what keeps this affordable on every SessionStart.
 # The sidecar only says which bytes the mirror held when it was written; a mirror
-# since deleted must be repaired, so the fast path also requires it to exist.
-[ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID" ] && exit 0
+# since deleted or gutted must be repaired, so the fast path also requires its
+# directory, manifest and gate checker to exist.
+_MIRROR="${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID"
+[ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "$_MIRROR" ] && [ -f "$_MIRROR/capability.json" ] &&
+  [ -f "$_MIRROR/scripts/check-alternatives.py" ] && exit 0
 
 # Fail closed: every question below is asked through git, and a git that cannot
 # answer is not an answer of "safe". `command -v` alone misses a

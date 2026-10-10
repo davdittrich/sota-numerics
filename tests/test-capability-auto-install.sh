@@ -208,7 +208,10 @@ new_sandbox() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GSD_TOOLS_LOG"
 # Like the real install: the global mirror directory appears (id = bundle basename).
-[ "${1:-}" = capability ] && [ "${2:-}" = install ] && mkdir -p "${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
+if [ "${1:-}" = capability ] && [ "${2:-}" = install ]; then
+  _m="${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
+  mkdir -p "$_m/scripts" && : > "$_m/capability.json" && : > "$_m/scripts/check-alternatives.py"
+fi
 exit 0
 STUB
   chmod +x "$SB/bin/gsd-tools"
@@ -774,6 +777,17 @@ rm -rf "$SB/home/.gsd/capabilities/$CAP_ID"
 run_hook
 [ "$(installs)" = 2 ] || fail "I8: a deleted mirror was not reinstalled ($(installs) installs)"
 pass "I8: the fast path requires the mirror directory to exist"
+
+# --- I8b (R-D): a mirror directory missing its manifest or checker is repaired ---
+for _f in capability.json scripts/check-alternatives.py; do
+  new_sandbox "i8b-${_f//\//-}"
+  run_hook
+  [ "$(installs)" = 1 ] || fail "I8b: precondition -- first run should install"
+  rm -f "$SB/home/.gsd/capabilities/$CAP_ID/$_f"
+  run_hook
+  [ "$(installs)" = 2 ] || fail "I8b: a mirror missing $_f was not reinstalled ($(installs) installs)"
+done
+pass "I8b: the fast path requires the mirror's manifest and checker, not just its directory"
 
 # --- I9 (F15): a symlinked bundle directory is walked, so edits inside it are drift ---
 new_sandbox i9
