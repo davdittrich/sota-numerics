@@ -3,14 +3,24 @@ set -u
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/.." && pwd)}"
 
+# True when cwd or any ancestor holds .planning (the tools resolve it upward).
+in_gsd_project() {
+  local _d="$PWD" _p
+  while [ ! -d "$_d/.planning" ]; do
+    _p="$_d"; _d="$(dirname "$_d")"
+    [ "$_d" != "$_p" ] || return 1
+  done
+}
+
 if [ -f "$PLUGIN_ROOT/hooks/gsd-tools.sh" ]; then
   . "$PLUGIN_ROOT/hooks/gsd-tools.sh"
   ENABLED="$(gsd_tools config-get sota-numerics.enabled --default true 2>/dev/null)"; ENABLED_STATUS=$?
   if [ "$ENABLED_STATUS" -eq 127 ]; then
     ENABLED=true
-  elif [ "$ENABLED_STATUS" -ne 0 ] && [ ! -d .planning ]; then
-    # Outside a GSD project config-get has nothing to read and may fail; absent
-    # configuration means enabled, so stay on and stay quiet.
+  elif [ "$ENABLED_STATUS" -ne 0 ] && ! in_gsd_project; then
+    # Outside a GSD project (no .planning in cwd or any ancestor) config-get has
+    # nothing to read and may fail; absent configuration means enabled, so stay
+    # on and stay quiet.
     ENABLED=true
   elif [ "$ENABLED_STATUS" -ne 0 ]; then
     echo "sota-numerics: gsd_tools config-get sota-numerics.enabled failed (exit $ENABLED_STATUS); disabling advisory banner" >&2

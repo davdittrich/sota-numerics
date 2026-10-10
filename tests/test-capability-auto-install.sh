@@ -208,7 +208,10 @@ new_sandbox() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GSD_TOOLS_LOG"
 # Like the real install: the global mirror directory appears (id = bundle basename).
-[ "${1:-}" = capability ] && [ "${2:-}" = install ] && mkdir -p "${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
+if [ "${1:-}" = capability ] && [ "${2:-}" = install ]; then
+  _m="${GSD_HOME:-$HOME}/.gsd/capabilities/$(basename "$3")"
+  mkdir -p "$_m/scripts" && : > "$_m/capability.json" && : > "$_m/scripts/check-alternatives.py"
+fi
 exit 0
 STUB
   chmod +x "$SB/bin/gsd-tools"
@@ -775,6 +778,17 @@ run_hook
 [ "$(installs)" = 2 ] || fail "I8: a deleted mirror was not reinstalled ($(installs) installs)"
 pass "I8: the fast path requires the mirror directory to exist"
 
+# --- I8b (R-D): a mirror directory missing its manifest or checker is repaired ---
+for _f in capability.json scripts/check-alternatives.py; do
+  new_sandbox "i8b-${_f//\//-}"
+  run_hook
+  [ "$(installs)" = 1 ] || fail "I8b: precondition -- first run should install"
+  rm -f "$SB/home/.gsd/capabilities/$CAP_ID/$_f"
+  run_hook
+  [ "$(installs)" = 2 ] || fail "I8b: a mirror missing $_f was not reinstalled ($(installs) installs)"
+done
+pass "I8b: the fast path requires the mirror's manifest and checker, not just its directory"
+
 # --- I9 (F15): a symlinked bundle directory is walked, so edits inside it are drift ---
 new_sandbox i9
 mv "$BUNDLE" "$SB/real-bundle"
@@ -801,6 +815,24 @@ run_hook
 [ ! -f "$(sidecar)" ] || fail "I10: a bundle edited during the install still got a sidecar"
 err_has "changed during" || fail "I10: no warning (err: $(cat "$SB/err"))"
 pass "I10: a bundle that changed during the install leaves no sidecar"
+
+# --- I10b (R-F): a re-hash that fails is reported as unreadable, not as "changed" ---
+if [ "$(id -u)" -eq 0 ]; then echo "SKIP: I10b (root ignores chmod 000)"; else
+new_sandbox i10b
+cat > "$SB/bin/gsd-tools" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$GSD_TOOLS_LOG"
+mkdir -p "$BUNDLE/private" && chmod 000 "$BUNDLE/private"
+exit 0
+STUB
+run_hook
+chmod 755 "$BUNDLE/private"
+[ "$(installs)" = 1 ] || fail "I10b: precondition -- the install should have run"
+[ ! -f "$(sidecar)" ] || fail "I10b: an unverifiable bundle still got a sidecar"
+err_has "changed during" && fail "I10b: failed re-hash reported as a change (err: $(cat "$SB/err"))"
+err_has "could not be re-read" || fail "I10b: no re-read warning (err: $(cat "$SB/err"))"
+pass "I10b: a failed re-hash says so and records nothing"
+fi
 
 # --- I11 (F19a): a FIFO at the sidecar path must not hang the hook ---
 # `-r` is true for a FIFO and `cat` then blocks forever on SessionStart.
@@ -953,6 +985,7 @@ TIMEOUT_LOG="$SB/timeout-calls"
 : > "$TIMEOUT_LOG"
 cat > "$SB/bin/timeout" <<STUB
 #!/usr/bin/env bash
+case "\$*" in *" true") exit 0 ;; esac
 printf '%s\n' "\${*:1:3}" >> "$TIMEOUT_LOG"
 exit 124
 STUB
@@ -966,6 +999,31 @@ grep -qE '^-k [0-9]+ [0-9]+$' "$TIMEOUT_LOG" ||
 err_has "exceeded" || fail "L3: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "L3: a killed install wrote the sidecar"
 pass "L3: a killed install is reported on stderr and leaves no sidecar"
+
+# --- L3b (R-E): a SIGKILLed install (exit 137) gets the same timeout message ---
+new_sandbox l3b
+printf '#!/usr/bin/env bash\nexit 137\n' > "$SB/bin/timeout"
+chmod +x "$SB/bin/timeout"
+run_hook
+err_has "exceeded" || fail "L3b: exit 137 not reported as a timeout kill (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "L3b: a killed install wrote the sidecar"
+pass "L3b: exit 137 is reported like exit 124"
+
+# --- L3c (R-G): a `timeout` that rejects -k still bounds the install ---
+new_sandbox l3c
+cat > "$SB/bin/timeout" <<STUB
+#!/usr/bin/env bash
+[ "\${1:-}" = -k ] && { echo "timeout: invalid option -- k" >&2; exit 125; }
+printf '%s\n' "\$1" >> "$SB/timeout-calls"
+shift
+exec "\$@"
+STUB
+chmod +x "$SB/bin/timeout"
+run_hook
+[ "$(installs)" = 1 ] || fail "L3c: a timeout without -k blocked the install (err: $(cat "$SB/err"))"
+[ "$(cat "$SB/timeout-calls" 2>/dev/null)" = 60 ] || fail "L3c: install did not run under bare 'timeout 60' (calls: $(cat "$SB/timeout-calls" 2>&1))"
+[ -f "$(sidecar)" ] || fail "L3c: no sidecar after a successful install"
+pass "L3c: a timeout rejecting -k falls back to a bare bound"
 
 # --- L4: a host with no `timeout` (or `gtimeout`) still installs, unbounded ---
 # Restricted PATH built the way H2 builds one, naming only what this path
@@ -1009,7 +1067,7 @@ for _t in env bash find sort awk shasum cat mkdir dirname readlink rm wc git; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$SB/rungs/$_t"
 done
 ln -sf "$SB/bin/gsd-tools" "$SB/rungs/gsd-tools"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
+printf '#!/usr/bin/env bash\ncase "$*" in *" true") exit 0;; esac\nprintf "%%s\\n" "$1 $2" >> "%s/gtimeout-calls"\nshift 3\nexec "$@"\n' "$SB" > "$SB/rungs/gtimeout"
 chmod +x "$SB/rungs/gtimeout"
 PATH_OVERRIDE="$SB/rungs"
 run_hook

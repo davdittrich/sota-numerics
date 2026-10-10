@@ -476,6 +476,20 @@ run_and_cleanup
 echo "$ERR14" | grep -qF 'config-get sota-numerics.enabled failed (exit 3)' || fail "case14: stderr does not name the failure (got: $ERR14)"
 pass "case14: config-get exit 3 suppresses the banner and reports on stderr"
 
+# --- Case 15 (R-A): a failing config-get from a subdirectory of a GSD project still disables the banner ---
+mk_scratch '{"sota-numerics": {"enabled": true}}'
+mkdir -p "$SCRATCH/sub/deep"
+cd "$SCRATCH/sub/deep" || fail "case15: cd to subdirectory failed"
+mk_failing_tools 3
+mk_stub_root 0
+ERR15="$(CLAUDE_PLUGIN_ROOT="$STUB_ROOT" PATH="$FAIL_DIR:$PATH" bash "$STUB_ROOT/hooks/session-start.sh" 2>&1 >"$SCRATCH/out15")"
+OUT15="$(cat "$SCRATCH/out15")"
+rm -rf "$FAIL_DIR"
+run_and_cleanup
+[ -z "$OUT15" ] || fail "case15: banner printed from a project subdirectory despite a failing config-get: $OUT15"
+echo "$ERR15" | grep -qF 'config-get sota-numerics.enabled failed (exit 3)' || fail "case15: stderr does not name the failure (got: $ERR15)"
+pass "case15: failing config-get in a project subdirectory suppresses the banner"
+
 # --- Case 5: the suite itself performed no real global install ---
 [ "$(real_gsd_state)" = "$REAL_GSD_BEFORE" ] ||
   fail "case5: suite changed the real $REAL_GSD -- HOME/GSD_HOME redirect leaked"

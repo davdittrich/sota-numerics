@@ -144,8 +144,11 @@ fi
 # Fast path: an unchanged bundle exits silently and never spawns node, which
 # is what keeps this affordable on every SessionStart.
 # The sidecar only says which bytes the mirror held when it was written; a mirror
-# since deleted must be repaired, so the fast path also requires it to exist.
-[ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID" ] && exit 0
+# since deleted or gutted must be repaired, so the fast path also requires its
+# directory, manifest and gate checker to exist.
+_MIRROR="${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID"
+[ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "$_MIRROR" ] && [ -f "$_MIRROR/capability.json" ] &&
+  [ -f "$_MIRROR/scripts/check-alternatives.py" ] && exit 0
 
 # Fail closed: every question below is asked through git, and a git that cannot
 # answer is not an answer of "safe". `command -v` alone misses a
@@ -291,13 +294,15 @@ INSTALL_TIMEOUT=60
 # installed coreutils, in which case it is named `gtimeout`. An empty
 # _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
 # host with neither.
-if command -v timeout >/dev/null 2>&1; then
-  _TIMEOUT=(timeout -k 5 "$INSTALL_TIMEOUT")
-elif command -v gtimeout >/dev/null 2>&1; then
-  _TIMEOUT=(gtimeout -k 5 "$INSTALL_TIMEOUT")
-else
-  _TIMEOUT=()
-fi
+# -k is GNU; busybox and old BSD builds reject it, so probe before using it and
+# fall back to a bare bound rather than failing every install with exit 125.
+_TIMEOUT=()
+for _t in timeout gtimeout; do
+  command -v "$_t" >/dev/null 2>&1 || continue
+  if "$_t" -k 1 1 true >/dev/null 2>&1; then _TIMEOUT=("$_t" -k 5 "$INSTALL_TIMEOUT")
+  else _TIMEOUT=("$_t" "$INSTALL_TIMEOUT"); fi
+  break
+done
 
 # gsd_tools is a shell function, so it cannot be the direct argument of
 # `timeout`; run it inside `bash -c` on this program string instead. $1 and
@@ -318,7 +323,11 @@ INSTALL_STATUS=$?
 # Re-hash after the install: the publication guard above judged the bytes as
 # they were then. If they moved while the install ran, the mirror is not
 # described by NEW_HASH, so record nothing and let the next session retry.
-if [ "$INSTALL_STATUS" -eq 0 ] && [ "$(bundle_hash)" != "$NEW_HASH" ]; then
+REHASH=""; REHASH_STATUS=0
+[ "$INSTALL_STATUS" -eq 0 ] && { REHASH="$(bundle_hash)"; REHASH_STATUS=$?; }
+if [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH_STATUS" -ne 0 ]; then
+  echo "capability-auto-install: the $CAP_ID bundle could not be re-read after the install; not recording it as installed" >&2
+elif [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH" != "$NEW_HASH" ]; then
   echo "capability-auto-install: the $CAP_ID bundle changed during the install; not recording it as installed" >&2
 elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
@@ -340,8 +349,9 @@ elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
-elif [ "$INSTALL_STATUS" -eq 124 ] && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
-  # Guarded on the wrapper actually being in use: an install that genuinely
+elif { [ "$INSTALL_STATUS" -eq 124 ] || [ "$INSTALL_STATUS" -eq 137 ]; } && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
+  # 137 is the -k SIGKILL of a child that ignored SIGTERM. Guarded on the wrapper
+  # actually being in use: an install that genuinely
   # exits 124 on a host with no `timeout`/`gtimeout` must not be mislabelled
   # as a kill this hook performed. No refusal tail on this message -- D0
   # selects on that tail, and a killed install is a failure, not a refusal.
