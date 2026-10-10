@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Vendored auto-install hook: each plugin ships its own copy of this file
-# rather than sourcing a shared one, so a plugin stays self-contained and one
-# plugin's edit cannot change another's behaviour.
-#
-# Detects bundle drift via a whole-directory hash and re-grants the
-# capability at global ("user") scope on every SessionStart. Global scope is
-# what the CLI calls --scope global and what the prose calls "user scope".
-# Never aborts the session: no `set -e`.
+# Vendored per plugin so one plugin's edit cannot change another's. Re-grants the
+# capability at global ("user") scope on SessionStart when the bundle hash
+# drifts. Never aborts the session: no `set -e`.
 set -u
 
 CAP_ID="${1:-}"
 
-# Defense in depth (ASVS V5): call sites only ever pass a hard-coded literal,
-# but validate the id shape gsd-core itself enforces before it reaches any
-# path construction.
+# Defense in depth (ASVS V5): validate the id shape gsd-core enforces.
 [[ "$CAP_ID" =~ ^[a-z][a-z0-9-]*$ ]] || exit 0
 
-# Absolute, whatever the host supplied: the bundle hash below is what keeps two
-# plugin roots serving one capability id from sharing a fast path, and it can
-# only do that if the paths it covers are rooted. A relative CLAUDE_PLUGIN_ROOT
-# would make the hash identical for every root.
+# Absolute: the bundle hash only separates plugin roots if its paths are rooted.
 PLUGIN_ROOT="$(CDPATH= cd "${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}" 2>/dev/null && pwd)" || exit 0
 BUNDLE_DIR="$PLUGIN_ROOT/.gsd/capabilities/$CAP_ID"
 [ -d "$BUNDLE_DIR" ] || exit 0
@@ -33,34 +23,21 @@ else
   exit 0
 fi
 
-# _esc <string> -- fork-free escaper; assigns the result to the global _E
-# rather than printing it, since a command substitution here would fork twice
-# per entry on every SessionStart. Three parameter expansions, in an order
-# that matters: backslash doubled first, so that afterwards no backslash in
-# _E can be anything but an escape introducer, then newline to backslash-n,
-# then space to backslash-s. That order is what makes the encoding injective.
+# _esc <string> -- fork-free; sets global _E. Backslash first, so any later
+# backslash is an escape introducer, then newline and space: injective.
 _esc() {
   _E="${1//\\/\\\\}"
   _E="${_E//$'\n'/\\n}"
   _E="${_E// /\\s}"
 }
 
-# _bundle_records -- reads NUL-delimited paths from stdin (one `find -print0`
-# entry each) and emits one line per entry, tagged by kind so the three shapes
-# below stay disjoint on the stream: `l` a symlink, `f` a regular file, `o`
-# everything else (directories, and any FIFO or socket that should not be
-# there). A symlink is tested with -L before -f, so a symlink to a directory
-# is recorded as a link and not silently followed. Its target is read through
-# `readlink` inside a command substitution that appends a sentinel character
-# and strips it afterward: without the sentinel, a target ending in a newline
-# would be silently truncated by the substitution's own trailing-newline
-# stripping, and that truncation would itself be a collision. A regular file
-# is hashed by redirecting it into the hash tool on stdin rather than passing
-# its path as an argument, so the tool never prints a path and its
-# filename-escaping behaviour -- GNU `sha256sum` escapes, perl `shasum` does
-# not -- stops mattering; the digest is taken as the first word of that
-# output. A failed `readlink` or a failed hash returns 1 from the function
-# rather than emitting a record for bytes that were never read.
+# _bundle_records -- NUL-delimited paths on stdin, one tagged line each: `l`
+# symlink (tested before -f, so a link to a directory is not followed), `f`
+# regular file, `o` anything else. readlink runs with a sentinel `.` appended
+# and stripped: command substitution would otherwise drop a trailing newline in
+# the target, itself a collision. Files are hashed via stdin so the tool never
+# prints a path (GNU sha256sum escapes it, perl shasum does not). A failed
+# readlink or hash returns 1 rather than record bytes never read.
 _bundle_records() {
   local p _t _h _pe
   while IFS= read -r -d '' p; do
@@ -82,106 +59,66 @@ _bundle_records() {
   done
 }
 
-# Whole-bundle-directory hash. `capability install` copies the directory, so
-# what this has to detect is a change in what that copy would carry. Three
-# properties of each entry reach the hash and one does not. Content: a file
-# contributes its own digest, bound to its path. Link target: a symlink
-# contributes what it points at, so adding or retargeting one is drift. Path:
-# everything else contributes its path, so an added empty directory is
-# caught. Mode does not: `chmod 755` on a bundle file leaves this digest
-# identical while the directory copy carries the bit. That miss is stale, not
-# unsafe -- an unmirrored local chmod is drift the mirror does not receive,
-# and the mirror keeps the mode it was installed with -- but it is a miss.
-#
-# The stream `_bundle_records` emits is never parsed, only hashed, so its
-# encoding needs to be injective and nothing more: the kind tag keeps a
-# directory from masquerading as a symlink or a hashed file, `_esc` keeps a
-# path or a symlink target from opening a second line, and one record per
-# entry makes the sorted stream an injective encoding of the bundle's state --
-# no two distinct bundle states can produce the same stream.
-# A partial walk is not a hash of this bundle, so the status is read rather
-# than piped into sort. `set -o pipefail` is load-bearing here: without it a
-# `find` that could not read a directory would report through
-# `_bundle_records`' own exit status, and a partial walk would read as a
-# complete one -- exactly the regression case J5 pins. find's stderr is
-# suppressed so the refusal below reaches the user instead of
-# `find: Permission denied`.
+# Whole-bundle hash of what `capability install` would copy: file content
+# (bound to path), symlink target, and the path of everything else (an added
+# empty directory). Mode is not hashed: a chmod is a stale miss, not unsafe.
+# The stream is only hashed, never parsed, so it need only be injective: kind
+# tag, `_esc`, one record per entry.
+# `set -o pipefail` is load-bearing: without it an unreadable directory is
+# masked by `_bundle_records`' exit status and a partial walk reads as
+# complete (case J5). find's stderr is dropped so the refusal below reaches
+# the user.
 bundle_hash() {
   local _list
   _list="$(set -o pipefail; find "$BUNDLE_DIR/" -print0 2>/dev/null | _bundle_records)" || return 1
   printf '%s\n' "$_list" | LC_ALL=C sort | "${HASH_CMD[@]}" | awk '{print $1}'
 }
 
-# One sidecar file per capability id, matching the single global
-# mirror that id owns: the file records which bytes that mirror currently holds.
-# Two plugin roots exporting the same id do share this file, and that is
-# correct, not a race -- they share the mirror it describes. NEW_HASH covers the
-# bundle's absolute paths as well as its contents (bundle_hash above), so a
-# switch between roots is a hash mismatch and reinstalls, rather than a fast
-# path that would leave the mirror holding the other root's bytes. The sidecar
-# is never gsd-core's own .gsd-capabilities.json or ~/.gsd/consent.json --
-# those are gsd-core-owned schemas this script must not write into.
+# One sidecar per capability id, matching the single global mirror it
+# describes; roots sharing an id share it by design (NEW_HASH covers absolute
+# paths, so a root switch reinstalls). Never gsd-core's own
+# .gsd-capabilities.json or ~/.gsd/consent.json (its schemas).
 STATE_FILE="${GSD_HOME:-$HOME}/.gsd/capability-auto-install-$CAP_ID.hash"
 
 OLD_HASH=""
-# A symlink at the sidecar path is read as no recorded hash rather than
-# followed: an attacker who can write in this directory could otherwise
-# point the link at the bundle's current digest and make the fast path
-# fire, switching auto-install off without touching the bundle. "No
-# recorded hash" is the fail-safe direction, since it installs rather than
-# skips, and the suppression does not persist -- the successful install
-# below unlinks and recreates the sidecar as a regular file. One residual,
-# recorded rather than hidden: the -L test and the cat are two syscalls, so
-# a racing attacker could still swap a regular file for a link between
-# them, the same unclosable window already recorded on the write side and
-# for the same reason -- no shell offers O_NOFOLLOW.
+# A symlinked sidecar is read as no recorded hash, not followed: a writer could
+# otherwise point it at the current digest and switch auto-install off. That
+# fails safe (installs) and the install recreates a regular file. Residual:
+# the -L test and the cat are two syscalls (no shell offers O_NOFOLLOW).
 [ ! -L "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] && OLD_HASH="$(cat "$STATE_FILE" 2>/dev/null)"
 if ! NEW_HASH="$(bundle_hash)"; then
   echo "capability-auto-install: the $CAP_ID bundle directory could not be read in full, so what the global mirror would receive cannot be verified; refusing to install it at global scope" >&2
   exit 0
 fi
 
-# Fast path: an unchanged bundle exits silently and never spawns node, which
-# is what keeps this affordable on every SessionStart.
-# The sidecar only says which bytes the mirror held when it was written; a mirror
-# since deleted or gutted must be repaired, so the fast path also requires its
-# directory, manifest and gate checker to exist.
+# Fast path: an unchanged bundle exits silently without spawning node. The
+# sidecar only records what the mirror held when written, so also require the
+# mirror's directory, manifest and checker (a deleted mirror must be repaired).
 _MIRROR="${GSD_HOME:-$HOME}/.gsd/capabilities/$CAP_ID"
 [ "$NEW_HASH" = "$OLD_HASH" ] && [ -d "$_MIRROR" ] && [ -f "$_MIRROR/capability.json" ] &&
   [ -f "$_MIRROR/scripts/check-alternatives.py" ] && exit 0
 
-# Fail closed: every question below is asked through git, and a git that cannot
-# answer is not an answer of "safe". `command -v` alone misses a
-# git that is on PATH but exits non-zero, which reads as "not a repo".
+# Fail closed: a git that cannot answer is not "safe" (`command -v` alone
+# misses a git on PATH that exits non-zero).
 if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
   echo "capability-auto-install: git is unusable, so $CAP_ID bundle provenance cannot be verified; refusing to install it at global scope" >&2
   exit 0
 fi
 
-# Installing at global scope publishes to every project on the machine, so only
-# already-published bytes may be installed: this plugin is developed in a git
-# worktree the host loads as a plugin, and the hook would otherwise mirror work
-# in progress machine-wide. No refusal writes
-# STATE_FILE, so a later session retries once the bundle is published.
+# Global install publishes machine-wide, so only already-published bytes may
+# be installed: this plugin is developed in a worktree the host loads. No
+# refusal writes STATE_FILE, so a later session retries once published.
+# Ownership, not enclosure: only a repository that *tracks* the bundle speaks
+# for its bytes (README "What the Claude hooks do").
 #
-# Ownership, not enclosure: only a repository that *tracks* the bundle says
-# anything about these bytes. Versioning ~/.claude encloses without tracking and
-# is unaffected; a monorepo vendoring the plugin tracks it and stays guarded.
-# README's "What the Claude hooks do" works the marketplace-cache shapes through.
+# `ls-files --error-unmatch` exits 0 tracked (apply the publication checks),
+# 1 untracked (guard does not apply), 128 git did not answer -- never read as
+# "untracked". The eleven rows are enumerated in the tests header.
 #
-# `ls-files --error-unmatch` answers with three exit codes and this guard has to
-# keep all three apart: 0 tracked, so the publication checks below apply; 1 a
-# repository answered and does not track these bytes, so the guard does not; 128
-# git did not answer, which must not be read as "untracked". The eleven rows
-# those three split into are enumerated in tests/test-capability-auto-install.sh.
-#
-# unverifiable_repo() decides that last case on evidence git cannot supply.
-# `--git-dir` succeeding means git found a repository it can open, so the 128
-# came from the index alone -- there is a repository and it did not answer.
-# Otherwise walk the ancestors: a .git we cannot inspect might be a repository
-# and must be assumed to be one, and a .git holding a HEAD is a repository git
-# declined for ownership or format. A .git that is inspectable and holds no
-# HEAD -- a stray empty directory -- is not a repository and is walked past.
+# unverifiable_repo() decides the 128 case: `--git-dir` succeeding means a
+# repository exists and did not answer; otherwise walk the ancestors -- an
+# uninspectable .git is assumed a repository, one holding a HEAD is one git
+# declined, an inspectable .git without HEAD is walked past.
 unverifiable_repo() {
   git -C "$BUNDLE_DIR" rev-parse --git-dir >/dev/null 2>&1 && return 0
   local _d="$BUNDLE_DIR" _g _prev
@@ -191,9 +128,8 @@ unverifiable_repo() {
        ! { [ -d "$_g" ] && [ -r "$_g" ] && [ -x "$_g" ] && [ ! -e "$_g/HEAD" ]; }; then
       return 0
     fi
-    # Stop when dirname stops moving, not at a literal "/": a relative path
-    # converges on "." and would hang here. Keying on the walk, not on how
-    # PLUGIN_ROOT is built, keeps that unreachable.
+    # Stop when dirname stops moving, not at "/": a relative path converges on
+    # "." and would hang.
     _prev="$_d"
     _d="$(dirname "$_d")"
     [ "$_d" = "$_prev" ] && return 1
@@ -203,23 +139,14 @@ unverifiable_repo() {
 TRACKED=0
 git -C "$BUNDLE_DIR" ls-files --error-unmatch . >/dev/null 2>&1 || TRACKED=$?
 if [ "$TRACKED" -eq 0 ]; then
-  # `status` answers out of the index, and `update-index --assume-unchanged`/
-  # `--skip-worktree` tell it to stop looking, so an edited tracked file
-  # reports clean and the sidecar then makes that miss permanent (cases J2,
-  # J3 record why this is an ordinary local tweak, not an attack, and why
-  # `diff --quiet HEAD` does not help either). `-v` tags a plain cached entry
-  # H, lower-cases the tag for assume-unchanged and uses S for skip-worktree,
-  # so anything that is not H is an entry git has been told not to check.
-  # core.sparseCheckout needs no separate handling: it excludes paths by setting
-  # skip-worktree, so an out-of-cone bundle entry is tagged S and refused here
-  # (case J9). `-c core.sparseCheckout=false` would not have helped -- sparse
-  # checkout also removes the file from disk, so there is nothing for `status`
-  # to compare (measured, not assumed).
+  # `status` reads the index, which `update-index --assume-unchanged` and
+  # `--skip-worktree` silence, so an edit would report clean and the sidecar
+  # make the miss permanent (cases J2, J3). `ls-files -v` tags a plain entry H;
+  # anything else was told not to be checked. Sparse checkout sets
+  # skip-worktree, so it is refused too (case J9; the file is gone from disk).
   #
-  # The status is captured before the output, for the same reason `status`'s is
-  # below: piping straight into `grep` makes the pipeline exit with grep's
-  # status, so an `ls-files` that failed reads as "no suspicious tags" and the
-  # guard proceeds on evidence it never obtained (case J10).
+  # Capture the status before the output: piping into `grep` takes grep's
+  # status and hides a failed `ls-files` (case J10).
   if ! INDEX_TAGS="$(git -C "$BUNDLE_DIR" ls-files -v -- . 2>/dev/null)"; then
     echo "capability-auto-install: git could not list the index entries for the $CAP_ID bundle, so whether the index hides edits cannot be determined; refusing to install it at global scope" >&2
     exit 0
@@ -228,11 +155,9 @@ if [ "$TRACKED" -eq 0 ]; then
     echo "capability-auto-install: the index marks $CAP_ID bundle entries assume-unchanged or skip-worktree, so git will not report edits to them; refusing to install it at global scope" >&2
     exit 0
   fi
-  # Each option states what this question needs rather than what the
-  # repository's config gives -- flag -> case map already tabulated in
-  # tests/test-capability-auto-install.sh's header (cases J4, E, J6, J7, J8).
-  # Residual this cannot see: a `.gitattributes` clean filter,
-  # also recorded there.
+  # Each option states what this question needs, not what repo config gives;
+  # the flag -> case map is in the tests header, as is the residual (a
+  # `.gitattributes` clean filter).
   #
   # The exit status is read before the output: empty output from a `status` that
   # failed is indistinguishable from empty output from a clean tree (case J1).
@@ -245,15 +170,10 @@ if [ "$TRACKED" -eq 0 ]; then
     echo "capability-auto-install: $CAP_ID bundle has uncommitted or ignored files; refusing to install it at global scope" >&2
     exit 0
   fi
-  # What the two checks below prove, exactly: origin/HEAD and origin/main are
-  # local refs under refs/remotes, so passing means HEAD is an ancestor of the
-  # tip the last fetch recorded -- not that any server holds these bytes now.
-  # Closing that gap needs a round trip to the remote on every SessionStart,
-  # which would put the capability behind
-  # the network and behind credentials; this guard exists for the accident of
-  # running a plugin out of a development worktree, and against that accident a
-  # local ref is the right evidence and the only affordable one. Case K1 pins
-  # the limit so it stays a decision rather than an assumption.
+  # origin/HEAD and origin/main are local refs: passing proves HEAD is an
+  # ancestor of the last fetched tip, not that a server holds it now. A round
+  # trip per SessionStart would put the capability behind network and
+  # credentials; a local ref suffices against the dev-worktree accident (K1).
   #
   # Fail closed: an unresolvable upstream means we cannot prove even that much,
   # and a guard that cannot verify must not answer "safe".
@@ -272,30 +192,19 @@ elif [ "$TRACKED" -ne 1 ] && unverifiable_repo; then
   exit 0
 fi
 
-# gsd_tools() resolver. Sourced inside the timed child below, not here, so
-# nothing outside the timeout bound can run before the decision to install.
-# If hooks/gsd-tools.sh is missing, `gsd_tools` stays undefined in the child
-# and the invocation exits 127, which the branch below reports and writes no
-# sidecar, so a repaired install retries (case L2). Sourcing in the child
-# rather than exporting the function from the parent also keeps the
-# resolver's BASH_SOURCE fallback rung pointed at the real sourced file,
-# whether or not the host set CLAUDE_PLUGIN_ROOT.
+# gsd_tools() is sourced inside the timed child so nothing outside the timeout
+# runs before the install decision. A missing hooks/gsd-tools.sh leaves it
+# undefined: exit 127, no sidecar, retry (case L2). Sourcing in the child
+# keeps the resolver's BASH_SOURCE fallback on the real file.
 
-# The work behind this call is a directory copy and a JSON write behind one
-# `node` start, so seconds is the honest expectation; 60 is roughly an order
-# of magnitude of headroom for a cold start on a loaded or network-mounted
-# home. The point is a bound, not a tight one. Both the invocation and the
-# message below read this constant so the two cannot drift.
+# A directory copy and a JSON write behind one `node` start: seconds. 60 is a
+# loose bound for a cold start on a loaded or network-mounted home. The
+# invocation and the message both read it, so they cannot drift.
 INSTALL_TIMEOUT=60
 
-# -k 5: a child that ignores SIGTERM is SIGKILLed 5s later instead of hanging
-# the session.
-# `timeout` is coreutils and not POSIX -- macOS ships neither unless the user
-# installed coreutils, in which case it is named `gtimeout`. An empty
-# _TIMEOUT means the install below runs unbounded, the prior behaviour, on a
-# host with neither.
-# -k is GNU; busybox and old BSD builds reject it, so probe before using it and
-# fall back to a bare bound rather than failing every install with exit 125.
+# -k 5: SIGKILL a child that ignores SIGTERM. `timeout` is coreutils; macOS has
+# `gtimeout` only with coreutils, and with neither _TIMEOUT is empty and the
+# install runs unbounded. -k is GNU: probe it, else use a bare bound (not exit 125).
 _TIMEOUT=()
 for _t in timeout gtimeout; do
   command -v "$_t" >/dev/null 2>&1 || continue
@@ -304,25 +213,20 @@ for _t in timeout gtimeout; do
   break
 done
 
-# gsd_tools is a shell function, so it cannot be the direct argument of
-# `timeout`; run it inside `bash -c` on this program string instead. $1 and
-# $2 are PLUGIN_ROOT and BUNDLE_DIR, passed as positional arguments below
-# rather than interpolated here, so neither has to survive quoting twice.
+# gsd_tools is a shell function, so run it inside `bash -c`; PLUGIN_ROOT and
+# BUNDLE_DIR arrive as $1/$2 so neither must survive quoting twice.
 _INSTALL_CHILD='[ -f "$1/hooks/gsd-tools.sh" ] && . "$1/hooks/gsd-tools.sh"; gsd_tools capability install "$2" --scope global --yes'
 
-# Absolute spec: a relative one would resolve against the end user's cwd, not
-# the plugin. The "${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" form is deliberate: a
-# bare "${_TIMEOUT[@]}" aborts under `set -u` on bash 3.2, which macOS still
-# ships, when the array is empty.
+# Absolute spec: a relative one would resolve against the user's cwd. The
+# "${_TIMEOUT[@]+...}" form is deliberate: a bare empty array aborts under
+# `set -u` on bash 3.2 (macOS).
 "${_TIMEOUT[@]+"${_TIMEOUT[@]}"}" bash -c "$_INSTALL_CHILD" _ "$PLUGIN_ROOT" "$BUNDLE_DIR" >/dev/null 2>&1
 INSTALL_STATUS=$?
 
-# Both failure branches below break this repo's silent `|| true` convention and
-# write no STATE_FILE: the path is unattended, so silence would leave a
-# capability permanently inactive, and the next session must retry.
-# Re-hash after the install: the publication guard above judged the bytes as
-# they were then. If they moved while the install ran, the mirror is not
-# described by NEW_HASH, so record nothing and let the next session retry.
+# Failure branches break the silent `|| true` convention and write no
+# STATE_FILE: unattended, silence would leave the capability inactive for good.
+# Re-hash after the install: if the bytes moved while it ran, the mirror is not
+# described by NEW_HASH, so record nothing and retry next session.
 REHASH=""; REHASH_STATUS=0
 [ "$INSTALL_STATUS" -eq 0 ] && { REHASH="$(bundle_hash)"; REHASH_STATUS=$?; }
 if [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH_STATUS" -ne 0 ]; then
@@ -332,29 +236,21 @@ elif [ "$INSTALL_STATUS" -eq 0 ] && [ "$REHASH" != "$NEW_HASH" ]; then
 elif [ "$INSTALL_STATUS" -eq 0 ]; then
   printf 'Auto-installed capability: %s (user scope)\n' "$CAP_ID"
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null
-  # Unlink before writing so the redirection below always creates a fresh
-  # regular file rather than following whatever sits at STATE_FILE. `rm -f`
-  # removes the link itself, never its target, which is the whole point; a
-  # STATE_FILE that is a directory makes both this removal and the
-  # redirection fail harmlessly, leaving no sidecar and a retry next
-  # session -- this file's established failure posture.
-  #
-  # Residual, recorded rather than hidden: there is a window between this
-  # removal and the redirection in which a racing attacker could re-plant the
-  # link. Closing it would need O_NOFOLLOW, which no shell offers, and the
-  # threat model already grants that attacker write access to this
-  # directory, so unlink-and-recreate is proportionate here, not complete.
-  #
+  # Unlink first so the redirection creates a fresh regular file instead of
+  # following a link at STATE_FILE (`rm -f` removes the link, not its target).
+  # A directory there makes both fail harmlessly: no sidecar, retry next
+  # session. Residual: a racing attacker could re-plant the link between rm
+  # and redirection; closing it needs O_NOFOLLOW, which no shell offers, and
+  # the threat model already grants write access to this directory.
   rm -f "$STATE_FILE" 2>/dev/null
   printf '%s' "$NEW_HASH" > "$STATE_FILE" 2>/dev/null
 elif [ "$INSTALL_STATUS" -eq 127 ]; then
   echo "capability-auto-install: gsd-tools not found; $CAP_ID not installed" >&2
 elif { [ "$INSTALL_STATUS" -eq 124 ] || [ "$INSTALL_STATUS" -eq 137 ]; } && [ "${#_TIMEOUT[@]}" -gt 0 ]; then
-  # 137 is the -k SIGKILL of a child that ignored SIGTERM. Guarded on the wrapper
-  # actually being in use: an install that genuinely
-  # exits 124 on a host with no `timeout`/`gtimeout` must not be mislabelled
-  # as a kill this hook performed. No refusal tail on this message -- D0
-  # selects on that tail, and a killed install is a failure, not a refusal.
+  # 137 is the -k SIGKILL of a child that ignored SIGTERM. Only when the
+  # wrapper was used: an install that itself exits 124 with no `timeout` must
+  # not be mislabelled a kill. No refusal tail on the message -- D0 selects on
+  # that tail, and a killed install is a failure, not a refusal.
   echo "capability-auto-install: capability install for $CAP_ID exceeded ${INSTALL_TIMEOUT}s and was killed; not installed" >&2
 else
   echo "capability-auto-install: capability install failed for $CAP_ID (exit $INSTALL_STATUS)" >&2
