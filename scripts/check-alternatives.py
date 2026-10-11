@@ -165,12 +165,11 @@ RESERVED_LABELS = {"rationale", "why", "note", "chosen", "decision", "decided by
 PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "localhost"}
 PLACEHOLDER_TEXT_RE = re.compile(r"^\s*(?:TODO|TBD|N/A|NONE|\?)\s*$", re.IGNORECASE)
 PHASE_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)")
-# `current_phase` in STATE.md's YAML frontmatter. Constrained to a phase number
-# at the point of reading, so nothing else can become a directory lookup.
-# The leading YAML frontmatter block, and nothing after it. `current_phase` is
+# The leading YAML frontmatter block, and nothing after it: `current_phase` is
 # read from here only.
 STATE_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
-
+# `current_phase`, constrained to a phase number at the point of reading so
+# nothing else can become a directory lookup.
 STATE_CURRENT_PHASE_RE = re.compile(
     r"^current_phase:[ \t]*[\"']?(\d+(?:\.\d+)?)[\"']?[ \t]*$", re.MULTILINE
 )
@@ -341,12 +340,8 @@ def resolve_current_phase_dir(start):
         raise ValueError(
             f"cannot read {state_path} to resolve the current phase ({exc.strerror})"
         ) from exc
-    # Search ONLY the YAML frontmatter, which is what the comment on
-    # STATE_CURRENT_PHASE_RE always claimed. Scanning the whole file let any
-    # `current_phase: <n>` line in prose -- or inside a fenced example --
-    # redirect phase identity, so a non-compliant phase could be waved through
-    # by pointing the gate at a compliant one. Document content must not decide
-    # which phase a blocking gate inspects.
+    # Search ONLY the YAML frontmatter: a `current_phase: <n>` line in prose or
+    # a fenced example must not redirect which phase the blocking gate inspects.
     fm = STATE_FRONTMATTER_RE.match(state_text)
     if not fm:
         raise ValueError(

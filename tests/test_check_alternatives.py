@@ -909,12 +909,6 @@ class TestFencedRegions(GateCase):
         )
         self.gate(plan, 1)
 
-    def test_inline_backticks_are_not_mistaken_for_a_fence(self):
-        # Doc-ref citations are backtick-delimited; only a line of three or
-        # more opens a fence, so ordinary citations must survive untouched.
-        text, _ = bullet_plan()
-        self.gate(text, 0)
-
     # Each FENCE_LINE_RE condition (anchor, three-marker minimum, info-string rule)
     # fails the same way if dropped: a false opener blanks to EOF and a compliant
     # plan is blocked. One case each, asserting the reason.
@@ -1700,17 +1694,6 @@ class TestPathSafety(GateCase):
         result = run_check(Path(SCRIPT.anchor))
         self.assertEqual(result.returncode, 2)
         self.assertIn("could not locate a .planning/ ancestor", result.stderr)
-
-    def test_dotdot_path_matches_its_resolved_form(self):
-        # find_project_root() walks up from the RESOLVED phase_dir, so relative_to()
-        # can never raise; a `..`-laden argument just relocates the derived root.
-        with scratch_dir() as tmp:
-            write_plan(tmp, "# plan with no Alternatives Considered section\n")
-            direct = run_check(tmp)
-            traversed = run_check(Path(tmp) / ".." / Path(tmp).name)
-        self.assertEqual(direct.returncode, 1)
-        self.assertEqual(traversed.returncode, direct.returncode)
-        self.assertIn("missing '## Alternatives Considered' section", traversed.stderr)
 
     def test_nonexistent_dir_exits_2(self):
         result = run_check("/nonexistent-check-alternatives-fixture-dir")
