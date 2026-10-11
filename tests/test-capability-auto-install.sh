@@ -35,16 +35,17 @@
 # obvious `-c core.sparseCheckout=false` would not have worked anyway because
 # sparse checkout also deletes the excluded files. J9 records the measurement.
 #
-# One entry has no closer, and it is recorded rather than claimed away: a
-# `.gitattributes` clean filter maps edited worktree bytes onto the committed
-# blob, so `status` is honestly clean about the index while the directory copy
-# carries the edit. No `status` option reaches that; a byte comparison against
-# the published tree would. The filter driver lives in local config, which no
-# clone carries, so unlike J7 it cannot follow the bundle to a consumer.
-# The honest predicate for row 5 is therefore "git,
-# asked without inheriting the repository's configuration, reports the worktree
-# clean" -- not "the bundle's bytes are the published bytes", which is stronger
-# than what this hook measures.
+#   .gitattributes clean filter   -> refuse any `filter` attribute  (cases J11-J14)
+#
+# That last row was a recorded residual until J11 reproduced it: a clean filter
+# maps an edited worktree file back onto its committed blob, so `status` and the
+# index are honestly clean while the directory copy carries the edit. Only an edit
+# that keeps the file's length gets there (git trusts a changed size without running
+# the filter; measured on git 2.56). The driver lives in local config, which no clone
+# carries, so unlike J7 it cannot follow the bundle to a consumer. A byte comparison
+# cannot go through git, so the closer is refusing any bundle file that selects a
+# filter at all. Remaining honest predicate for row 5: "git, asked without inheriting
+# the repository's configuration, reports the worktree clean and no filter applies".
 #
 #   1. git binary unusable                    -> refuse   (cases H1, H2)
 #
@@ -743,6 +744,83 @@ run_hook
 err_has "uncommitted or ignored" || fail "J8: wrong refusal (err: $(cat "$SB/err"))"
 [ ! -f "$(sidecar)" ] || fail "J8: refusal wrote the sidecar, making the miss permanent"
 pass "J8: a file-system monitor that under-reports does not hide edits from the guard"
+
+# --- J11: a clean filter maps the edited worktree onto the committed blob ---
+# The residual J1-J10 could not close: `status` and the index are honestly clean
+# about git's view while the directory copy carries the edit. The filter is chosen
+# by the `filter` attribute, and the driver lives in local config, so the bytes
+# cannot be compared through git; refusing any bundle path that selects a filter
+# closes it. The attribute comes from .git/info/attributes here, which no clone carries.
+new_sandbox j11
+git_init "$ROOT"
+publish "$ROOT"
+git -C "$BUNDLE" show HEAD:./scripts/check.py > "$SB/canon"
+printf '#!/usr/bin/env bash\ncat >/dev/null\ncat "%s"\n' "$SB/canon" > "$SB/bin/clean-stub"
+chmod +x "$SB/bin/clean-stub"
+git -C "$ROOT" config filter.hide.clean "$SB/bin/clean-stub"
+printf 'check.py filter=hide\n' >> "$ROOT/.git/info/attributes"
+# Same size on purpose: git trusts a changed size without running the filter, so only an
+# edit that keeps the length reaches the filtered comparison (measured, git 2.56).
+{ printf 'Z'; tail -c +2 "$SB/canon"; } > "$SB/edited"
+cmp -s "$SB/canon" "$SB/edited" && fail "J11: precondition -- the edit must differ from the committed bytes"
+cp "$SB/edited" "$BUNDLE/scripts/check.py"
+[ -z "$(git -C "$BUNDLE" status --porcelain --ignored --untracked-files=all --ignore-submodules=none -- . 2>/dev/null)" ] ||
+  fail "J11: precondition -- the filtered status should report this edited bundle clean"
+[ "$(git -C "$BUNDLE" ls-files -v -- . | cut -c1 | sort -u | tr -d '\n')" = "H" ] ||
+  fail "J11: precondition -- no index bit is set, so J2/J3's check cannot catch this"
+run_hook
+[ "$(installs)" = 0 ] || fail "J11: an edit hidden by a clean filter was installed"
+err_has "filter attribute" || fail "J11: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J11: refusal wrote the sidecar, making the miss permanent"
+pass "J11: a clean filter that hides the edit from git does not hide it from the guard"
+
+# --- J12: `check-attr` fails, and its exit status is not discarded ---
+# The same defect J1 and J10 pin, for the attribute question. The bundle is clean
+# and published, so a hook that reads an empty answer as "no filter" installs it.
+new_sandbox j12
+git_init "$ROOT"
+publish "$ROOT"
+REAL_GIT="$(command -v git)"
+cat > "$SB/bin/git" <<EOF
+#!/usr/bin/env bash
+# Real git, except that check-attr fails the way an unreadable attributes file does.
+for _a in "\$@"; do
+  if [ "\$_a" = "check-attr" ]; then echo "fatal: unable to read attributes" >&2; exit 128; fi
+done
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x "$SB/bin/git"
+run_hook
+[ "$(installs)" = 0 ] || fail "J12: a bundle whose attributes could not be read was installed"
+err_has "filter attribute" || fail "J12: wrong refusal (err: $(cat "$SB/err"))"
+[ ! -f "$(sidecar)" ] || fail "J12: refusal wrote the sidecar, making the miss permanent"
+pass "J12: a check-attr that cannot answer refuses rather than reading as no filter"
+
+# --- J13: a newline inside a tracked path cannot shift the attribute triples ---
+# A path "a\nb\nunspecified" turns every third token into "unspecified" when the NUL
+# separators and the path's own newlines both become line breaks.
+new_sandbox j13
+git_init "$ROOT"
+printf 'x\n' > "$BUNDLE/scripts/$(printf 'zz\nb\nunspecified')"
+git -C "$ROOT" add -A >/dev/null 2>&1
+git -C "$ROOT" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm weird
+publish "$ROOT"
+# Only the odd file selects the filter, and it sorts after the others, so the
+# triples before it are aligned and a shifted count is the only thing that hides it.
+printf 'zz* filter=hide\n' >> "$ROOT/.git/info/attributes"
+run_hook
+[ "$(installs)" = 0 ] || fail "J13: a newline in a path let a filtered bundle through"
+err_has "filter attribute" || fail "J13: wrong refusal (err: $(cat "$SB/err"))"
+pass "J13: a newline in a tracked path does not hide a filter attribute"
+
+# --- J14: `-filter` (unset) is the repository-local way out of a global rule ---
+new_sandbox j14
+git_init "$ROOT"
+publish "$ROOT"
+printf '* -filter\n' >> "$ROOT/.git/info/attributes"
+run_hook
+[ "$(installs)" = 1 ] || fail "J14: an explicitly unset filter was refused (err: $(cat "$SB/err"))"
+pass "J14: an unset filter attribute selects no filter"
 
 # --- J9: sparse checkout hides bundle bytes from `status`, and row 2 catches it ---
 # core.sparseCheckout is the same skip-worktree mechanism J3 pins, not a fifth

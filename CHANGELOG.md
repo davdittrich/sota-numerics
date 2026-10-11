@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Hooks:
+- Security: the SessionStart auto-install provenance check now refuses a bundle when a git `filter` attribute applies to any of its files, or `git check-attr` cannot answer. A clean filter could map an edited worktree file back onto its committed blob, so `git status` and the index reported a clean tree while the install copied the edit. Only an edit that keeps the file length reaches this (git trusts a changed size without running the filter). The attribute is refused wherever it comes from, including a global `core.attributesFile`; `-filter` in the repository is the local opt-out. This closes the known residual listed under 0.2.2.
+
 ## 0.2.2 (2026-10-10)
 
 Hooks:
@@ -51,7 +56,7 @@ Hooks:
 - The sidecar is read only when it is a regular file and is not recorded when the bundle changed during the install; a deleted global mirror is repaired; a symlinked bundle directory is hashed through.
 - `CDPATH` is cleared around `cd`; the absolute global gsd-core path is tried before `PATH`, and relative `PATH` hits are ignored.
 - The gate runs the global script only when its version is strictly higher than the project copy's, and runs `python3 -I`.
-- Known residual: the provenance check runs on git's view of the bundle, so a `.gitattributes` clean filter can make the installed worktree bytes differ from the bytes checked.
+- Known residual: the provenance check runs on git's view of the bundle, so a `.gitattributes` clean filter can make the installed worktree bytes differ from the bytes checked. Closed in Unreleased.
 
 Docs:
 
