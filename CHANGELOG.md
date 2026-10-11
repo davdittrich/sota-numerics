@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-10-11)
 
 Hooks:
 - Security: the SessionStart auto-install provenance check now refuses a bundle when a git `filter` attribute applies to any of its files, or `git check-attr` cannot answer. A clean filter could map an edited worktree file back onto its committed blob, so `git status` and the index reported a clean tree while the install copied the edit. Only an edit that keeps the file length reaches this (git trusts a changed size without running the filter). The attribute is refused wherever it comes from, including a global `core.attributesFile`; `-filter` in the repository is the local opt-out. This closes the known residual listed under 0.2.2.
