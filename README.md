@@ -303,7 +303,8 @@ Zhang, Guibin, Hejia Geng, Xiaohang Yu, et al. 2025. “The Landscape of Agentic
 A release is an annotated `vX.Y.Z` tag on the commit of `main` whose CI run passed. The
 gsd-beads marketplace pins that commit's sha, not the tag and not `main`, so a moved tag or a
 later push to `main` never changes what installs. Versions before 0.2.0 (0.1.3 and earlier)
-predate this convention and carry no tag.
+predate this convention and carry no tag. `main` is protected: both `checks` jobs from `ci.yml`
+must pass on a commit before it can be pushed there (admins are not enforced).
 
 ## License
 
